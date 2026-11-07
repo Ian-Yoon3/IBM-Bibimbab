@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import urllib.request
+import urllib.parse
 
 from dotenv import load_dotenv
 
@@ -18,23 +19,6 @@ load_dotenv()
 WX_API_KEY    = os.environ.get("WX_API_KEY", "")
 WX_PROJECT_ID = os.environ.get("WX_PROJECT_ID", "")
 WX_URL        = os.environ.get("WX_URL", "https://us-south.ml.cloud.ibm.com").rstrip("/")
-
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-def _get_iam_token() -> str:
-    """Exchange an IBM Cloud API key for a short-lived IAM bearer token."""
-    data = (
-        "grant_type=urn%3Aibm%3Aparams%3Aoauth%3Agrant-type%3Aapikey"
-        f"&apikey={urllib.parse.quote(WX_API_KEY)}"
-    ).encode()
-    req = urllib.request.Request(
-        "https://iam.cloud.ibm.com/identity/token",
-        data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())["access_token"]
-
 
 # ── step (b): list models ─────────────────────────────────────────────────────
 
@@ -108,8 +92,6 @@ def test_tool_call(model_id: str) -> None:
 # ── entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import urllib.parse  # needed by _get_iam_token; import here avoids top-level side-effect
-
     if len(sys.argv) >= 2:
         test_tool_call(sys.argv[1])
     else:

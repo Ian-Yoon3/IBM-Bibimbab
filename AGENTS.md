@@ -4,7 +4,7 @@ This file provides guidance to agents when working with code in this repository.
 
 ## Project
 
-Supply chain recovery simulation for a fictional manufacturer (NovaTech). The engine is a single Python 3 script with no external dependencies. All data lives in `data/*.csv`; expected outputs are in `tests/expected/*.csv`.
+Supply chain recovery simulation for a fictional manufacturer (NovaTech). The simulation engine lives in `engine/`; an LLM-based agent layer lives in `agent/`. All data lives in `data/*.csv`; expected outputs are in `tests/expected/*.csv`.
 
 - **Base date:** 2026-11-09; **horizon:** 2026-11-21 (12 calendar days)
 - **Scenarios:** `NORMAL`, `WAIT`, `TRANSFER`, `ALT_BUY`, `HYBRID`
@@ -12,17 +12,50 @@ Supply chain recovery simulation for a fictional manufacturer (NovaTech). The en
 ## Commands
 
 ```bash
-# Run verify.py from inside reference/ — the script resolves paths relative to __file__
-# so it expects data/ and validation/ as siblings of verify.py, not at the project root
-cd reference && python3 verify.py
+# Run the full test suite (76 tests must stay green)
+python -m unittest discover -s tests -v
 
-# Regenerate reference/validation/*.csv
+# Regenerate reference/validation/*.csv (reference implementation only)
 cd reference && python3 verify.py --write
 ```
 
-**Gotcha:** `ROOT = Path(__file__).resolve().parent` means data is read from `reference/data/` and written to `reference/validation/`. The repo currently stores data at `data/` and expected outputs at `tests/expected/` (both at project root). Running `python3 reference/verify.py` from the project root will `FileNotFoundError`. The intended layout requires `data/` and `validation/` to exist inside `reference/`, or `ROOT` must be changed to `ROOT.parent`.
+## Repository layout
 
-There is no separate test runner, linter, or build step. The single script IS the test.
+| Path | Purpose |
+|---|---|
+| `engine/` | Simulation engine — stdlib only. The sole public API is `engine/tools.py`. |
+| `agent/` | watsonx.ai agent layer — may use packages in `requirements.txt`. |
+| `scripts/` | One-off utility scripts — may use packages in `requirements.txt`. |
+| `reference/` | Reference implementation (`verify.py`) and data dictionary. |
+| `data/` | Source CSV files. |
+| `tests/` | Unit + integration tests; expected CSVs in `tests/expected/`. |
+
+## Engine API
+
+`engine/tools.py` is the **only** module the agent should call. Do not import other `engine/` modules directly from `agent/` or `scripts/`.
+
+## Agent design
+
+- **Platform:** watsonx.ai chat with tool calling via `ibm_watsonx_ai.foundation_models.ModelInference`.
+- **Model:** read from env `WX_MODEL_ID`; default `ibm/granite-4-h-small`. Always set `max_tokens` explicitly.
+- **Tool-call arguments** may arrive as a JSON string or as a parsed object — normalise to a dict before calling the engine.
+- **Tools exposed to the LLM:**
+  `get_disruption`, `get_impact`, `compare_scenarios`, `get_priority_view`,
+  `explore_purchase_qty`, `propose_action`.
+  (`run_scenario` is not exposed yet.)
+- The agent **never approves** recovery actions — it only proposes.
+- Only disruption **D01** exists in the data. If asked about other disruption IDs or new delay dates, the agent must reply that they are not supported yet rather than inventing numbers.
+
+## Secrets & environment
+
+- Secrets live exclusively in `.env` (gitignored). Never commit credentials.
+- Copy `.env.example` → `.env` and fill in `WX_API_KEY`, `WX_PROJECT_ID`, `WX_URL`, `WX_MODEL_ID`.
+- Agent tests must use a fake/mock LLM and make **no** network calls.
+
+## Dependencies
+
+- `engine/` — stdlib only (`csv`, `collections`, `datetime`, `pathlib`, `sys`). Never add third-party imports to `engine/`.
+- `agent/` and `scripts/` — may use packages listed in `requirements.txt` (`ibm-watsonx-ai`, `python-dotenv`).
 
 ## Data conventions (`data/*.csv`)
 
@@ -52,11 +85,10 @@ There is no separate test runner, linter, or build step. The single script IS th
 | `inventory_ledger.csv` | variable — one row per stock event |
 | `checks.csv` | 5 — all three audit columns must be `PASS` |
 
-## Code style (`reference/verify.py`)
+## Code style (`engine/`)
 
 - stdlib only: `csv`, `collections`, `datetime`, `pathlib`, `sys`
 - `load(name, *keys)` returns a dict keyed by single value or tuple; duplicate keys raise `AssertionError`
 - `number(row, key)` / `day(row, key)` are the canonical accessors — enforce non-negative int and ISO date
 - Assertions are used for all data-integrity checks (no `raise` statements)
 - `ROOT` is resolved relative to `__file__`, not `cwd`
-- The `engine/` directory is empty — new simulation code should go there or alongside `verify.py` in `reference/`
