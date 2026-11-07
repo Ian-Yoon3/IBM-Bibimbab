@@ -1,0 +1,7 @@
+offer_id,supplier_id,component_id,lead_days,unit_cost_usd,fixed_fee_usd,min_qty,multiple_qty,max_qty
+OF01,S01,C01,7,10,0,5,5,250
+OF02,S02,C01,3,18,80,20,5,65
+OF03,S03,C02,5,7,0,10,5,200
+OF04,S03,C03,5,9,0,10,5,200
+OF05,S04,C04,6,8,0,10,5,200
+OF06,S04,C05,6,6,0,10,5,200

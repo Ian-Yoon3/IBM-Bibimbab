@@ -1,0 +1,6 @@
+scenario_id,disruption_id,label
+NORMAL,,Undisrupted reference
+WAIT,D01,Wait for primary PO
+TRANSFER,D01,Transfer available stock
+ALT_BUY,D01,Buy from alternate supplier
+HYBRID,D01,Transfer and buy

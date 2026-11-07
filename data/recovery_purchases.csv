@@ -1,0 +1,3 @@
+scenario_id,offer_id,warehouse_id,action_date,qty
+ALT_BUY,OF02,WH01,2026-11-09,65
+HYBRID,OF02,WH01,2026-11-09,45

@@ -1,0 +1,6 @@
+scenario_id,expected_start_dates,expected_incremental_cost,stock_floor_and_conservation
+NORMAL,PASS,PASS,PASS
+WAIT,PASS,PASS,PASS
+TRANSFER,PASS,PASS,PASS
+ALT_BUY,PASS,PASS,PASS
+HYBRID,PASS,PASS,PASS

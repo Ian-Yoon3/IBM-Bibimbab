@@ -1,0 +1,4 @@
+warehouse_id,warehouse_name,role
+WH01,Central Plant,PRODUCTION
+WH02,North Buffer,BUFFER
+WH03,East Buffer,BUFFER

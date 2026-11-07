@@ -1,0 +1,204 @@
+"""Tests for engine/tools.py — agent-facing functions."""
+import json
+import unittest
+
+from engine.loader import load_all
+from engine.tools import (
+    get_disruption,
+    run_scenario,
+    compare_scenarios,
+    get_impact,
+    get_priority_view,
+    explore_purchase_qty,
+    propose_action,
+)
+from engine.simulate import build_scenario_actions
+
+_DB = load_all()
+
+
+class TestGetDisruption(unittest.TestCase):
+
+    def test_d01_fields(self):
+        result = get_disruption("D01")
+        self.assertEqual(result["disruption_id"], "D01")
+        self.assertEqual(result["po_id"], "PO01")
+        self.assertEqual(result["component_id"], "C01")
+        self.assertEqual(result["qty"], 145)
+        self.assertEqual(result["original_receipt_date"], "2026-11-11")
+        self.assertEqual(result["revised_receipt_date"], "2026-11-17")
+        self.assertEqual(result["delay_days"], 6)
+
+    def test_json_serialisable(self):
+        result = get_disruption("D01")
+        json.dumps(result)  # must not raise
+
+    def test_unknown_raises(self):
+        with self.assertRaises(ValueError):
+            get_disruption("D99")
+
+
+class TestRunScenario(unittest.TestCase):
+
+    def test_wait_on_time_orders(self):
+        result = run_scenario([], "D01")
+        self.assertEqual(result["on_time_orders"], 5)
+
+    def test_normal_all_on_time(self):
+        result = run_scenario([], None)
+        self.assertEqual(result["on_time_orders"], 12)
+
+    def test_json_serialisable(self):
+        result = run_scenario([], "D01")
+        json.dumps(result)  # must not raise
+
+    def test_returns_order_results(self):
+        result = run_scenario([], None)
+        self.assertIn("order_results", result)
+        self.assertEqual(len(result["order_results"]), 12)
+
+    def test_returns_end_inventory(self):
+        result = run_scenario([], None)
+        self.assertIn("end_inventory", result)
+        self.assertIn("WH01", result["end_inventory"])
+
+
+class TestCompareScenarios(unittest.TestCase):
+
+    def test_budget_500_best_is_transfer(self):
+        """best must be scenario_id TRANSFER, not a display label."""
+        result = compare_scenarios(budget=500, objective="on_time_orders")
+        self.assertEqual(result["best"], "TRANSFER")
+
+    def test_no_budget_best_is_hybrid(self):
+        """best must be scenario_id HYBRID, not a display label."""
+        result = compare_scenarios(objective="on_time_orders")
+        self.assertEqual(result["best"], "HYBRID")
+
+    def test_json_serialisable(self):
+        result = compare_scenarios()
+        json.dumps(result)
+
+    def test_budget_500_has_two_options(self):
+        # Only WAIT ($0) and TRANSFER ($416) are within budget=500
+        result = compare_scenarios(budget=500)
+        self.assertEqual(len(result["ranked"]), 2)
+
+    def test_has_baseline_with_normal_metrics(self):
+        """compare_scenarios must include NORMAL as a separate baseline field."""
+        result = compare_scenarios()
+        self.assertIn("baseline", result)
+        self.assertEqual(result["baseline"]["on_time_orders"], 12)
+        self.assertEqual(result["baseline"]["scenario_id"], "NORMAL")
+        self.assertEqual(result["baseline"]["total_extra_cost"], 0)
+
+    def test_ranked_have_scenario_id(self):
+        """Each ranked entry must have a scenario_id field."""
+        result = compare_scenarios()
+        for entry in result["ranked"]:
+            self.assertIn("scenario_id", entry)
+            self.assertIn("label", entry)
+
+
+class TestGetImpact(unittest.TestCase):
+
+    def test_first_late_order(self):
+        result = get_impact("D01")
+        self.assertEqual(result["first_late_order_id"], "SO02")
+
+    def test_json_serialisable(self):
+        result = get_impact("D01")
+        json.dumps(result)
+
+
+class TestGetPriorityView(unittest.TestCase):
+
+    def test_wait_on_time_count(self):
+        result = get_priority_view([], "D01")
+        self.assertEqual(result["on_time_count"], 2)
+
+    def test_json_serialisable(self):
+        result = get_priority_view([], "D01")
+        json.dumps(result)
+
+
+class TestExplorePurchaseQty(unittest.TestCase):
+
+    def test_qty_65_reproduces_alt_buy(self):
+        """buy_65 with disruption should reproduce ALT_BUY: 9 on-time, $1250."""
+        result = explore_purchase_qty("OF02")
+        options = {r["label"]: r for r in result["ranked"]}
+        self.assertEqual(options["buy_65"]["on_time_orders"], 9)
+        self.assertEqual(options["buy_65"]["total_extra_cost"], 1250)
+
+    def test_qty_45_with_transfers_reproduces_hybrid(self):
+        """buy_45 + all transfers should reproduce HYBRID: 11 on-time, $1306."""
+        result = explore_purchase_qty("OF02", include_transfers=True)
+        options = {r["label"]: r for r in result["ranked"]}
+        self.assertEqual(options["buy_45"]["on_time_orders"], 11)
+        self.assertEqual(options["buy_45"]["total_extra_cost"], 1306)
+
+    def test_all_valid_quantities_present(self):
+        result = explore_purchase_qty("OF02")
+        labels = {r["label"] for r in result["ranked"]}
+        for qty in range(20, 66, 5):
+            self.assertIn(f"buy_{qty}", labels)
+
+    def test_json_serialisable(self):
+        result = explore_purchase_qty("OF02")
+        json.dumps(result)
+
+    def test_budget_filters_options(self):
+        result = explore_purchase_qty("OF02", budget=500)
+        for r in result["ranked"]:
+            self.assertLessEqual(r["total_extra_cost"], 500)
+
+
+class TestProposeAction(unittest.TestCase):
+
+    def test_status_pending_approval(self):
+        p = propose_action("HYBRID", "Best trade-off")
+        self.assertEqual(p["status"], "pending_approval")
+
+    def test_has_proposal_id(self):
+        p = propose_action("HYBRID", "Best trade-off")
+        self.assertIn("proposal_id", p)
+        self.assertIsInstance(p["proposal_id"], str)
+        self.assertTrue(len(p["proposal_id"]) > 0)
+
+    def test_proposal_ids_are_unique(self):
+        p1 = propose_action("HYBRID", "reason")
+        p2 = propose_action("HYBRID", "reason")
+        self.assertNotEqual(p1["proposal_id"], p2["proposal_id"])
+
+    def test_has_metrics(self):
+        p = propose_action("HYBRID", "reason")
+        self.assertIn("metrics", p)
+        self.assertIn("on_time_orders", p["metrics"])
+
+    def test_hybrid_metrics_match(self):
+        p = propose_action("HYBRID", "reason")
+        self.assertEqual(p["metrics"]["on_time_orders"], 11)
+        self.assertEqual(p["metrics"]["total_extra_cost"], 1306)
+
+    def test_accepts_explicit_actions(self):
+        """propose_action accepts a raw action list, not just a scenario_id."""
+        actions, disruption_id = build_scenario_actions("TRANSFER", _DB)
+        p = propose_action(actions, "manual transfer actions")
+        self.assertEqual(p["status"], "pending_approval")
+        self.assertIn("metrics", p)
+
+    def test_json_serialisable(self):
+        p = propose_action("HYBRID", "reason")
+        json.dumps(p)
+
+    def test_does_not_modify_db(self):
+        """Calling propose_action must not change the inventory state."""
+        import copy
+        opening_before = copy.deepcopy(_DB["opening"])
+        propose_action("HYBRID", "reason")
+        self.assertEqual(_DB["opening"], opening_before)
+
+
+if __name__ == "__main__":
+    unittest.main()

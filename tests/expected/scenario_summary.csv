@@ -1,0 +1,6 @@
+scenario_id,on_time_orders,on_time_units,orders_completed_by_horizon,total_order_days_late,max_order_days_late,extra_purchase_usd,transfer_usd,total_extra_usd,wh01_c01_end_qty,wh02_c01_end_qty,wh03_c01_end_qty
+NORMAL,12,125,12,0,0,0,0,0,6,25,22
+WAIT,5,49,12,27,6,0,0,0,6,25,22
+TRANSFER,8,82,12,12,5,0,416,416,38,7,8
+ALT_BUY,9,95,12,5,2,1250,0,1250,71,25,22
+HYBRID,11,113,12,2,2,890,416,1306,83,7,8

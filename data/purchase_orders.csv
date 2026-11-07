@@ -1,0 +1,2 @@
+po_id,offer_id,warehouse_id,order_date,qty,planned_receipt_date
+PO01,OF01,WH01,2026-11-04,145,2026-11-11
