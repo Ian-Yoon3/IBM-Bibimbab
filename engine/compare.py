@@ -95,9 +95,34 @@ def rank_options(
                 entry[extra_key] = opt[extra_key]
         ranked.append(entry)
 
+    best_opt = ranked[0]
+    # For explored options (scenario_id is None), return a usable identifier dict
+    # so the LLM can construct a propose_action call without guessing.
+    if best_opt.get("scenario_id") is None:
+        best_val = {
+            "label": best_opt["label"],
+            "offer_id": _offer_id_from_label(best_opt["label"]),
+            "qty": best_opt.get("purchase_qty"),
+            "include_transfers": _has_transfers(best_opt["label"]),
+        }
+    else:
+        best_val = best_opt["scenario_id"]
+
     return {
         "objective": objective,
         "budget": budget,
         "ranked": ranked,
-        "best": ranked[0]["scenario_id"],
+        "best": best_val,
     }
+
+
+def _offer_id_from_label(label: str) -> str | None:
+    """Extract the offer ID from an explore label like 'Buy 40 x OF02'."""
+    import re
+    m = re.search(r"\b(OF\d+)\b", label, re.IGNORECASE)
+    return m.group(1) if m else None
+
+
+def _has_transfers(label: str) -> bool:
+    """Return True if the label indicates transfers are included."""
+    return "transfers" in label.lower()

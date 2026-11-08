@@ -128,6 +128,12 @@ _UNICODE_DASHES = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 _THIN_SPACES = "\u2009\u202f\u00a0"
 
 
+# Known ID prefixes (case-insensitive; lowercased after normalise lowercases).
+# Only use prefixes that are NEVER standalone English words (so, cu, wh, ln, po).
+# Exclude: of ("of 12" is a valid phrase), d, c, s (single letters, too ambiguous).
+# Require 2+ digits so "so 1" doesn't match, only "so 01", "so 02", etc.
+_ID_PREFIXES = r"(?:so|cu|wh|ln|po)"
+
 def normalise(text: str) -> str:
     """Normalise answer text for comparison.
 
@@ -139,8 +145,9 @@ def normalise(text: str) -> str:
     - Replace U+00A0 non-breaking space with regular space
     - Strip "$" signs
     - Strip commas between digits (e.g. "1,216" -> "1216")
-    - Rejoin split IDs like "so 02" -> "so02" (letters directly followed by
-      a space then digits, e.g. from "SO 02")
+    - Rejoin split IDs ONLY for known prefixes: "SO 02" -> "so02",
+      "PO 01" -> "po01".  Ordinary words like "of", "the", "is" are
+      never joined to a following number.
     """
     text = text.lower()
     for ch in _UNICODE_DASHES:
@@ -152,10 +159,10 @@ def normalise(text: str) -> str:
         text = text.replace(ch, " ")
     text = re.sub(r"\$", "", text)
     text = re.sub(r"(?<=\d),(?=\d)", "", text)
-    # Rejoin split IDs: 2–4 letters at a word boundary + space + exactly 2–3
-    # digits ("so 02"->"so02", "po 01"->"po01", "wh 01"->"wh01").
-    # Restricting to 2–3 digits prevents "is 9999" from matching.
-    text = re.sub(r"(?<!\w)([a-z]{2,4}) (?=\d{2,3}(?!\w))", r"\1", text)
+    # Rejoin split IDs ONLY for known prefixes, and only when followed by 2+
+    # digits (IDs like so02, po01, of02 always have 2+ digits; single digits
+    # like "of 6" or "s 1" are regular words and must not be joined).
+    text = re.sub(r"(?<!\w)(" + _ID_PREFIXES + r") (?=\d{2,}(?!\w))", r"\1", text)
     return text
 
 
@@ -173,8 +180,21 @@ _TOKEN_RE = re.compile(
 )
 
 
+# UUID pattern — remove before tokenising so UUID fragments aren't flagged
+_UUID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
+
+
+def _strip_uuids(text: str) -> str:
+    """Remove UUID strings from text before token extraction."""
+    return _UUID_RE.sub("", text)
+
+
 def _extract_tokens(text: str) -> set[str]:
-    """Extract candidate fact tokens from a (normalised) text string."""
+    """Extract candidate fact tokens from a (normalised, UUID-free) text string."""
+    text = _strip_uuids(text)
     tokens = set()
     for m in _TOKEN_RE.finditer(text.lower()):
         tok = m.group(0)

@@ -598,6 +598,34 @@ class TestNormalise(unittest.TestCase):
         answer = "## Trade\u2013offs and Risks"
         self.assertIn("trade-offs and risks", self.normalise(answer))
 
+    def test_of_12_stays_separate(self):
+        """'of 12' must NOT be joined — 'of' before single digit stays a word."""
+        result = self.normalise("11 of 12 orders are on time.")
+        self.assertIn("of 12", result)
+        self.assertNotIn("of12", result)
+
+    def test_the_11_stays_separate(self):
+        """'the 11' must NOT be joined."""
+        result = self.normalise("the 11 orders delivered on time.")
+        self.assertIn("the 11", result)
+        self.assertNotIn("the11", result)
+
+    def test_so_02_joined(self):
+        """'SO 02' IS a known ID prefix+2 digits and must be joined to 'so02'."""
+        result = self.normalise("Order SO 02 is late.")
+        self.assertIn("so02", result)
+        self.assertNotIn("so 02", result)
+
+    def test_po_01_joined(self):
+        """'PO 01' → 'po01'."""
+        result = self.normalise("PO 01 delayed.")
+        self.assertIn("po01", result)
+
+    def test_wh_01_joined(self):
+        """'WH 01' → 'wh01' (unambiguous prefix)."""
+        result = self.normalise("Warehouse WH 01 holds stock.")
+        self.assertIn("wh01", result)
+
 
 # ── coercion ─────────────────────────────────────────────────────────────────
 
@@ -935,6 +963,127 @@ class TestGroundingCheck(unittest.TestCase):
         """U+202F narrow no-break space between digits collapses to nothing."""
         result = self.normalise("1\u202f216")
         self.assertIn("1216", result)
+
+    def test_uuid_not_flagged(self):
+        """UUID in answer is not flagged as ungrounded."""
+        uuid = "a3b4c5d6-1234-5678-abcd-ef0123456789"
+        result = self._make_result(
+            answer=f"Proposal {uuid} created.",
+            tool_results=[{"proposal_id": uuid, "status": "pending_approval"}],
+        )
+        ungrounded = self.check_grounding(result)
+        # No UUID fragment (1234, 5678, etc.) should appear
+        self.assertNotIn("1234", ungrounded)
+        self.assertNotIn("5678", ungrounded)
+
+    def test_uuid_not_in_answer_not_flagged(self):
+        """UUID that appears only in the answer is also stripped and not flagged."""
+        uuid = "ffffffff-0000-1111-2222-333333333333"
+        result = self._make_result(
+            answer=f"Proposal ID: {uuid}.",
+            tool_results=[{"delay_days": 6}],
+        )
+        ungrounded = self.check_grounding(result)
+        self.assertEqual(ungrounded, [])
+
+    def test_invented_2000_flagged(self):
+        """An invented number like 2000 not in any tool result is flagged."""
+        result = self._make_result(
+            answer="The cost is 2000 USD.",
+            tool_results=[{"total_extra_cost": 1216}],
+        )
+        ungrounded = self.check_grounding(result)
+        self.assertIn("2000", ungrounded)
+        self.assertNotIn("1216", ungrounded)
+
+
+# ── explore best not null ─────────────────────────────────────────────────────
+
+class TestExploreBestField(unittest.TestCase):
+    """Tests for the 'best' field in explore_purchase_qty results."""
+
+    def test_explore_best_is_not_null_with_min_on_time(self):
+        """explore_purchase_qty with min_on_time_orders -> best is a dict, not None."""
+        from engine.tools import explore_purchase_qty
+        result = explore_purchase_qty(
+            "OF02",
+            include_transfers=True,
+            min_on_time_orders=11,
+            objective="cost",
+        )
+        self.assertIsNotNone(result["best"])
+        self.assertIsInstance(result["best"], dict)
+        self.assertEqual(result["best"]["qty"], 40)
+
+    def test_explore_best_dict_has_required_keys(self):
+        """best dict must have label, offer_id, qty, include_transfers."""
+        from engine.tools import explore_purchase_qty
+        result = explore_purchase_qty("OF02", include_transfers=True)
+        best = result["best"]
+        self.assertIsInstance(best, dict)
+        self.assertIn("label", best)
+        self.assertIn("offer_id", best)
+        self.assertIn("qty", best)
+        self.assertIn("include_transfers", best)
+
+    def test_explore_best_offer_id_is_of02(self):
+        """offer_id extracted from label must be 'OF02'."""
+        from engine.tools import explore_purchase_qty
+        result = explore_purchase_qty("OF02")
+        self.assertEqual(result["best"]["offer_id"], "OF02")
+
+    def test_explore_best_include_transfers_true_when_transfers(self):
+        """best with transfers has include_transfers=True."""
+        from engine.tools import explore_purchase_qty
+        result = explore_purchase_qty("OF02", include_transfers=True)
+        self.assertTrue(result["best"]["include_transfers"])
+
+    def test_explore_best_include_transfers_false_without_transfers(self):
+        """best without transfers has include_transfers=False."""
+        from engine.tools import explore_purchase_qty
+        result = explore_purchase_qty("OF02", include_transfers=False)
+        self.assertFalse(result["best"]["include_transfers"])
+
+
+# ── late_order_count and late_count ──────────────────────────────────────────
+
+class TestCountFields(unittest.TestCase):
+    """Tests for additive count fields on get_impact and get_priority_view."""
+
+    def test_get_impact_has_late_order_count(self):
+        """get_impact must return late_order_count."""
+        from engine.tools import get_impact
+        result = get_impact("D01")
+        self.assertIn("late_order_count", result)
+        self.assertIsInstance(result["late_order_count"], int)
+
+    def test_get_impact_late_order_count_matches_list(self):
+        """late_order_count must equal len(late_orders)."""
+        from engine.tools import get_impact
+        result = get_impact("D01")
+        self.assertEqual(result["late_order_count"], len(result["late_orders"]))
+
+    def test_get_priority_view_has_late_count(self):
+        """get_priority_view must return late_count."""
+        from engine.tools import get_priority_view
+        result = get_priority_view(scenario_id="HYBRID")
+        self.assertIn("late_count", result)
+        self.assertIsInstance(result["late_count"], int)
+
+    def test_get_priority_view_late_count_plus_on_time_equals_total(self):
+        """late_count + on_time_count must equal total_count."""
+        from engine.tools import get_priority_view
+        result = get_priority_view(scenario_id="HYBRID")
+        self.assertEqual(
+            result["late_count"] + result["on_time_count"],
+            result["total_count"],
+        )
+
+    def test_get_priority_view_late_count_wait(self):
+        """WAIT scenario: 4 of 6 priority-1 orders are late."""
+        from engine.tools import get_priority_view
+        result = get_priority_view(scenario_id="WAIT")
+        self.assertEqual(result["late_count"], result["total_count"] - result["on_time_count"])
 
 
 if __name__ == "__main__":

@@ -105,6 +105,7 @@ def disruption_impact(disruption_id: str, db: dict) -> dict:
         "disruption_id": disruption_id,
         "first_late_order_id": first_late_order_id,
         "first_late_days": first_late_days,
+        "late_order_count": len(late_orders),
         "late_orders": late_orders,
         "c01_shortage_by_day": c01_shortage_by_day,
     }
@@ -162,6 +163,7 @@ def priority_view(sim_result: dict, db: dict) -> dict:
     return {
         "priority_1_orders": priority_1_orders,
         "on_time_count": on_time_count,
+        "late_count": len(priority_1_orders) - on_time_count,
         "total_count": len(priority_1_orders),
         "customer_impact": customer_impact,
     }
