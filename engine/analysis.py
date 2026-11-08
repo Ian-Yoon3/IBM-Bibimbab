@@ -103,6 +103,7 @@ def disruption_impact(disruption_id: str, db: dict) -> dict:
 
     return {
         "disruption_id": disruption_id,
+        "component_id": "C01",
         "first_late_order_id": first_late_order_id,
         "first_late_days": first_late_days,
         "late_order_count": len(late_orders),
