@@ -68,6 +68,8 @@ def main() -> None:
                 _print_tool_call(entry)
 
         print(f"\nAgent: {result['answer']}\n")
+        if result.get("error"):
+            print(f"  (technical detail: {result['error']})\n")
 
         if result["proposal"]:
             p = result["proposal"]

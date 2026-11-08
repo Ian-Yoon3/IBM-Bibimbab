@@ -1,6 +1,6 @@
 """Tool specs, dispatch table, and call_tool for the NovaTech agent.
 
-TOOL_SPECS   – list of JSON-schema dicts for the 7 LLM-facing tools
+TOOL_SPECS   – list of JSON-schema dicts for the 8 LLM-facing tools
 DISPATCH     – maps tool name -> engine function
 call_tool    – validates args, dispatches, returns result or {"error": ...}
 
@@ -219,8 +219,11 @@ TOOL_SPECS: list[dict] = [
             "name": "get_priority_view",
             "description": (
                 "Show which priority-1 orders are on time and which are late under "
-                "a named scenario.  Use when the user asks about high-priority "
-                "customers or top-priority orders for a specific scenario."
+                "one option.  The option is EITHER a named scenario (scenario_id) "
+                "OR an explored option from explore_purchase_qty (offer_id + qty + "
+                "include_transfers, copied from that result's best or ranked entry).  "
+                "Use when the user asks about high-priority customers, and to fill "
+                "the priority-1 column for the options you compare."
             ),
             "parameters": {
                 "type": "object",
@@ -228,10 +231,55 @@ TOOL_SPECS: list[dict] = [
                     "scenario_id": {
                         "type": "string",
                         "enum": ["WAIT", "TRANSFER", "ALT_BUY", "HYBRID"],
-                        "description": "The scenario to evaluate.",
+                        "description": "Named scenario.  Omit when giving offer_id + qty.",
+                    },
+                    "offer_id": {
+                        "type": "string",
+                        "description": "Offer of an explored option, e.g. from explore_purchase_qty best.",
+                    },
+                    "qty": {
+                        "type": "integer",
+                        "description": "Purchase quantity of the explored option.",
+                    },
+                    "include_transfers": {
+                        "type": "boolean",
+                        "description": "Whether the explored option includes transfers.",
                     },
                 },
-                "required": ["scenario_id"],
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_order_detail",
+            "description": (
+                "Explain why one customer order is late (or confirm it is on time) "
+                "under one option: its latest on-time start date, actual start, "
+                "delivery, days late, and the cause (blocked behind an earlier "
+                "order in the production queue, or short of a component, with the "
+                "missing quantity).  Use when the user asks why an order is late "
+                "or what happens to a specific order.  The option is a scenario_id, "
+                "or offer_id + qty + include_transfers; omit both for WAIT (no action)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "Customer order ID, e.g. 'SO08'.",
+                    },
+                    "scenario_id": {
+                        "type": "string",
+                        "enum": ["WAIT", "TRANSFER", "ALT_BUY", "HYBRID"],
+                        "description": "Named scenario.",
+                    },
+                    "offer_id": {"type": "string", "description": "Offer of an explored option."},
+                    "qty": {"type": "integer", "description": "Purchase quantity of the explored option."},
+                    "include_transfers": {"type": "boolean", "description": "Whether the explored option includes transfers."},
+                },
+                "required": ["order_id"],
             },
         },
     },
@@ -355,6 +403,7 @@ DISPATCH: dict = {
     "get_impact":           _tools.get_impact,
     "compare_scenarios":    _tools.compare_scenarios,
     "get_priority_view":    _tools.get_priority_view,
+    "get_order_detail":     _tools.get_order_detail,
     "explore_purchase_qty": _tools.explore_purchase_qty,
     "propose_action":       None,  # handled specially in call_tool
 }
@@ -456,7 +505,7 @@ def call_tool(name: str, args, offered_names: set[str] | None = None) -> dict:
         if err:
             return {"error": err}
 
-    if name == "propose_action":
+    if name in ("propose_action", "get_priority_view", "get_order_detail"):
         err = _coerce_fields(
             args,
             int_fields=["qty"],
@@ -488,12 +537,26 @@ def call_tool(name: str, args, offered_names: set[str] | None = None) -> dict:
         if budget is not None and budget < 0:
             return {"error": "budget must be a non-negative integer"}
 
-    if name == "get_priority_view":
+    if name == "get_order_detail" and not args.get("order_id"):
+        return {"error": "order_id is required"}
+
+    if name in ("get_priority_view", "get_order_detail"):
         sid = args.get("scenario_id")
-        if not sid:
-            return {"error": "scenario_id is required"}
-        if sid not in _VALID_SCENARIOS:
+        oid = args.get("offer_id")
+        if sid and oid:
+            return {"error": "give either scenario_id or offer_id + qty, not both"}
+        if sid and sid not in _VALID_SCENARIOS:
             return {"error": f"Unknown scenario_id {sid!r}. Choose from: {sorted(_VALID_SCENARIOS)}"}
+        if oid:
+            if args.get("qty") is None:
+                return {"error": "qty is required with offer_id"}
+            if _disrupted_offer_id(oid):
+                return {"error": (
+                    f"{oid!r} is the disrupted supplier's offer; "
+                    "choose an alternative from get_offers"
+                )}
+        if name == "get_priority_view" and not sid and not oid:
+            return {"error": "give scenario_id, or offer_id + qty (+ include_transfers)"}
 
     if name == "explore_purchase_qty":
         offer_id = args.get("offer_id")

@@ -196,8 +196,10 @@ class TestToolSpecs(unittest.TestCase):
     def test_run_scenario_not_exposed(self):
         self.assertNotIn("run_scenario", self._tool_names())
 
-    def test_seven_tools_exposed(self):
-        self.assertEqual(len(TOOL_SPECS), 7)
+    def test_eight_tools_exposed(self):
+        # get_order_detail was added after eval run 5
+        self.assertEqual(len(TOOL_SPECS), 8)
+        self.assertIn("get_order_detail", self._tool_names())
 
     def test_all_tools_have_required_fields(self):
         for spec in TOOL_SPECS:
@@ -1196,6 +1198,245 @@ class TestCheckTable(unittest.TestCase):
     def test_no_table_returns_empty(self):
         from scripts.eval_agent import check_table
         self.assertEqual(check_table("## Answer\nNo table here."), [])
+
+
+
+class TestOrderDetail(unittest.TestCase):
+    """get_order_detail explains lateness (added after eval run 5)."""
+
+    def test_hybrid_so08_component_shortage(self):
+        import engine.tools as t
+        d = t.get_order_detail("SO08", scenario_id="HYBRID")
+        self.assertEqual(d["days_late"], 2)
+        self.assertEqual(d["latest_start_date"], "2026-11-15")
+        self.assertEqual(d["cause"]["type"], "component_shortage")
+        self.assertEqual(d["cause"]["shortfall"], {"C01": 18})
+
+    def test_wait_so03_blocked_behind_so02(self):
+        import engine.tools as t
+        d = t.get_order_detail("SO03")  # no option -> WAIT
+        self.assertEqual(d["option"], "WAIT")
+        self.assertEqual(d["cause"]["type"], "queue_blocked")
+        self.assertEqual(d["cause"]["waiting_order_id"], "SO02")
+        self.assertEqual(d["cause"]["shortfall"], {"C01": 8})
+
+    def test_wait_so02_shortfall_matches_impact_table(self):
+        import engine.tools as t
+        d = t.get_order_detail("SO02", scenario_id="WAIT")
+        day = d["cause"]["check_date"]
+        table = {r["date"]: r for r in t.get_impact("D01")["c01_shortage_by_day"]}
+        self.assertEqual(d["cause"]["shortfall"]["C01"], table[day]["shortage"])
+
+    def test_explored_option(self):
+        import engine.tools as t
+        d40 = t.get_order_detail("SO08", offer_id="OF02", qty=40, include_transfers=True)
+        d65 = t.get_order_detail("SO08", offer_id="OF02", qty=65, include_transfers=True)
+        self.assertEqual(d40["option"], "Transfers + buy 40 x OF02")
+        self.assertEqual(d40["cause"]["shortfall"], {"C01": 23})
+        self.assertEqual(d65["cause"], {"type": "on_time"})
+
+    def test_on_time_order(self):
+        import engine.tools as t
+        self.assertEqual(t.get_order_detail("SO01", scenario_id="HYBRID")["cause"],
+                         {"type": "on_time"})
+
+    def test_call_tool_validation(self):
+        self.assertIn("error", call_tool("get_order_detail", {}))
+        self.assertIn("error", call_tool("get_order_detail", {"order_id": "SO99"}))
+        self.assertIn("error", call_tool("get_order_detail",
+                                         {"order_id": "SO08", "offer_id": "OF02", "qty": 41}))
+        self.assertIn("error", call_tool("get_order_detail",
+                                         {"order_id": "SO08", "offer_id": "OF01", "qty": 40}))
+        r = call_tool("get_order_detail", {"order_id": "SO08", "scenario_id": "HYBRID"})
+        self.assertEqual(r["days_late"], 2)
+
+
+class TestPriorityViewExplored(unittest.TestCase):
+    """Priority-1 view for explored options (added after eval run 5)."""
+
+    def test_explored_40_and_65(self):
+        r40 = call_tool("get_priority_view",
+                        {"offer_id": "OF02", "qty": "40", "include_transfers": "true"})
+        r65 = call_tool("get_priority_view",
+                        {"offer_id": "OF02", "qty": 65, "include_transfers": True})
+        self.assertEqual(r40["on_time_count"], 5)
+        self.assertEqual(r65["on_time_count"], 6)
+
+    def test_named_scenario_unchanged(self):
+        self.assertEqual(call_tool("get_priority_view", {"scenario_id": "HYBRID"})["on_time_count"], 5)
+
+    def test_needs_an_option(self):
+        self.assertIn("error", call_tool("get_priority_view", {}))
+        self.assertIn("error", call_tool("get_priority_view", {"offer_id": "OF02"}))
+        self.assertIn("error", call_tool("get_priority_view",
+                                         {"scenario_id": "HYBRID", "offer_id": "OF02", "qty": 40}))
+
+
+class _FailingLLM:
+    """Fake LLM that raises on a chosen call number."""
+
+    def __init__(self, script, fail_on):
+        self._inner = ScriptedLLM(script)
+        self._n = 0
+        self._fail_on = fail_on
+
+    def chat(self, messages, tools):
+        self._n += 1
+        if self._n == self._fail_on:
+            raise ConnectionError("simulated network failure")
+        return self._inner.chat(messages, tools)
+
+
+class TestLLMUnavailable(unittest.TestCase):
+    """API failures must not crash run_agent (added after eval run 5)."""
+
+    def test_failure_in_gather_returns_safe_answer(self):
+        r = run_agent("How bad is this disruption?", llm=_FailingLLM([], fail_on=1))
+        self.assertIn("could not be reached", r["answer"])
+        self.assertIn("ConnectionError", r["error"])
+        self.assertIsNone(r["proposal"])
+
+    def test_failure_in_compose_keeps_trace(self):
+        script = [
+            {"tool_calls": [{"id": "1", "name": "get_impact", "args": {"disruption_id": "D01"}}]},
+            {"content": "gathered"},
+        ]
+        r = run_agent("How bad is this disruption?", llm=_FailingLLM(script, fail_on=3))
+        self.assertIn("could not be reached", r["answer"])
+        self.assertEqual(r["tool_trace"][0]["name"], "get_impact")
+
+    def test_safe_answer_has_no_digits(self):
+        r = run_agent("x", llm=_FailingLLM([], fail_on=1))
+        self.assertFalse(any(ch.isdigit() for ch in r["answer"]))
+
+    def test_watsonx_wrapper_retries_then_raises(self):
+        from agent.llm import WatsonxLLM, LLMUnavailableError
+        w = WatsonxLLM.__new__(WatsonxLLM)   # skip __init__ (no credentials)
+        calls = {"n": 0}
+
+        class _Model:
+            def chat(self, **kw):
+                calls["n"] += 1
+                raise TimeoutError("slow")
+
+        w._model, w._chat_params, w._retries, w._backoff_s = _Model(), None, 2, 0
+        with self.assertRaises(LLMUnavailableError):
+            w.chat([{"role": "user", "content": "hi"}], [])
+        self.assertEqual(calls["n"], 3)
+
+    def test_watsonx_wrapper_recovers_after_one_failure(self):
+        from agent.llm import WatsonxLLM
+        w = WatsonxLLM.__new__(WatsonxLLM)
+        calls = {"n": 0}
+
+        class _Model:
+            def chat(self, **kw):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise TimeoutError("slow")
+                return {"choices": [{"message": {"content": "ok"}}]}
+
+        w._model, w._chat_params, w._retries, w._backoff_s = _Model(), None, 2, 0
+        self.assertEqual(w.chat([], [])["content"], "ok")
+
+
+class TestFollowUpProposal(unittest.TestCase):
+    """Multi-turn: 'propose that one' after an explore question."""
+
+    def test_follow_up_proposes_explored_option(self):
+        turn1 = ScriptedLLM([
+            {"tool_calls": [{"id": "a", "name": "explore_purchase_qty", "args": {
+                "offer_id": "OF02", "include_transfers": True,
+                "min_on_time_orders": 11, "objective": "cost"}}]},
+            {"content": "gathered"},
+            {"content": "Transfers + buy 40 x OF02 keeps 11 orders for 1216 USD."},
+        ])
+        r1 = run_agent("Is there a cheaper way than HYBRID to keep 11 orders on time?", llm=turn1)
+        self.assertIsNone(r1["proposal"])
+        turn2 = ScriptedLLM([
+            {"tool_calls": [{"id": "b", "name": "propose_action", "args": {
+                "offer_id": "OF02", "qty": 40, "include_transfers": True,
+                "reason": "cheapest option with 11 on time"}}]},
+            {"content": "done"},
+            {"content": "Proposal created, pending approval."},
+        ])
+        r2 = run_agent("Propose that option.", history=r1["history"], llm=turn2)
+        p = r2["proposal"]
+        self.assertEqual(p["status"], "pending_approval")
+        self.assertEqual(p["metrics"]["on_time_orders"], 11)
+        self.assertEqual(p["metrics"]["total_extra_cost"], 1216)
+
+
+
+class TestEvalHarnessExtensions(unittest.TestCase):
+    """Golden set Q7-Q13, multi-turn runner and --runs (added after eval run 5)."""
+
+    def _q(self, qid):
+        from scripts.eval_agent import GOLDEN_QUESTIONS
+        return next(q for q in GOLDEN_QUESTIONS if q["id"] == qid)
+
+    def _result(self, tools, answer, proposal=None):
+        trace = [{"name": n, "args": a, "result": call_tool(n, a)} for n, a in tools]
+        return {"question": "x", "answer": answer, "tool_trace": trace,
+                "proposal": proposal, "earlier_tools": []}
+
+    def test_golden_set_has_13_questions(self):
+        from scripts.eval_agent import GOLDEN_QUESTIONS
+        self.assertEqual([q["id"] for q in GOLDEN_QUESTIONS],
+                         [f"Q{i}" for i in range(1, 14)])
+
+    def test_parse_args(self):
+        from scripts.eval_agent import _parse_args, _MODELS
+        self.assertEqual(_parse_args(["--runs", "3"]), (list(_MODELS), 3, False))
+        self.assertEqual(_parse_args(["m1", "--runs=2", "--full"]), (["m1"], 2, True))
+
+    def test_wrong_recommendation_fails(self):
+        from scripts.eval_agent import _check_question
+        ans = ("## Situation\nBudget given.\n## Options compared\nSee tools.\n"
+               "## Recommendation\nChoose HYBRID.\n## Trade-offs and risks\nNone.\n"
+               "## Next step\nAsk me.")
+        ok, why = _check_question(self._q("Q7"), self._result(
+            [("compare_scenarios", {"budget": "1000"})], ans))
+        self.assertFalse(ok)
+        self.assertIn("TRANSFER", why)
+
+    def test_tool_args_mismatch_fails(self):
+        from scripts.eval_agent import _check_question
+        ans = "## Answer\nSO08 is 2 days late, short 18 C01 on 2026-11-15."
+        ok, why = _check_question(self._q("Q9"), self._result(
+            [("get_order_detail", {"order_id": "SO08", "scenario_id": "TRANSFER"})], ans))
+        self.assertFalse(ok)
+        self.assertIn("get_order_detail", why)
+
+    def test_explored_priority_in_table_is_checked(self):
+        from scripts.eval_agent import check_table
+        head = ("## Options compared\n| Option | On-time | Priority-1 | Cost |\n"
+                "|---|---|---|---|\n")
+        self.assertEqual(check_table(head + "| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |"), [])
+        self.assertTrue(check_table(head + "| Transfers + buy 40 x OF02 | 11 | 6 | 1216 |"))
+
+    def test_multi_turn_runner_and_q12_pass(self):
+        from scripts.eval_agent import _run_question, _check_question
+        llm = ScriptedLLM([
+            # turn 1: explore, then gather text, then compose
+            {"tool_calls": [{"id": "a", "name": "explore_purchase_qty", "args": {
+                "offer_id": "OF02", "include_transfers": True,
+                "min_on_time_orders": 11, "objective": "cost"}}]},
+            {"content": "gathered"},
+            {"content": "Transfers + buy 40 x OF02 keeps 11 orders on time for 1216 USD."},
+            # turn 2: propose, then gather text, then compose
+            {"tool_calls": [{"id": "b", "name": "propose_action", "args": {
+                "offer_id": "OF02", "qty": 40, "include_transfers": True,
+                "reason": "cheapest option with 11 on time"}}]},
+            {"content": "done"},
+            {"content": "A proposal for Transfers + buy 40 x OF02 is pending approval "
+                        "in the UI. Nothing has been executed."},
+        ])
+        q = self._q("Q12")
+        result = _run_question(q, llm)
+        self.assertEqual([t["name"] for t in result["earlier_tools"]], ["explore_purchase_qty"])
+        ok, why = _check_question(q, result)
+        self.assertTrue(ok, why)
 
 
 if __name__ == "__main__":

@@ -22,8 +22,13 @@ WatsonxLLM
 
 import json
 import os
+import time
 
 from dotenv import load_dotenv
+
+
+class LLMUnavailableError(RuntimeError):
+    """Raised when the model cannot be reached after all retries."""
 
 
 # ── argument normalisation (pure, testable without network) ──────────────────
@@ -108,7 +113,13 @@ class WatsonxLLM:
         Maximum tokens in the response.  Defaults to 2048.
     """
 
-    def __init__(self, model_id: str | None = None, max_tokens: int = 2048):
+    def __init__(
+        self,
+        model_id: str | None = None,
+        max_tokens: int = 2048,
+        retries: int = 2,
+        backoff_s: float = 2.0,
+    ):
         load_dotenv()
         api_key    = os.environ.get("WX_API_KEY", "")
         project_id = os.environ.get("WX_PROJECT_ID", "")
@@ -142,6 +153,8 @@ class WatsonxLLM:
             api_client=client,
         )
         self.model_id = resolved_model
+        self._retries = retries
+        self._backoff_s = backoff_s
 
     def chat(self, messages: list[dict], tools: list[dict]) -> dict:
         """Call the model and return a normalised message dict.
@@ -166,6 +179,17 @@ class WatsonxLLM:
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice_option"] = "auto"
-        response = self._model.chat(**kwargs)
-        raw_message = response["choices"][0]["message"]
-        return normalize_tool_calls(raw_message)
+        last_exc = None
+        for attempt in range(self._retries + 1):
+            try:
+                response = self._model.chat(**kwargs)
+                raw_message = response["choices"][0]["message"]
+                return normalize_tool_calls(raw_message)
+            except Exception as exc:  # network, timeout, rate limit, 5xx
+                last_exc = exc
+                if attempt < self._retries:
+                    time.sleep(self._backoff_s * (attempt + 1))
+        raise LLMUnavailableError(
+            f"watsonx.ai call failed after {self._retries + 1} attempts: "
+            f"{type(last_exc).__name__}: {str(last_exc)[:200]}"
+        ) from last_exc

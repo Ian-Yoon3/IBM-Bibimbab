@@ -9,5 +9,5 @@
 - Costs are computed **per scenario independently** — PO01's 1,450 USD sunk cost is excluded from all extra-cost tallies by design
 - The five scenarios form a **Pareto frontier** (cost vs. on-time orders); architectural changes that alter the `expected_starts` or `expected_costs` constants require updating both the data and the hardcoded expectations in `verify.py`
 - **Agent layer is read-only to the engine:** the agent calls `engine/tools.py` functions but never mutates `data/*.csv` or any engine state — approval of actions is out of scope
-- **Tool surface for the LLM:** `get_disruption`, `get_impact`, `compare_scenarios`, `get_priority_view`, `explore_purchase_qty`, `propose_action` — `run_scenario` is not exposed to the LLM yet
+- **Tool surface for the LLM:** `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`, `get_priority_view`, `get_order_detail`, `explore_purchase_qty`, `propose_action` — `run_scenario` is not exposed to the LLM yet
 - **D01 boundary:** only disruption D01 is modelled; the agent must not fabricate outcomes for hypothetical disruptions or delay dates not present in the data

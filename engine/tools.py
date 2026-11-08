@@ -162,6 +162,9 @@ def get_priority_view(
     disruption_id: str | None = None,
     scenario_id: str | None = None,
     data_dir=None,
+    offer_id: str | None = None,
+    qty: int | None = None,
+    include_transfers: bool = False,
 ) -> dict:
     """Run a simulation and return the priority-1 order view.
 
@@ -178,20 +181,181 @@ def get_priority_view(
         explicit parameters are ignored.
     data_dir:
         Optional path override for the data directory.
+    offer_id, qty, include_transfers:
+        An explored option, as returned by ``explore_purchase_qty``.  Used
+        when ``scenario_id`` is not given and ``offer_id`` and ``qty`` are.
 
     Returns
     -------
     ``priority_view()`` result dict.
     """
     db = _get_db(data_dir)
-    if scenario_id is not None:
-        if scenario_id not in db["scenarios"]:
-            raise ValueError(f"Unknown scenario_id: {scenario_id!r}")
-        actions, disruption_id = build_scenario_actions(scenario_id, db)
+    if scenario_id is not None or offer_id is not None:
+        actions, disruption_id, _ = _resolve_option(
+            db, scenario_id, offer_id, qty, include_transfers
+        )
     elif actions is None:
         actions = []
     sim = simulate(actions, disruption_id, db)
     return priority_view(sim, db)
+
+
+def _disruption_for_offer(db: dict, offer_id: str):
+    """Return the disruption that affects the offer's component (or the first one)."""
+    component = db["offers"][offer_id]["component_id"]
+    for did, dis in db["disruptions"].items():
+        po = db["purchase_orders"][dis["po_id"]]
+        if db["offers"][po["offer_id"]]["component_id"] == component:
+            return did
+    return next(iter(db["disruptions"]), None)
+
+
+def _explored_actions(db: dict, offer_id: str, qty: int, include_transfers: bool) -> list:
+    """Build the action list for one explored option.
+
+    Mirrors ``explore_purchase_qty``: a purchase on DAY0 into WH01 and, when
+    requested, every transferable quantity for the offer's component.
+    """
+    if offer_id not in db["offers"]:
+        raise ValueError(f"Unknown offer_id: {offer_id!r}")
+    valid = purchase_qty_options(offer_id, db)["valid_quantities"]
+    if qty not in valid:
+        raise ValueError(
+            f"qty {qty!r} is not a valid quantity for {offer_id}; valid: {valid}"
+        )
+    day0 = db["DAY0"].isoformat()
+    component = db["offers"][offer_id]["component_id"]
+    actions = [{
+        "type": "purchase",
+        "offer_id": offer_id,
+        "warehouse_id": "WH01",
+        "action_date": day0,
+        "qty": qty,
+    }]
+    if include_transfers:
+        for lane in transferable_qty(component, db):
+            if lane["transferable_qty"] > 0:
+                actions.append({
+                    "type": "transfer",
+                    "lane_id": lane["lane_id"],
+                    "component_id": component,
+                    "action_date": day0,
+                    "qty": lane["transferable_qty"],
+                })
+    return actions
+
+
+def _resolve_option(db, scenario_id=None, offer_id=None, qty=None, include_transfers=False):
+    """Return (actions, disruption_id, option_label) for a named or explored option.
+
+    With neither ``scenario_id`` nor ``offer_id`` the option is WAIT.
+    """
+    if scenario_id is None and offer_id is None:
+        scenario_id = "WAIT"
+    if scenario_id is not None:
+        if scenario_id not in db["scenarios"]:
+            raise ValueError(f"Unknown scenario_id: {scenario_id!r}")
+        actions, disruption_id = build_scenario_actions(scenario_id, db)
+        return actions, disruption_id, scenario_id
+    if qty is None:
+        raise ValueError("qty is required with offer_id")
+    actions = _explored_actions(db, offer_id, qty, include_transfers)
+    label = f"{'Transfers + buy' if include_transfers else 'Buy'} {qty} x {offer_id}"
+    return actions, _disruption_for_offer(db, offer_id), label
+
+
+def get_order_detail(
+    order_id: str,
+    scenario_id: str | None = None,
+    offer_id: str | None = None,
+    qty: int | None = None,
+    include_transfers: bool = False,
+    data_dir=None,
+) -> dict:
+    """Explain when an order starts and, if it is late, why.
+
+    The option is a named scenario, an explored option (offer_id + qty +
+    include_transfers), or WAIT when neither is given.
+
+    Production is queue-ordered and all-or-nothing: on each day orders start
+    in queue order until one lacks a component, and every later order waits.
+    So a late order is either blocked by an earlier order in the queue, or
+    is itself short of a component on its latest on-time start date.
+
+    Returns
+    -------
+    dict with keys:
+        option, order_id, customer_id, product_id, qty, priority_rank,
+        due_date, latest_start_date, start_date, delivery_date, days_late,
+        components_needed, cause
+    ``cause`` is ``{"type": "on_time"}``, or for late orders
+    ``{"type": "queue_blocked" | "component_shortage", "check_date",
+    "waiting_order_id", "shortfall": {component_id: missing_qty}}`` where
+    ``waiting_order_id`` is the order at the head of the queue on
+    ``check_date`` and ``shortfall`` is what that order lacked that day.
+    """
+    from datetime import date, timedelta
+
+    db = _get_db(data_dir)
+    if order_id not in db["orders"]:
+        raise ValueError(f"Unknown order_id: {order_id!r}")
+    actions, disruption_id, label = _resolve_option(
+        db, scenario_id, offer_id, qty, include_transfers
+    )
+    sim = simulate(actions, disruption_id, db)
+
+    order = db["orders"][order_id]
+    result = next(r for r in sim["order_results"] if r["order_id"] == order_id)
+    prod_days = db["products"][order["product_id"]]["production_days"]
+    latest_start = max(db["DAY0"], order["due_date"] - timedelta(days=prod_days))
+
+    detail = {
+        "option": label,
+        "order_id": order_id,
+        "customer_id": order["customer_id"],
+        "product_id": order["product_id"],
+        "qty": order["qty"],
+        "priority_rank": order["priority_rank"],
+        "due_date": order["due_date"].isoformat(),
+        "latest_start_date": latest_start.isoformat(),
+        "start_date": result["start_date"],
+        "delivery_date": result["delivery_date"],
+        "days_late": result["days_late"],
+        "components_needed": dict(db["needs"][order_id]),
+    }
+    if result["days_late"] == 0:
+        detail["cause"] = {"type": "on_time"}
+        return detail
+
+    # Head of the queue on the latest on-time start date: the first order in
+    # queue order that had not started by the end of that day.
+    starts = {r["order_id"]: date.fromisoformat(r["start_date"])
+              for r in sim["order_results"] if r["start_date"]}
+    head = next(
+        (oid for oid in db["queue"]
+         if oid not in starts or starts[oid] > latest_start),
+        order_id,
+    )
+
+    # Usable stock at the order's warehouse at the end of that day.
+    wid = db["orders"][head]["warehouse_id"]
+    on_hand = dict(db["opening"][wid])
+    for ev in sim["ledger"]:
+        if ev["warehouse_id"] == wid and ev["date"] <= latest_start.isoformat():
+            on_hand[ev["component_id"]] = ev["on_hand_after"]
+    shortfall = {}
+    for cid, need in db["needs"][head].items():
+        usable = on_hand[cid] - db["floor"][wid][cid]
+        if usable < need:
+            shortfall[cid] = need - usable
+
+    detail["cause"] = {
+        "type": "component_shortage" if head == order_id else "queue_blocked",
+        "check_date": latest_start.isoformat(),
+        "waiting_order_id": head,
+        "shortfall": shortfall,
+    }
+    return detail
 
 
 def explore_purchase_qty(

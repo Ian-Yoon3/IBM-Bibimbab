@@ -86,7 +86,10 @@ def run_agent(
     messages = build_messages(user_message, history, allow_propose=allow_propose)
 
     for step in range(1, max_steps + 1):
-        response = llm.chat(messages, gather_tools)
+        try:
+            response = llm.chat(messages, gather_tools)
+        except Exception as exc:
+            return _unavailable(exc, history, turn_messages, tool_trace, proposal)
 
         if not response.get("tool_calls"):
             # Model produced a text answer in the gather phase — keep it as
@@ -147,7 +150,10 @@ def run_agent(
     # ── Compose phase ─────────────────────────────────────────────────────────
     # Always make one final call with NO tools and the compose instruction.
     compose_msgs = messages + [build_compose_message(user_message)]
-    compose_response = llm.chat(compose_msgs, [])
+    try:
+        compose_response = llm.chat(compose_msgs, [])
+    except Exception as exc:
+        return _unavailable(exc, history, turn_messages, tool_trace, proposal)
     answer = (compose_response.get("content") or "").strip()
     if not answer:
         answer = _CANNED_FALLBACK
@@ -165,6 +171,29 @@ def run_agent(
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+_UNAVAILABLE_ANSWER = (
+    "The AI service could not be reached, so no analysis was produced. "
+    "No numbers in this reply come from the engine. Please try again in a moment."
+)
+
+
+def _unavailable(exc, history, turn_messages, tool_trace, proposal) -> dict:
+    """Return a safe result when the LLM call fails, instead of raising.
+
+    The answer contains no numbers.  ``error`` carries the technical reason
+    for logs or the UI.  A proposal created earlier in the turn is kept,
+    because it already exists with status pending_approval.
+    """
+    final_msg = {"role": "assistant", "content": _UNAVAILABLE_ANSWER}
+    return {
+        "answer":     _UNAVAILABLE_ANSWER,
+        "tool_trace": tool_trace,
+        "proposal":   proposal,
+        "history":    list(history or []) + turn_messages + [final_msg],
+        "error":      f"{type(exc).__name__}: {str(exc)[:300]}",
+    }
+
 
 def _serialise(obj) -> str:
     """Serialise a dict to a JSON string for tool result messages."""

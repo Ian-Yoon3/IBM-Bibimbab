@@ -39,9 +39,11 @@ cd reference && python3 verify.py --write
 - **Platform:** watsonx.ai chat with tool calling via `ibm_watsonx_ai.foundation_models.ModelInference`.
 - **Model:** read from env `WX_MODEL_ID`; default `ibm/granite-4-h-small`. Always set `max_tokens` explicitly.
 - **Tool-call arguments** may arrive as a JSON string or as a parsed object — normalise to a dict before calling the engine.
-- **Tools exposed to the LLM (7 total):**
+- **Tools exposed to the LLM (8 total):**
   `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`,
-  `get_priority_view`, `explore_purchase_qty`, `propose_action`.
+  `get_priority_view`, `get_order_detail`, `explore_purchase_qty`, `propose_action`.
+  `get_priority_view` and `get_order_detail` accept a `scenario_id` or an explored
+  option (`offer_id`, `qty`, `include_transfers`).
   (`run_scenario` is not exposed yet.)
 - `get_offers` must be called before `explore_purchase_qty` to discover the offer ID for the disrupted component.
 - `get_priority_view` accepts `scenario_id=` (preferred) or a raw `actions` list.

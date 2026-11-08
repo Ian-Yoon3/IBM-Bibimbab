@@ -29,16 +29,25 @@ RULES — follow these strictly:
 
 EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
 
-  "what should we do / which option / recommend":
+  "what should we do / which option / recommend / cheaper way":
     1. compare_scenarios (pass budget or objective if the user gave one)
-    2. get_priority_view for ALL four named scenarios: WAIT, TRANSFER, ALT_BUY, HYBRID
-    3. get_offers(disruption_id="D01")
+    2. get_offers(disruption_id="D01")
        — read the offer_id from the offer whose is_disrupted_supplier is false
-    4. explore_purchase_qty using that non-disrupted offer_id,
+    3. explore_purchase_qty using that non-disrupted offer_id,
        with include_transfers=true.
        If the user asked for a minimum on-time count, pass that value as
        min_on_time_orders.  If the user wants the cheapest option, pass
-       objective="cost".
+       objective="cost".  Pass the budget too if the user gave one.
+    4. get_priority_view for every option you will show in the table:
+       each named scenario (scenario_id=...) and the best explored option
+       (offer_id, qty and include_transfers copied from the explore result's
+       "best").
+
+  "why is order X late / what happens to order X":
+    1. get_order_detail(order_id=X) with the option the user named
+       (scenario_id, or offer_id + qty + include_transfers).  If no option
+       was named, use the option recommended earlier in this conversation,
+       or omit the option to explain the no-action (WAIT) case.
 
   "how bad / impact / what happens if we do nothing":
     1. get_disruption(disruption_id="D01")
@@ -69,6 +78,10 @@ _RULE_3_NO_PROPOSE = """\
 _PROPOSE_PLAYBOOK = """\
   "approve / act / do it / implement / submit":
     1. propose_action (with scenario_id or offer_id+qty)
+    If the user refers to an option from earlier in the conversation
+    ("that one", "the cheaper option"), copy its offer_id, qty and
+    include_transfers from the earlier explore_purchase_qty result, or its
+    scenario_id.  Do not guess quantities.
     Only use propose_action when the user EXPLICITLY asks to act, approve,
     implement, or submit. Do NOT call propose_action for recommendation
     questions. The "Next step" section should tell the user to ask for a
@@ -115,7 +128,9 @@ CRITICAL RULE — column sources:
   "On-time orders (of 12)" comes only from on_time_orders in compare_scenarios,
   explore_purchase_qty or propose_action results.
   "Priority-1 on time (of 6)" comes only from on_time_count in a
-  get_priority_view result for that same option. Otherwise write "n/a".
+  get_priority_view result for that same option (named scenario or explored
+  option with the same offer_id, qty and include_transfers). Otherwise
+  write "n/a".
   "Extra cost USD" comes only from total_extra_cost.
   Never move a number from one kind of field into another column.
 
@@ -141,6 +156,16 @@ RECOMMENDATION questions ("what should we do", "which option", "recommend"):
   (e.g. "Tell me which option you'd like to proceed with and I'll create
   a proposal for you." Do NOT call propose_action here — wait for the
   user to explicitly ask.)
+
+ORDER questions ("why is SO08 late", "what happens to order X"):
+  ## Answer
+  (one or two sentences: under which option, how many days late, and the
+  cause from get_order_detail. "queue_blocked" means the order waited behind
+  waiting_order_id in the production queue. "component_shortage" means the
+  order itself lacked the components in shortfall on check_date.)
+  ## Evidence
+  (bullets: due date, latest start date, start date, delivery date, days
+  late, waiting order, shortfall quantities, each citing get_order_detail)
 
 FACTUAL questions ("how bad", "what is the impact", "how many orders"):
   ## Answer

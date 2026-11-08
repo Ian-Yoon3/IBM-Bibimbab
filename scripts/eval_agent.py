@@ -7,7 +7,12 @@ Run manually (requires a filled .env):
     python -m scripts.eval_agent meta-llama/llama-3-3-70b-instruct
     python -m scripts.eval_agent --full          # also print full answers
 
-Prints a pass/fail table for all golden questions × both models.
+Usage:
+    python -m scripts.eval_agent                     # default model, 1 run
+    python -m scripts.eval_agent --runs 3            # stability check
+    python -m scripts.eval_agent ibm/granite-4-h-small --runs 1
+
+Prints a pass/fail table per run and, with --runs > 1, a stability summary.
 Saves full results to eval_results/<timestamp>.json.
 
 # ── EVAL CRITERIA ─────────────────────────────────────────────────────────────
@@ -114,10 +119,74 @@ GOLDEN_QUESTIONS = [
         "expected_tool": "propose_action",
         "q6_checks": True,
     },
+    # ── added after eval run 5 (definition of done) ──────────────────────────
+    {
+        "id": "Q7",
+        "q": "Our budget is 1,000 dollars. Which option should we choose?",
+        "expected_tool": "compare_scenarios",
+        "expected_tool_args": {"compare_scenarios": {"budget": 1000}},
+        "recommend": "TRANSFER",
+        "format_headings": _RECOMMENDATION_HEADINGS,
+        "no_proposal": True,
+    },
+    {
+        "id": "Q8",
+        "q": "Among the four named scenarios, which one minimises the total days late across all orders?",
+        "expected_tool": "compare_scenarios",
+        "expected_tool_args": {"compare_scenarios": {"objective": "total_late_days"}},
+        "recommend": "HYBRID",
+        "no_proposal": True,
+    },
+    {
+        "id": "Q9",
+        "q": "Why is SO08 late under HYBRID?",
+        "expected_tool": "get_order_detail",
+        "expected_tool_args": {"get_order_detail": {"order_id": "SO08", "scenario_id": "HYBRID"}},
+        "extra_facts": ["C01", "18", "2026-11-15"],
+        "no_proposal": True,
+    },
+    {
+        "id": "Q10",
+        "q": "If we do nothing, why is SO03 late?",
+        "expected_tool": "get_order_detail",
+        "expected_tool_args": {"get_order_detail": {"order_id": "SO03"}},
+        "extra_facts": ["SO02"],
+        "no_proposal": True,
+    },
+    {
+        "id": "Q11",
+        "q": "For the cheapest option that keeps 11 orders on time, how many priority-1 orders are on time?",
+        "expected_tool": "get_priority_view",
+        "expected_tool_args": {"get_priority_view": {"offer_id": "OF02", "qty": 40}},
+        "expected_fact_patterns": ["5 of 6", "5/6", "five of six", "5 out of 6", "5 of the 6"],
+        "no_proposal": True,
+    },
+    {
+        "id": "Q12",
+        "turns": [
+            "Is there a cheaper way than HYBRID to keep 11 orders on time?",
+            "Propose that option.",
+        ],
+        "expected_tool": "propose_action",
+        "proposal_metrics": {"on_time_orders": 11, "total_extra_cost": 1216},
+        "q6_checks": True,
+    },
+    {
+        "id": "Q13",
+        "turns": [
+            "Is there a cheaper way than HYBRID to keep 11 orders on time?",
+            "With that option, why is SO08 still late?",
+        ],
+        "expected_tool": "get_order_detail",
+        "expected_tool_args": {"get_order_detail": {"order_id": "SO08", "offer_id": "OF02", "qty": 40}},
+        "extra_facts": ["C01", "23"],
+        "no_proposal": True,
+    },
 ]
 
+# Default model per ADR 0001.  Pass a model id on the command line to
+# evaluate another one, e.g. ibm/granite-4-h-small.
 _MODELS = [
-    "ibm/granite-4-h-small",
     "meta-llama/llama-3-3-70b-instruct",
 ]
 
@@ -206,7 +275,7 @@ def _extract_tokens(text: str) -> set[str]:
 def _grounding_corpus(result: dict) -> str:
     """Build the full grounding corpus from tool results + question text."""
     parts = [result.get("question", "")]
-    for entry in result.get("tool_trace", []):
+    for entry in result.get("earlier_tools", []) + result.get("tool_trace", []):
         # result may be stored as a string (truncated) or dict
         r = entry.get("result", {})
         if isinstance(r, str):
@@ -245,9 +314,9 @@ def _ground_truth() -> dict:
     """Ground truth per option, computed from the deterministic engine.
 
     Returns {"scenarios": {id: (on_time, prio_on_time, cost)},
-             "explored": {(qty, include_transfers): (on_time, None, cost)}}.
-    Priority-1 counts are not available for explored options, so any number
-    in that column for an explored option is a mismatch.
+             "explored": {(qty, include_transfers): (on_time, prio_on_time, cost)}}.
+    Priority-1 counts for explored options come from get_priority_view with
+    the same offer_id, qty and include_transfers.
     """
     if _TRUTH_CACHE:
         return _TRUTH_CACHE
@@ -260,8 +329,11 @@ def _ground_truth() -> dict:
     explored = {}
     for flag in (True, False):
         for r in _t.explore_purchase_qty("OF02", include_transfers=flag)["ranked"]:
+            prio = _t.get_priority_view(
+                offer_id="OF02", qty=r["purchase_qty"], include_transfers=flag
+            )["on_time_count"]
             explored[(r["purchase_qty"], flag)] = (
-                r["on_time_orders"], None, r["total_extra_cost"]
+                r["on_time_orders"], prio, r["total_extra_cost"]
             )
     _TRUTH_CACHE.update({"scenarios": scen, "explored": explored})
     return _TRUTH_CACHE
@@ -417,6 +489,32 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
         if "pending" not in answer_norm and "approval" not in answer_norm:
             return False, "answer does not mention pending or approval"
 
+    # Tool arguments: at least one call of the tool must match every given arg
+    for tool, want in q.get("expected_tool_args", {}).items():
+        calls = [t["args"] or {} for t in result["tool_trace"] if t["name"] == tool]
+        def _match(a):
+            return all(str(a.get(k)).strip().lower() == str(v).lower() for k, v in want.items())
+        if not any(_match(a) for a in calls):
+            return False, f"{tool} not called with {want} (got {calls})"
+
+    # Recommendation section must name the expected option
+    if q.get("recommend"):
+        m = re.search(r"recommendation(.*?)(?:\n#|$)", answer_norm, re.S)
+        section = m.group(1) if m else answer_norm
+        if q["recommend"].lower() not in section:
+            return False, f"recommendation does not name {q['recommend']}"
+
+    # Questions that must not create a proposal
+    if q.get("no_proposal") and result.get("proposal") is not None:
+        return False, "a proposal was created although the user did not ask to act"
+
+    # Proposal metrics (multi-turn follow-up)
+    for k, v in q.get("proposal_metrics", {}).items():
+        p = result.get("proposal") or {}
+        got = (p.get("metrics") or {}).get(k)
+        if got != v:
+            return False, f"proposal {k} is {got!r}, expected {v!r}"
+
     # Table check: every number in the "Options compared" table must match the
     # engine's ground truth for that option and column ("n/a" is allowed).
     mismatches = check_table(result["answer"])
@@ -431,20 +529,39 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
     return True, "ok"
 
 
-def eval_model(model_id: str) -> list[dict]:
+def _run_question(q: dict, llm) -> dict:
+    """Run one golden question in a fresh conversation.
+
+    Multi-turn questions ("turns") run in order with shared history.  The
+    checks apply to the final turn.  Earlier turns' tool calls are kept in
+    ``earlier_tools`` for the record, and the grounding corpus includes them
+    because the final answer may cite numbers from earlier turns.
+    """
+    from agent.loop import run_agent
+
+    turns = q.get("turns") or [q["q"]]
+    history, earlier, result = None, [], None
+    for i, text in enumerate(turns):
+        result = run_agent(text, history=history, llm=llm)
+        history = result["history"]
+        if i < len(turns) - 1:
+            earlier.extend(result["tool_trace"])
+    result["question"] = " / ".join(turns)
+    result["earlier_tools"] = earlier
+    return result
+
+
+def eval_model(model_id: str, run_index: int = 1) -> list[dict]:
     """Run all golden questions against one model. Returns full result rows.
 
     Each question runs in a fresh conversation (history=None).
     """
     from agent.llm import WatsonxLLM
-    from agent.loop import run_agent
 
     llm = WatsonxLLM(model_id=model_id)
     rows = []
     for q in GOLDEN_QUESTIONS:
-        result = run_agent(q["q"], history=None, llm=llm)
-        # Attach question to result so check_grounding can use it
-        result["question"] = q["q"]
+        result = _run_question(q, llm)
         passed, reason = _check_question(q, result)
         ungrounded = check_grounding(result)
         tools_with_results = []
@@ -457,7 +574,8 @@ def eval_model(model_id: str) -> list[dict]:
             })
         rows.append({
             "id":           q["id"],
-            "question":     q["q"],
+            "run":          run_index,
+            "question":     result["question"],
             "model":        model_id,
             "passed":       passed,
             "reason":       reason,
@@ -470,6 +588,10 @@ def eval_model(model_id: str) -> list[dict]:
             ],
             "table_mismatches": check_table(result["answer"]),
             "tools":        tools_with_results,
+            "earlier_tools": [
+                {"name": t["name"], "args": t["args"]} for t in result["earlier_tools"]
+            ],
+            "error":        result.get("error"),
         })
     return rows
 
@@ -495,23 +617,58 @@ def _print_table(rows: list[dict], full: bool = False) -> None:
             print(f"     Answer:\n{r['answer']}\n")
 
 
+def _parse_args(argv: list[str]) -> tuple[list[str], int, bool]:
+    """Return (models, runs, full).  Usage: [model_id ...] [--runs N] [--full]."""
+    full = "--full" in argv
+    runs = 1
+    models = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--runs" and i + 1 < len(argv):
+            runs = int(argv[i + 1])
+            i += 2
+            continue
+        if a.startswith("--runs="):
+            runs = int(a.split("=", 1)[1])
+        elif not a.startswith("--"):
+            models.append(a)
+        i += 1
+    return (models or list(_MODELS)), max(1, runs), full
+
+
+def _print_stability(all_rows: list[dict], runs: int) -> int:
+    """Print per-question pass counts across runs.  Returns stable-pass count."""
+    print(f"\nStability over {runs} run(s): a question is stable only if it passed every run")
+    stable = 0
+    keys = sorted({(r["model"], r["id"]) for r in all_rows},
+                  key=lambda k: (k[0], int(k[1][1:])))
+    for model, qid in keys:
+        rs = [r for r in all_rows if r["model"] == model and r["id"] == qid]
+        n = sum(r["passed"] for r in rs)
+        ok = n == len(rs)
+        stable += ok
+        print(f"  {qid:<4} {model:<42} {n}/{len(rs)} {'STABLE' if ok else 'UNSTABLE'}")
+    print(f"\n{stable}/{len(keys)} questions stable")
+    return stable
+
+
 def main() -> None:
     load_dotenv()
-    args = sys.argv[1:]
-    full = "--full" in args
-    model_args = [a for a in args if not a.startswith("--")]
-    models = model_args if model_args else _MODELS
+    models, runs, full = _parse_args(sys.argv[1:])
 
     all_rows = []
-    for model_id in models:
-        print(f"\nEvaluating {model_id} ...")
-        rows = eval_model(model_id)
-        all_rows.extend(rows)
+    for run in range(1, runs + 1):
+        for model_id in models:
+            print(f"\nRun {run}/{runs}: evaluating {model_id} ...")
+            rows = eval_model(model_id, run_index=run)
+            all_rows.extend(rows)
+            _print_table(rows, full=full)
+            passed = sum(1 for r in rows if r["passed"])
+            print(f"\nRun {run}: {passed}/{len(rows)} passed")
 
-    _print_table(all_rows, full=full)
-    total = len(all_rows)
-    passed = sum(1 for r in all_rows if r["passed"])
-    print(f"\n{passed}/{total} passed")
+    if runs > 1:
+        _print_stability(all_rows, runs)
 
     save_path = _save_results(all_rows)
     print(f"Results saved → {save_path}")

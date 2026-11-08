@@ -7,7 +7,7 @@
 - **Model config:** read `WX_MODEL_ID` from env (default `ibm/granite-4-h-small`); always pass an explicit `max_tokens` to `ModelInference` — the SDK default (1024) emits a warning and may truncate responses
 - **Agent tests are network-free:** use `ScriptedLLM` from `agent/fake_llm.py` — never make real watsonx.ai calls in `tests/`
 - **D01 only:** validate disruption IDs against `db["disruptions"]`, not a hardcoded string; the agent must not invent delay dates or outcomes for unknown IDs
-- **7 LLM tools:** `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`, `get_priority_view`, `explore_purchase_qty`, `propose_action`; `run_scenario` is NOT in `TOOL_SPECS`
+- **8 LLM tools:** `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`, `get_priority_view`, `get_order_detail`, `explore_purchase_qty`, `propose_action`; `run_scenario` is NOT in `TOOL_SPECS`
 - **unknown tool names** from the LLM return `{"error": "unknown tool: <name>"}` from `call_tool()` — the loop continues; it does not raise
 - **propose_action (LLM-facing):** accepts `scenario_id` OR `(offer_id, qty, include_transfers)`; `call_tool` resolves the offer+qty path via `explore_purchase_qty` before calling the engine
 - **Loop message order:** append the assistant message with `tool_calls` BEFORE the corresponding `role:"tool"` messages — this is what the watsonx chat API expects
