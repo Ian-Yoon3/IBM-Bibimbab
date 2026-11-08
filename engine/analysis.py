@@ -46,6 +46,8 @@ def disruption_impact(disruption_id: str, db: dict) -> dict:
                 first_late_days = row["days_late"]
             late_orders.append({
                 "order_id": row["order_id"],
+                "customer_id": db["orders"][row["order_id"]]["customer_id"],
+                "priority_rank": db["orders"][row["order_id"]]["priority_rank"],
                 "due_date": row["due_date"],
                 "delivery_date": row["delivery_date"],
                 "days_late": row["days_late"],
@@ -167,6 +169,9 @@ def priority_view(sim_result: dict, db: dict) -> dict:
         "late_count": len(priority_1_orders) - on_time_count,
         "total_count": len(priority_1_orders),
         "customer_impact": customer_impact,
+        "scope": ("Priority-1 orders only. customer_impact counts only each "
+                  "customer's priority-1 orders. Use get_impact for all late "
+                  "orders when no action is taken."),
     }
 
 

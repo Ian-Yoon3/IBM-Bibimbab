@@ -57,6 +57,10 @@ EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
     1. get_disruption(disruption_id="D01")
     2. get_impact(disruption_id="D01")
 
+  "which customers or orders are hurt if we wait / do nothing":
+    1. get_impact(disruption_id="D01")  — every late order with customer
+       and priority (get_priority_view covers priority-1 orders only)
+
   "priority customers / high-priority orders for a named scenario":
     1. get_priority_view(scenario_id=WAIT|TRANSFER|ALT_BUY|HYBRID)
 
@@ -150,6 +154,13 @@ CRITICAL RULE — failed tools:
   If a tool returned an error, its data is missing. Do not replace it with
   numbers from other tools. Say which data could not be retrieved.
 
+CRITICAL RULE — sources:
+  Cite only tools that were actually called in this conversation. If no tool
+  was called, say that you have no data for this question and suggest what
+  the user can ask instead.
+  get_priority_view (including customer_impact) covers priority-1 orders
+  only. Do not say a customer has no late orders based on it.
+
 Use ONLY facts from tool results. Do not invent numbers. Do not tell the user \
 to contact anyone.
 
@@ -242,7 +253,10 @@ def build_narrative_message(user_message: str, view: dict) -> dict:
     rationale and the trade-offs.
     """
     star = view.get("recommended_row")
-    if star:
+    if view.get("type") == "comparison":
+        target = ("The user asked for a comparison. Do not pick a winner. Explain "
+                  "the differences between the rows that matter for the question.")
+    elif star:
         target = (f"The engine recommends: {star['name']} ({star['code']}), "
                   f"chosen for: {view['criteria']}.")
     else:
@@ -264,9 +278,13 @@ OPTIONS TABLE:
 Write ONLY these two parts, in plain text, in this exact form:
 
 Recommendation: <2 or 3 sentences explaining why the recommended option fits the
-user's request. Refer to options by the names in the table.>
+user's request (for a comparison: the main differences between the rows).>
 Trade-offs: <1 or 2 lines, each starting with "- ", each naming another option
 from the table and what it would change for the user.>
+
+Refer to every option by its code in parentheses from the table, for example
+TRANSFER, ALT_BUY or OF02 x40 + transfers. Mention only options that are rows in
+the table. Several option names look alike, so never describe an option by name only.
 
 Rules: use only numbers that appear in the situation or the table. Do not compute
 differences, sums or percentages. Do not write headings, tables or a next step.

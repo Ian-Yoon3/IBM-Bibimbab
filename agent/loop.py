@@ -158,7 +158,7 @@ def run_agent(
     except Exception:
         view = None   # rendering must never break the answer; fall back below
 
-    if view is not None and view["type"] != "recommendation":
+    if view is not None and view["type"] not in ("recommendation", "comparison"):
         answer = view["markdown"]                     # fully deterministic
     elif view is not None:
         narrative = ""
@@ -220,7 +220,8 @@ def _choose_view(user_message, tool_trace, proposal):
     """Pick the fixed view for this turn, or None for a free-text answer.
 
     Priority: proposal > unsupported question > order explanation >
-    recommendation (comparison or search ran) > free text.
+    option description > comparison > recommendation (comparison or search
+    ran) > free text.
     """
     if proposal is not None:
         return render.proposal_view(proposal, _proposal_code(tool_trace))
@@ -229,8 +230,15 @@ def _choose_view(user_message, tool_trace, proposal):
     orders = _ok_results(tool_trace, "get_order_detail")
     if orders:
         return render.order_view(orders[-1]["result"])
-    if (_ok_results(tool_trace, "compare_scenarios")
-            or _ok_results(tool_trace, "explore_purchase_qty")):
+    if render.is_option_question(user_message):
+        return render.option_view(render.mentioned_codes(user_message)[0])
+    ran_options = (_ok_results(tool_trace, "compare_scenarios")
+                   or _ok_results(tool_trace, "explore_purchase_qty"))
+    if render.is_comparison(user_message) and (
+            ran_options or _ok_results(tool_trace, "get_priority_view")
+            or len(render.mentioned_codes(user_message)) >= 2):
+        return render.build_recommendation(user_message, tool_trace, compare=True)
+    if ran_options:
         return render.build_recommendation(user_message, tool_trace)
     return None
 

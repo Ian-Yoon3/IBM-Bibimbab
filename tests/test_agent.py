@@ -1698,11 +1698,13 @@ class TestQuestionSweepHeuristics(unittest.TestCase):
             s = request_settings(q, [])
             self.assertEqual((s["objective"], s["min_on_time"]), (obj, target), q)
 
-    def test_tool_arguments_win_over_wording(self):
+    def test_budget_falls_back_to_tool_args_but_objective_does_not(self):
+        # Sweep finding: the model passed objective="cost" for plain budget
+        # questions; the objective must come from the user's wording.
         from agent.render import request_settings
         s = request_settings("Which option?", [
             {"name": "compare_scenarios", "args": {"budget": "750", "objective": "cost"}}])
-        self.assertEqual((s["budget"], s["objective"]), (750, "cost"))
+        self.assertEqual((s["budget"], s["objective"]), (750, "on_time_orders"))
 
     def test_unsupported_detection(self):
         from agent.render import is_unsupported
@@ -1741,6 +1743,84 @@ class TestQuestionSweepHeuristics(unittest.TestCase):
         from scripts.question_sweep import SWEEP
         self.assertGreaterEqual(len(SWEEP), 15)
         self.assertTrue(all(isinstance(c, list) and c for c in SWEEP))
+
+
+
+class TestSweepFindings(unittest.TestCase):
+    """Fixes from eval_results/sweep_20261107_234749.json (22 real answers)."""
+
+    _SEARCH_COST = {"name": "explore_purchase_qty",
+                    "args": {"offer_id": "OF02", "include_transfers": "true",
+                             "objective": "cost"}}
+
+    def _star(self, q, budget_arg):
+        from agent.render import build_recommendation
+        tr = [{"name": "compare_scenarios", "args": {"budget": budget_arg}},
+              self._SEARCH_COST]
+        return build_recommendation(q, tr)["recommended"]
+
+    def test_budget_questions_do_not_star_wait(self):
+        self.assertEqual(self._star("We can spend up to $800. Which option?", "800"), "TRANSFER")
+        self.assertEqual(self._star("Our budget is 1,000 dollars. What should we do?", "1000"),
+                         "TRANSFER")
+        self.assertEqual(self._star("What's the best option if we have $1,200 to spend?", "1200"),
+                         "OF02 x35 + transfers")
+
+    def test_wait_proposal_says_no_action(self):
+        import engine.tools as t
+        from agent.render import proposal_view
+        md = proposal_view(t.propose_action("WAIT", "chosen"), "WAIT")["markdown"]
+        self.assertIn("No recovery action", md)
+
+    def test_option_view(self):
+        from agent.render import is_option_question, option_view
+        self.assertTrue(is_option_question("What does HYBRID actually involve?"))
+        self.assertFalse(is_option_question("Is it worth paying $1,306 for HYBRID?"))
+        self.assertFalse(is_option_question("What happens to SO11 under HYBRID?"))
+        md = option_view("HYBRID")["markdown"]
+        self.assertIn("Buy 45 x C01", md)
+        self.assertIn("Move 18 x C01 from North Buffer", md)
+        self.assertIn("On-time orders: 11 of 12", md)
+
+    def test_option_question_routes_without_tools(self):
+        llm = ScriptedLLM([{"content": "nothing to call"}])
+        r = run_agent("What does HYBRID actually involve?", llm=llm)
+        self.assertEqual(r["view"]["type"], "option")
+
+    def test_comparison_view(self):
+        from agent.render import is_comparison
+        self.assertTrue(is_comparison("Compare TRANSFER and ALT_BUY for priority customers."))
+        self.assertFalse(is_comparison("Compare options within a $500 budget."))
+        llm = ScriptedLLM([
+            {"tool_calls": [{"id": "1", "name": "get_priority_view",
+                             "args": {"scenario_id": "TRANSFER"}}]},
+            {"content": "gathered"},
+            {"content": "Comparison: Both keep 4 of 6 priority-1 orders on time.\n"
+                        "Trade-offs:\n- ALT_BUY costs more."},
+        ])
+        r = run_agent("Compare TRANSFER and ALT_BUY for priority customers.", llm=llm)
+        self.assertEqual(r["view"]["type"], "comparison")
+        self.assertEqual([x["code"] for x in r["view"]["rows"]], ["TRANSFER", "ALT_BUY"])
+        self.assertIsNone(r["view"]["recommended"])
+        self.assertNotIn("★", r["answer"])
+        self.assertIn("## Comparison", r["answer"])
+
+    def test_impact_lists_customers(self):
+        import engine.tools as t
+        late = t.get_impact("D01")["late_orders"]
+        so03 = next(o for o in late if o["order_id"] == "SO03")
+        self.assertEqual((so03["customer_id"], so03["priority_rank"]), ("CU03", 2))
+
+    def test_priority_view_states_scope(self):
+        import engine.tools as t
+        self.assertIn("Priority-1 orders only", t.get_priority_view(scenario_id="WAIT")["scope"])
+
+    def test_narrative_asks_for_codes(self):
+        from agent.prompts import build_narrative_message
+        from agent.render import build_recommendation
+        v = build_recommendation("What should we do?", [self._SEARCH_COST])
+        c = build_narrative_message("What should we do?", v)["content"]
+        self.assertIn("Refer to every option by its code", c)
 
 
 if __name__ == "__main__":

@@ -192,25 +192,23 @@ def _to_int(v):
 def request_settings(user_message: str, tool_trace: list[dict]) -> dict:
     """Budget, objective and minimum on-time target for this turn.
 
-    Taken from the tool calls the model made, with the user's own words as a
-    fallback (models sometimes forget to pass the budget).
+    The user's own words decide.  The objective comes only from the wording:
+    in the question sweep the model passed objective="cost" to the search
+    tool for plain budget questions, which starred WAIT ($0) under a $1,000
+    budget.  Budget and target fall back to the model's tool arguments when
+    the wording has none.
     """
-    budget = objective = min_on = None
+    msg = user_message.lower()
+    budget = parse_budget(msg)
+    min_on = parse_min_on_time(msg)
+    objective = parse_objective(msg)
     for t in tool_trace:
         a = t.get("args") or {}
         if t["name"] in ("compare_scenarios", "explore_purchase_qty"):
-            budget = _to_int(a.get("budget")) if _to_int(a.get("budget")) is not None else budget
-            if a.get("objective") and str(a["objective"]).lower() != "null":
-                objective = a["objective"]
-            m = _to_int(a.get("min_on_time_orders"))
-            min_on = m if m is not None else min_on
-    msg = user_message.lower()
-    if budget is None:
-        budget = parse_budget(msg)
-    if min_on is None:
-        min_on = parse_min_on_time(msg)
-    if objective is None:
-        objective = parse_objective(msg)
+            if budget is None and _to_int(a.get("budget")) is not None:
+                budget = _to_int(a.get("budget"))
+            if min_on is None and _to_int(a.get("min_on_time_orders")) is not None:
+                min_on = _to_int(a.get("min_on_time_orders"))
     return {"budget": budget, "objective": objective, "min_on_time": min_on}
 
 
@@ -307,20 +305,44 @@ def late_line(row) -> str:
     return "Still late with this option: " + ", ".join(parts) + "."
 
 
-def build_recommendation(user_message, tool_trace, disruption_id="D01") -> dict:
-    """Engine-built data for a recommendation answer (no LLM text yet)."""
+def mentioned_codes(user_message: str) -> list[str]:
+    """Named scenario codes the user mentions, in order of appearance."""
+    found = re.findall(r"\b(WAIT|TRANSFER|ALT_BUY|HYBRID)\b", user_message.upper())
+    return list(dict.fromkeys(found))
+
+
+_COMPARE_WORDS = re.compile(r"\b(compare|comparison|versus|vs\.?|difference between)\b", re.I)
+
+
+def is_comparison(user_message: str) -> bool:
+    """A request to compare options without asking for a pick under a budget or target."""
+    msg = user_message.lower()
+    return bool(_COMPARE_WORDS.search(msg)) and parse_budget(msg) is None \
+        and parse_min_on_time(msg) is None
+
+
+def build_recommendation(user_message, tool_trace, disruption_id="D01",
+                         compare=False) -> dict:
+    """Engine-built data for a recommendation answer (no LLM text yet).
+
+    With ``compare=True`` no option is starred, and when the user names two
+    or more scenarios only those rows are shown.
+    """
     cat = _catalog()
     cat["_disruptions"] = [disruption_id]
     settings = request_settings(user_message, tool_trace)
     rows = _named_rows(cat)
+    named = mentioned_codes(user_message)
+    if compare and len(named) >= 2:
+        rows = [r for r in rows if r["code"] in named]
     searched = any(t["name"] == "explore_purchase_qty" for t in tool_trace)
-    if searched:
-        rows += _searched_rows(cat, rows, disruption_id)
-    star = choose_recommended(rows, settings["objective"], settings["budget"],
-                              settings["min_on_time"])
+    if searched and not (compare and len(named) >= 2):
+        rows += _searched_rows(cat, _named_rows(cat), disruption_id)
+    star = None if compare else choose_recommended(
+        rows, settings["objective"], settings["budget"], settings["min_on_time"])
     star_row = next((r for r in rows if r["code"] == star), None)
     return {
-        "type": "recommendation",
+        "type": "comparison" if compare else "recommendation",
         "situation": situation_text(disruption_id, cat),
         "settings": settings,
         "criteria": criteria_text(settings["objective"], settings["budget"],
@@ -333,6 +355,8 @@ def build_recommendation(user_message, tool_trace, disruption_id="D01") -> dict:
 
 
 def recommendation_markdown(view: dict, rationale: str, tradeoffs: str) -> str:
+    if view["type"] == "comparison":
+        return comparison_markdown(view, rationale, tradeoffs)
     star_row = view["recommended_row"]
     out = [
         "## Situation", view["situation"], "",
@@ -360,11 +384,31 @@ def recommendation_markdown(view: dict, rationale: str, tradeoffs: str) -> str:
     return "\n".join(out)
 
 
+def comparison_markdown(view: dict, comparison: str, tradeoffs: str) -> str:
+    codes = [r["code"] for r in view["rows"]]
+    example = codes[0] if codes else "TRANSFER"
+    out = [
+        "## Situation", view["situation"], "",
+        "## Options compared", view["table_markdown"], "",
+        "## Comparison",
+    ]
+    if comparison:
+        out.append(comparison)
+    if tradeoffs:
+        out += ["", "## Trade-offs and risks", tradeoffs]
+    for r in view["rows"]:
+        out.append(f"- {r['code']}: {late_line(r)}")
+    out += ["", "## Next step",
+            f'To act on one of them, say for example: *"Propose {example}"*. '
+            "To get a recommendation, add your budget or target."]
+    return "\n".join(out)
+
+
 def split_narrative(text: str) -> tuple[str, str]:
     """Split the model's text into (rationale, trade-off bullets)."""
     text = (text or "").strip()
     m = re.split(r"(?im)^\s*\**trade-?offs?\**\s*:\s*", text, maxsplit=1)
-    rationale = re.sub(r"(?im)^\s*\**recommendation\**\s*:\s*", "", m[0]).strip()
+    rationale = re.sub(r"(?im)^\s*\**(recommendation|comparison)\**\s*:\s*", "", m[0]).strip()
     trade = m[1].strip() if len(m) > 1 else ""
     lines = [l.strip() for l in trade.splitlines() if l.strip()]
     trade = "\n".join(l if l.startswith("- ") else f"- {l.lstrip('-* ')}" for l in lines)
@@ -413,6 +457,8 @@ def proposal_view(proposal: dict, code: str) -> dict:
         f"- Extra cost: {_money(m['total_extra_cost'])}", "",
         "### Actions in this proposal",
     ]
+    if not actions:
+        lines.append("- No recovery action: wait for the delayed delivery.")
     for a in actions:
         if a["type"] == "purchase":
             o = cat["offers"][a["offer_id"]]
@@ -428,6 +474,57 @@ def proposal_view(proposal: dict, code: str) -> dict:
               f"Reason given: {proposal.get('reason', '')}"]
     return {"type": "proposal", "proposal": proposal, "code": code,
             "markdown": "\n".join(lines)}
+
+
+# ── view: option description ──────────────────────────────────────────────────
+
+_DESCRIBE_WORDS = re.compile(
+    r"\b(involve|mean|include|consist|entail|explain|details?|what is|what's|"
+    r"what does|how does|describe)\b", re.I)
+
+
+def is_option_question(user_message: str) -> bool:
+    """'What does HYBRID involve?' -> True.  Order questions are excluded."""
+    return (len(mentioned_codes(user_message)) == 1
+            and bool(_DESCRIBE_WORDS.search(user_message))
+            and not re.search(r"\bSO\d{2}\b", user_message, re.I))
+
+
+def option_view(scenario_id: str, disruption_id="D01") -> dict:
+    """What a named option does, step by step, with its results."""
+    cat = _catalog()
+    cat["_disruptions"] = [disruption_id]
+    actions = _t.get_scenario_actions(scenario_id)["actions"]
+    row = _row(cat, actions, scenario_id=scenario_id)
+    lines = [
+        f"## {row['name']} ({scenario_id})", "",
+        "### What it involves",
+    ]
+    if not actions:
+        lines.append("- No recovery action: wait for the delayed delivery.")
+    for a in actions:
+        if a["type"] == "purchase":
+            o = cat["offers"][a["offer_id"]]
+            lines.append(f"- Buy {a['qty']} x {o['component_id']} "
+                         f"({cat['components'][o['component_id']]}) from "
+                         f"{cat['suppliers'][o['supplier_id']]} on {a['action_date']}")
+        else:
+            ln = cat["lanes"][a["lane_id"]]
+            lines.append(f"- Move {a['qty']} x {a['component_id']} from "
+                         f"{cat['warehouses'][ln['from']]} to {cat['warehouses'][ln['to']]} "
+                         f"on {a['action_date']} ({ln['lead_days']} days in transit)")
+    lines += [
+        "", "### Results",
+        f"- On-time orders: {row['on_time_orders']} of {row['total_orders']}",
+        f"- Priority-1 on time: {row['priority_on_time']} of {row['priority_total']}",
+        f"- Total days late: {row['total_days_late']}",
+        f"- Extra cost: {_money(row['extra_cost'])}",
+        f"- {late_line(row)}",
+        "", "## Next step",
+        f'To act on this, say: *"Propose {scenario_id}"*. To see it next to the '
+        'other options, ask *"What should we do?"*.',
+    ]
+    return {"type": "option", "row": row, "markdown": "\n".join(lines)}
 
 
 # ── view: unsupported ─────────────────────────────────────────────────────────
