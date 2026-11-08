@@ -5,6 +5,13 @@ Run from the repo root:
     python3 demo.py
 No arguments required.
 """
+import sys
+
+# Windows consoles and pipes may use a legacy code page (e.g. cp949) that
+# cannot print "─", "—" or "→".  Replace such characters instead of crashing.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
+
 from engine.tools import (
     get_disruption,
     get_impact,
@@ -112,14 +119,16 @@ print("  Tool: explore_purchase_qty  |  Offer: OF02 (S02, C01)  "
 
 expl = explore_purchase_qty("OF02", include_transfers=True)
 top3 = expl["ranked"][:3]
-print(f"  {'Rank':<6} {'Label':<12} {'On-time orders':<18} "
+print(f"  {'Rank':<6} {'Label':<28} {'On-time orders':<18} "
       f"{'Total late days':<18} {'Extra cost USD'}")
-print(f"  {'─'*4:<6} {'─'*10:<12} {'─'*14:<18} {'─'*15:<18} {'─'*14}")
+print(f"  {'─'*4:<6} {'─'*26:<28} {'─'*14:<18} {'─'*15:<18} {'─'*14}")
 for r in top3:
-    print(f"  {r['rank']:<6} {r['scenario_id']:<12} {r['on_time_orders']:<18} "
+    # Explored options have scenario_id None; their identity is the label.
+    print(f"  {r['rank']:<6} {r['label']:<28} {r['on_time_orders']:<18} "
           f"{r['total_order_days_late']:<18} ${r['total_extra_cost']}")
 
-best_label = expl["best"]
+best = expl["best"]
+best_label = best["label"] if isinstance(best, dict) else best
 print(f"\n  Best option: {best_label}")
 
 # ── Step 6: Propose the best action ───────────────────────────────────────────

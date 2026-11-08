@@ -234,6 +234,46 @@ def build_compose_message(user_message: str, proposal_created: bool = False) -> 
     return {"role": "user", "content": content}
 
 
+def build_narrative_message(user_message: str, view: dict) -> dict:
+    """Compose-phase message for recommendation answers.
+
+    The situation, the options table and the ★ were produced by the engine
+    and are shown to the user as they are.  The model writes only a short
+    rationale and the trade-offs.
+    """
+    star = view.get("recommended_row")
+    if star:
+        target = (f"The engine recommends: {star['name']} ({star['code']}), "
+                  f"chosen for: {view['criteria']}.")
+    else:
+        target = (f"No option meets: {view['criteria']}. Say so, and name the "
+                  "option from the table that comes closest.")
+    content = f"""Latest user message: {user_message}
+
+The following parts were produced by the simulation engine and will be shown to the
+user exactly as written, above your text:
+
+SITUATION:
+{view['situation']}
+
+OPTIONS TABLE:
+{view['table_markdown']}
+
+{target}
+
+Write ONLY these two parts, in plain text, in this exact form:
+
+Recommendation: <2 or 3 sentences explaining why the recommended option fits the
+user's request. Refer to options by the names in the table.>
+Trade-offs: <1 or 2 lines, each starting with "- ", each naming another option
+from the table and what it would change for the user.>
+
+Rules: use only numbers that appear in the situation or the table. Do not compute
+differences, sums or percentages. Do not write headings, tables or a next step.
+Do not tell the user to contact anyone."""
+    return {"role": "user", "content": content}
+
+
 # ── Message builder ───────────────────────────────────────────────────────────
 
 def build_messages(

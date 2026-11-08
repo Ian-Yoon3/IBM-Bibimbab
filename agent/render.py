@@ -1,0 +1,431 @@
+"""Deterministic answer views.
+
+The engine decides the numbers.  This module decides how they are shown, so
+the manager sees the same layout every time.  The LLM only writes the short
+reasoning inside a recommendation (see ``agent/loop.py``).
+
+Views
+-----
+recommendation  situation, options table with a ★, recommendation, trade-offs, next step
+order           why one order is late (engine summary + evidence)
+proposal        what was proposed, its metrics and actions, pending approval
+unsupported     scope note + the recorded options, no recommendation
+
+Every view is returned as a dict with a ``markdown`` field and structured
+fields that a UI can render directly.  Only ``engine/tools.py`` is used.
+"""
+
+import re
+from datetime import date
+
+import engine.tools as _t
+
+# ── small helpers ─────────────────────────────────────────────────────────────
+
+_NAMED = ("WAIT", "TRANSFER", "ALT_BUY", "HYBRID")
+
+_OBJECTIVE_TEXT = {
+    "on_time_orders": "most on-time orders",
+    "on_time_units": "most on-time units",
+    "total_late_days": "fewest total days late",
+    "max_delay": "shortest maximum delay",
+    "cost": "lowest extra cost",
+}
+
+
+def _day(iso: str) -> str:
+    """'2026-11-17' -> 'Nov 17'."""
+    d = date.fromisoformat(iso)
+    return f"{d.strftime('%b')} {d.day}"
+
+
+def _money(x) -> str:
+    return f"${x:,}"
+
+
+def _catalog() -> dict:
+    return _t.get_catalog()
+
+
+# ── option names ──────────────────────────────────────────────────────────────
+
+def option_name(actions: list, cat: dict) -> str:
+    """Plain-English name of an action list, e.g. 'Move stock + buy 45 from Beacon Circuits'."""
+    buys = [a for a in actions if a["type"] == "purchase"]
+    moves = [a for a in actions if a["type"] == "transfer"]
+    if not buys and not moves:
+        return "Wait for the delayed delivery"
+    parts = []
+    if moves:
+        if buys:
+            parts.append("Move stock")
+        else:
+            srcs = [cat["warehouses"][cat["lanes"][a["lane_id"]]["from"]] for a in moves]
+            parts.append("Move stock from " + " and ".join(srcs))
+    for b in buys:
+        supplier = cat["suppliers"][cat["offers"][b["offer_id"]]["supplier_id"]]
+        verb = "buy" if moves else "Buy"
+        parts.append(f"{verb} {b['qty']} from {supplier}")
+    return " + ".join(parts)
+
+
+def option_code(scenario_id=None, offer_id=None, qty=None, include_transfers=False) -> str:
+    """Short code the user can say back to the agent, e.g. 'TRANSFER' or 'OF02 x40 + transfers'."""
+    if scenario_id:
+        return scenario_id
+    return f"{offer_id} x{qty}" + (" + transfers" if include_transfers else "")
+
+
+# ── option rows ───────────────────────────────────────────────────────────────
+
+def _row(cat, actions, *, scenario_id=None, offer_id=None, qty=None,
+         include_transfers=False, found_by_search=False) -> dict:
+    """Simulate one option and return a table row (all numbers from the engine)."""
+    disruption_id = next(iter(cat.get("_disruptions", ["D01"])))
+    sim = _t.run_scenario(actions, disruption_id)
+    if scenario_id:
+        prio = _t.get_priority_view(scenario_id=scenario_id)
+    else:
+        prio = _t.get_priority_view(offer_id=offer_id, qty=qty,
+                                    include_transfers=include_transfers)
+    late = [r for r in sim["order_results"] if r["days_late"] > 0]
+    name = option_name(actions, cat)
+    return {
+        "code": option_code(scenario_id, offer_id, qty, include_transfers),
+        "scenario_id": scenario_id,
+        "offer_id": offer_id,
+        "qty": qty,
+        "include_transfers": include_transfers,
+        "name": name,
+        "found_by_search": found_by_search,
+        "on_time_orders": sim["on_time_orders"],
+        "total_orders": len(sim["order_results"]),
+        "priority_on_time": prio["on_time_count"],
+        "priority_total": prio["total_count"],
+        "total_days_late": sim["total_order_days_late"],
+        "extra_cost": sim["total_extra_cost"],
+        "late_orders": [
+            {"order_id": r["order_id"], "days_late": r["days_late"],
+             "priority_rank": cat["orders"][r["order_id"]]["priority_rank"]}
+            for r in late
+        ],
+    }
+
+
+def _named_rows(cat) -> list[dict]:
+    rows = []
+    for sid in _NAMED:
+        actions = _t.get_scenario_actions(sid)["actions"]
+        rows.append(_row(cat, actions, scenario_id=sid))
+    return rows
+
+
+def _searched_rows(cat, named: list[dict], disruption_id: str) -> list[dict]:
+    """Options found by search that beat at least one named option.
+
+    An explored option is kept when no other option (named or explored) has
+    at least as many on-time orders for no more money, and it is not the same
+    as a named option.  This keeps the table short: only real improvements.
+    """
+    offers = [o for o in _t.get_offers(disruption_id)["offers"]
+              if not o["is_disrupted_supplier"]]
+    cands = []
+    for o in offers:
+        for flag in (True, False):
+            for r in _t.explore_purchase_qty(o["offer_id"], include_transfers=flag)["ranked"]:
+                cands.append((o["offer_id"], r["purchase_qty"], flag,
+                              r["on_time_orders"], r["total_extra_cost"], r["actions"]))
+    pool = [(n["on_time_orders"], n["extra_cost"]) for n in named] + [(c[3], c[4]) for c in cands]
+
+    def dominated(ot, cost):
+        return any((o2 >= ot and c2 <= cost) and (o2 > ot or c2 < cost) for o2, c2 in pool)
+
+    named_points = {(n["on_time_orders"], n["extra_cost"]) for n in named}
+    keep, seen = [], set()
+    for off, qty, flag, ot, cost, actions in sorted(cands, key=lambda c: (c[4], -c[3])):
+        if dominated(ot, cost) or (ot, cost) in named_points or (ot, cost) in seen:
+            continue
+        seen.add((ot, cost))
+        keep.append(_row(cat, actions, offer_id=off, qty=qty,
+                         include_transfers=flag, found_by_search=True))
+    return keep
+
+
+# ── choosing the ★ ────────────────────────────────────────────────────────────
+
+def choose_recommended(rows, objective="on_time_orders", budget=None, min_on_time=None):
+    """Return the code of the best row for the objective, or None if nothing qualifies."""
+    ok = [r for r in rows
+          if (budget is None or r["extra_cost"] <= budget)
+          and (min_on_time is None or r["on_time_orders"] >= min_on_time)]
+    if not ok:
+        return None
+    keys = {
+        "on_time_orders": lambda r: (-r["on_time_orders"], r["extra_cost"]),
+        "on_time_units": lambda r: (-r["on_time_orders"], r["extra_cost"]),
+        "cost": lambda r: (r["extra_cost"], -r["on_time_orders"]),
+        "total_late_days": lambda r: (r["total_days_late"], r["extra_cost"]),
+        "max_delay": lambda r: (max([o["days_late"] for o in r["late_orders"]] or [0]),
+                                r["extra_cost"]),
+    }
+    return min(ok, key=keys.get(objective, keys["on_time_orders"]))["code"]
+
+
+def criteria_text(objective, budget, min_on_time) -> str:
+    parts = [_OBJECTIVE_TEXT.get(objective, "most on-time orders")]
+    if min_on_time:
+        parts.append(f"at least {min_on_time} on-time orders")
+    if budget is not None:
+        parts.append(f"within {_money(budget)}")
+    return ", ".join(parts)
+
+
+# ── request settings (budget, objective, target) ──────────────────────────────
+
+def _to_int(v):
+    try:
+        return int(str(v).replace(",", "").replace("$", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def request_settings(user_message: str, tool_trace: list[dict]) -> dict:
+    """Budget, objective and minimum on-time target for this turn.
+
+    Taken from the tool calls the model made, with the user's own words as a
+    fallback (models sometimes forget to pass the budget).
+    """
+    budget = objective = min_on = None
+    for t in tool_trace:
+        a = t.get("args") or {}
+        if t["name"] in ("compare_scenarios", "explore_purchase_qty"):
+            budget = _to_int(a.get("budget")) if _to_int(a.get("budget")) is not None else budget
+            if a.get("objective") and str(a["objective"]).lower() != "null":
+                objective = a["objective"]
+            m = _to_int(a.get("min_on_time_orders"))
+            min_on = m if m is not None else min_on
+    msg = user_message.lower()
+    if budget is None:
+        m = re.search(r"\$\s?([\d,]+)|([\d,]+)\s*(?:dollars|usd)", msg)
+        if m and "budget" in msg:
+            budget = _to_int(m.group(1) or m.group(2))
+    if min_on is None:
+        m = re.search(r"keep\s+(\d+)\s+orders", msg)
+        if m:
+            min_on = int(m.group(1))
+    if objective is None:
+        if "late days" in msg or "days late" in msg:
+            objective = "total_late_days"
+        elif "cheap" in msg or "lowest cost" in msg:
+            objective = "cost"
+        else:
+            objective = "on_time_orders"
+    return {"budget": budget, "objective": objective, "min_on_time": min_on}
+
+
+# ── view: recommendation ──────────────────────────────────────────────────────
+
+def situation_text(disruption_id: str, cat: dict) -> str:
+    d = _t.get_disruption(disruption_id)
+    imp = _t.get_impact(disruption_id)
+    total = len(cat["orders"])
+    sup = next(o for o in _t.get_offers(disruption_id)["offers"] if o["is_disrupted_supplier"])
+    supplier = cat["suppliers"][sup["supplier_id"]]
+    comp = cat["components"][d["component_id"]]
+    return (
+        f"A {d['reason'].lower()} at {supplier} delays {d['qty']} units of {comp} "
+        f"({d['component_id']}, order {d['po_id']}) from {_day(d['original_receipt_date'])} "
+        f"to {_day(d['revised_receipt_date'])}, a delay of {d['delay_days']} days. "
+        f"With no action, {imp['late_order_count']} of {total} customer orders will be late."
+    )
+
+
+def options_table(rows, star_code=None, budget=None) -> str:
+    head = "| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |"
+    sep = "|---|---|---|---|---|"
+    if budget is not None:
+        head += f" Within {_money(budget)} |"
+        sep += "---|"
+    lines = [head, sep]
+    for r in rows:
+        star = " ★" if r["code"] == star_code else ""
+        note = ", found by search" if r.get("found_by_search") else ""
+        name = f"{r['name']} ({r['code']}{note}){star}"
+        cells = [
+            name,
+            f"{r['on_time_orders']} of {r['total_orders']}",
+            f"{r['priority_on_time']} of {r['priority_total']}",
+            str(r["total_days_late"]),
+            _money(r["extra_cost"]),
+        ]
+        if budget is not None:
+            cells.append("yes" if r["extra_cost"] <= budget else "no")
+        if star:
+            cells = [f"**{c}**" for c in cells]
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
+
+def late_line(row) -> str:
+    if not row["late_orders"]:
+        return "No orders are late with this option."
+    parts = []
+    for o in row["late_orders"]:
+        p = ", priority 1" if o["priority_rank"] == 1 else ""
+        unit = "day" if o["days_late"] == 1 else "days"
+        parts.append(f"{o['order_id']} ({o['days_late']} {unit}{p})")
+    return "Still late with this option: " + ", ".join(parts) + "."
+
+
+def build_recommendation(user_message, tool_trace, disruption_id="D01") -> dict:
+    """Engine-built data for a recommendation answer (no LLM text yet)."""
+    cat = _catalog()
+    cat["_disruptions"] = [disruption_id]
+    settings = request_settings(user_message, tool_trace)
+    rows = _named_rows(cat)
+    searched = any(t["name"] == "explore_purchase_qty" for t in tool_trace)
+    if searched:
+        rows += _searched_rows(cat, rows, disruption_id)
+    star = choose_recommended(rows, settings["objective"], settings["budget"],
+                              settings["min_on_time"])
+    star_row = next((r for r in rows if r["code"] == star), None)
+    return {
+        "type": "recommendation",
+        "situation": situation_text(disruption_id, cat),
+        "settings": settings,
+        "criteria": criteria_text(settings["objective"], settings["budget"],
+                                  settings["min_on_time"]),
+        "rows": rows,
+        "recommended": star,
+        "recommended_row": star_row,
+        "table_markdown": options_table(rows, star, settings["budget"]),
+    }
+
+
+def recommendation_markdown(view: dict, rationale: str, tradeoffs: str) -> str:
+    star_row = view["recommended_row"]
+    out = [
+        "## Situation", view["situation"], "",
+        "## Options compared", view["table_markdown"], "",
+        f"★ = recommended for: {view['criteria']}.", "",
+        "## Recommendation",
+    ]
+    if star_row:
+        out.append(f"**{star_row['name']} ({star_row['code']})**")
+    else:
+        out.append(f"**No option meets: {view['criteria']}.**")
+    if rationale:
+        out.append(rationale)
+    out += ["", "## Trade-offs and risks"]
+    if star_row:
+        out.append(f"- {late_line(star_row)}")
+    if tradeoffs:
+        out.append(tradeoffs)
+    out += ["", "## Next step"]
+    if star_row:
+        out.append(f'To act on this, say: *"Propose {star_row["code"]}"*. '
+                   "Nothing is executed until it is approved in the UI.")
+    else:
+        out.append("Change the budget or the target and ask again.")
+    return "\n".join(out)
+
+
+def split_narrative(text: str) -> tuple[str, str]:
+    """Split the model's text into (rationale, trade-off bullets)."""
+    text = (text or "").strip()
+    m = re.split(r"(?im)^\s*\**trade-?offs?\**\s*:\s*", text, maxsplit=1)
+    rationale = re.sub(r"(?im)^\s*\**recommendation\**\s*:\s*", "", m[0]).strip()
+    trade = m[1].strip() if len(m) > 1 else ""
+    lines = [l.strip() for l in trade.splitlines() if l.strip()]
+    trade = "\n".join(l if l.startswith("- ") else f"- {l.lstrip('-* ')}" for l in lines)
+    return rationale, trade
+
+
+# ── view: order ───────────────────────────────────────────────────────────────
+
+def order_view(detail: dict) -> dict:
+    cat = _catalog()
+    o = cat["orders"][detail["order_id"]]
+    c = detail["cause"]
+    lines = [
+        "## Answer", detail["summary"], "",
+        "## Evidence",
+        f"- Option: {detail['option']}",
+        f"- Customer {o['customer_id']}, priority {o['priority_rank']}, "
+        f"due {detail['due_date']}",
+        f"- Latest on-time start: {detail['latest_start_date']}",
+        f"- Starts {detail['start_date']}, delivered {detail['delivery_date']}, "
+        f"{detail['days_late']} days late",
+    ]
+    if c["type"] == "queue_blocked":
+        lines.append(f"- Cause: waiting in the production queue behind "
+                     f"{c['waiting_order_id']}")
+    elif c["type"] == "component_shortage":
+        lines.append("- Cause: not enough components on the latest on-time start date")
+    if c.get("shortfall"):
+        short = ", ".join(f"{q} x {k} ({cat['components'][k]})" for k, q in c["shortfall"].items())
+        lines.append(f"- Missing on {c['check_date']}: {short}")
+    return {"type": "order", "detail": detail, "markdown": "\n".join(lines)}
+
+
+# ── view: proposal ────────────────────────────────────────────────────────────
+
+def proposal_view(proposal: dict, code: str) -> dict:
+    cat = _catalog()
+    m = proposal["metrics"]
+    actions = proposal["actions"]
+    lines = [
+        "## Proposal created",
+        f"**{option_name(actions, cat)} ({code})** is pending approval in the UI. "
+        "Nothing has been executed.", "",
+        f"- On-time orders: {m['on_time_orders']} of {m.get('total_orders', 12)}",
+        f"- Total days late: {m['total_order_days_late']}",
+        f"- Extra cost: {_money(m['total_extra_cost'])}", "",
+        "### Actions in this proposal",
+    ]
+    for a in actions:
+        if a["type"] == "purchase":
+            o = cat["offers"][a["offer_id"]]
+            lines.append(f"- Buy {a['qty']} x {o['component_id']} "
+                         f"({cat['components'][o['component_id']]}) from "
+                         f"{cat['suppliers'][o['supplier_id']]} on {a['action_date']}")
+        else:
+            ln = cat["lanes"][a["lane_id"]]
+            lines.append(f"- Move {a['qty']} x {a['component_id']} from "
+                         f"{cat['warehouses'][ln['from']]} to {cat['warehouses'][ln['to']]} "
+                         f"on {a['action_date']} ({ln['lead_days']} days in transit)")
+    lines += ["", f"Proposal ID: {proposal['proposal_id']}",
+              f"Reason given: {proposal.get('reason', '')}"]
+    return {"type": "proposal", "proposal": proposal, "code": code,
+            "markdown": "\n".join(lines)}
+
+
+# ── view: unsupported ─────────────────────────────────────────────────────────
+
+def is_unsupported(user_message: str, disruption_id="D01") -> bool:
+    """True when the user asks about a delay length or disruption that is not modelled."""
+    msg = user_message.lower()
+    recorded = _t.get_disruption(disruption_id)["delay_days"]
+    if "delay" in msg:
+        for n in re.findall(r"\b(\d+)\s*-?\s*days?\b", msg):
+            if int(n) != recorded:
+                return True
+    known = {d.lower() for d in [disruption_id]}
+    return any(d not in known for d in re.findall(r"\bd\d{2}\b", msg))
+
+
+def unsupported_view(disruption_id="D01") -> dict:
+    cat = _catalog()
+    cat["_disruptions"] = [disruption_id]
+    d = _t.get_disruption(disruption_id)
+    rows = _named_rows(cat)
+    md = "\n".join([
+        "## Answer", d["scope_note"], "",
+        f"## Current {disruption_id} situation (recorded {d['delay_days']}-day delay)",
+        situation_text(disruption_id, cat), "",
+        options_table(rows), "",
+        "## Next step",
+        'Ask about the recorded case, for example *"What should we do?"*.',
+    ])
+    return {"type": "unsupported", "scope_note": d["scope_note"], "rows": rows,
+            "markdown": md}

@@ -22,7 +22,8 @@ run_agent(user_message, history=None, llm=None, max_steps=10) -> dict
 
 import json
 
-from agent.prompts import build_messages, build_compose_message
+from agent import render
+from agent.prompts import build_messages, build_compose_message, build_narrative_message
 from agent.tool_specs import call_tool, tool_specs_for
 
 
@@ -147,20 +148,44 @@ def run_agent(
             messages.append(tool_msg)
             turn_messages.append(tool_msg)
 
-    # ── Compose phase ─────────────────────────────────────────────────────────
-    # Always make one final call with NO tools and the compose instruction.
-    compose_msgs = messages + [build_compose_message(user_message, proposal is not None)]
+    # ── Answer phase ──────────────────────────────────────────────────────────
+    # The engine data is laid out by code (agent/render.py) so the manager sees
+    # the same layout every time.  The model writes free text only where no
+    # fixed view applies, and a short rationale inside recommendations.
+    view = None
     try:
-        compose_response = llm.chat(compose_msgs, [])
-    except Exception as exc:
-        return _unavailable(exc, history, turn_messages, tool_trace, proposal)
-    answer = (compose_response.get("content") or "").strip()
-    if not answer:
-        answer = _CANNED_FALLBACK
-    if proposal is not None:
-        # Written by code, not by the model, so the user always learns that a
-        # proposal exists and that nothing has been executed.
-        answer += "\n\n" + proposal_notice(proposal)
+        view = _choose_view(user_message, tool_trace, proposal)
+    except Exception:
+        view = None   # rendering must never break the answer; fall back below
+
+    if view is not None and view["type"] != "recommendation":
+        answer = view["markdown"]                     # fully deterministic
+    elif view is not None:
+        narrative = ""
+        try:
+            resp = llm.chat(messages + [build_narrative_message(user_message, view)], [])
+            narrative = (resp.get("content") or "").strip()
+        except Exception:
+            narrative = ""
+        rationale, tradeoffs = render.split_narrative(narrative)
+        if not rationale:
+            rationale = ("(The AI explanation is unavailable. The table and the "
+                         "recommendation above come from the engine.)")
+        answer = render.recommendation_markdown(view, rationale, tradeoffs)
+        view["markdown"] = answer
+    else:
+        compose_msgs = messages + [build_compose_message(user_message, proposal is not None)]
+        try:
+            compose_response = llm.chat(compose_msgs, [])
+        except Exception as exc:
+            return _unavailable(exc, history, turn_messages, tool_trace, proposal)
+        answer = (compose_response.get("content") or "").strip()
+        if not answer:
+            answer = _CANNED_FALLBACK
+        if proposal is not None:
+            # Fallback only (normally the proposal view is used).  Written by
+            # code so the user always learns that a proposal exists.
+            answer += "\n\n" + proposal_notice(proposal)
 
     final_msg = {"role": "assistant", "content": answer}
     turn_messages.append(final_msg)
@@ -171,7 +196,43 @@ def run_agent(
         "tool_trace": tool_trace,
         "proposal":   proposal,
         "history":    updated_history,
+        "view":       view,
     }
+
+
+def _ok_results(tool_trace, name):
+    return [t for t in tool_trace
+            if t["name"] == name and isinstance(t["result"], dict)
+            and "error" not in t["result"] and "note" not in t["result"]]
+
+
+def _proposal_code(tool_trace) -> str:
+    """Code of the option behind the proposal, e.g. 'HYBRID' or 'OF02 x40 + transfers'."""
+    calls = _ok_results(tool_trace, "propose_action")
+    a = (calls[-1]["args"] if calls else {}) or {}
+    if a.get("scenario_id") and str(a["scenario_id"]).lower() != "null":
+        return a["scenario_id"]
+    flag = str(a.get("include_transfers", "")).lower() == "true"
+    return render.option_code(None, a.get("offer_id"), a.get("qty"), flag)
+
+
+def _choose_view(user_message, tool_trace, proposal):
+    """Pick the fixed view for this turn, or None for a free-text answer.
+
+    Priority: proposal > unsupported question > order explanation >
+    recommendation (comparison or search ran) > free text.
+    """
+    if proposal is not None:
+        return render.proposal_view(proposal, _proposal_code(tool_trace))
+    if render.is_unsupported(user_message):
+        return render.unsupported_view()
+    orders = _ok_results(tool_trace, "get_order_detail")
+    if orders:
+        return render.order_view(orders[-1]["result"])
+    if (_ok_results(tool_trace, "compare_scenarios")
+            or _ok_results(tool_trace, "explore_purchase_qty")):
+        return render.build_recommendation(user_message, tool_trace)
+    return None
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

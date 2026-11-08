@@ -48,6 +48,7 @@ cd reference && python3 verify.py --write
 - `get_offers` must be called before `explore_purchase_qty` to discover the offer ID for the disrupted component.
 - `get_priority_view` accepts `scenario_id=` (preferred) or a raw `actions` list.
 - `propose_action` (LLM-facing) accepts either `scenario_id` **or** `(offer_id, qty, include_transfers)` — the agent layer resolves the latter via `explore_purchase_qty` before calling the engine.
+- **Answer layouts:** `agent/render.py` builds recommendation, order, proposal and unsupported answers from engine data. The LLM writes only the rationale and trade-offs of a recommendation. Do not move tables or numbers back into LLM-written text.
 - The agent **never approves** recovery actions — it only proposes.
 - Only disruption **D01** exists in the data. If asked about other disruption IDs or new delay dates, the agent must reply that they are not supported yet rather than inventing numbers.
 

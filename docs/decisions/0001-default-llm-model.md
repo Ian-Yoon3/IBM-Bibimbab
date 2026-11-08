@@ -1,6 +1,6 @@
 # ADR 0001. Default LLM for the recovery agent
 
-- **Status:** Accepted (confirmed by eval runs 3 to 5, see below)
+- **Status:** Accepted, final (confirmed by eval runs 3 to 7, see below)
 - **Date:** 2026-11-07
 - **Branch:** `feature/agent`
 - **Decision owner:** Sunghyuk (Ian) Yoon
@@ -99,7 +99,16 @@ File `eval_results/20261107_211843.json`. First run with the table check against
 - **Llama passed 6 of 6.** Every number in every answer was checked by hand against the engine and matched. It made no tool errors and did not try to call `propose_action` in Q1.
 - **Granite passed 3 of 6 in the harness, but only Q3 was fully correct on manual review.** Q1 stated a 5-day delay (real 6). Q2 stated a peak shortage of 63 units (real 95) and passed the harness because the check does not cover prose. Q4 gave HYBRID a cost of "about 1,500 to 1,600" (real 1,306). Q5 filled the whole table with invented values. Q6 said the proposal "has been approved" while it is pending.
 
-Runs 3 to 5 confirm the decision. With a clean conversation per question, Granite repeatedly put numbers into answers that no tool returned. Llama's one wrong fact came after all of its data tools had failed because of our own argument check.
+### Eval runs 6 and 7 (13 questions, 3 repetitions each)
+
+The golden set grew from 6 to 13 questions (budget 1,000 USD, minimum total days late, order explanations, priority-1 count for an explored option, and two multi-turn follow-ups). Each question ran 3 times. Only Llama was evaluated, because the decision above had already been made.
+
+- Run 6 (`eval_results/20261107_215130.json`): 10 of 13 questions passed all 3 times. The failures led to two fixes. The compose step had said "Original question", and in a follow-up the model answered the first question of the conversation again. The engine now also returns a `scope_note` that the model copies for hypothetical questions.
+- Run 7 (`eval_results/20261107_220100.json`): **12 of 13 questions passed all 3 times.** Q13 passed 1 of 3. In the two failed runs the model called `get_order_detail` with the correct arguments and then repeated its previous answer instead of using the result. The grounding check found no invented number in any of the 39 answers, and every table value matched the engine.
+
+Q13 is recorded as a known limitation rather than fixed further. The failure does not produce wrong numbers, and asking the same question without referring to the previous turn avoids it.
+
+Runs 3 to 7 confirm the decision. With a clean conversation per question, Granite repeatedly put numbers into answers that no tool returned. Llama's one wrong fact came after all of its data tools had failed because of our own argument check.
 
 ## Decision
 

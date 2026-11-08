@@ -276,6 +276,9 @@ def _extract_tokens(text: str) -> set[str]:
 def _grounding_corpus(result: dict) -> str:
     """Build the full grounding corpus from tool results + question text."""
     parts = [result.get("question", "")]
+    # Code-rendered views (agent/render.py) are built from engine data
+    if result.get("view"):
+        parts.append(json.dumps(result["view"], default=str))
     # IDs the agent is told about in the system prompt (e.g. D01) count as known
     try:
         from engine import tools as _t
@@ -361,7 +364,18 @@ def _cell_number(cell: str):
 
 
 def _identify_option(cell: str):
-    """Map an option cell to ("explored", (qty, transfers)) or ("scenario", id)."""
+    """Map an option cell to ("explored", (qty, transfers)) or ("scenario", id).
+
+    Code-rendered tables carry a code in parentheses, e.g. "(TRANSFER)" or
+    "(OF02 x40 + transfers, found by search)".  Free-text tables written by
+    the model are matched by name as before.
+    """
+    m = re.search(r"\((WAIT|TRANSFER|ALT_BUY|HYBRID)\)", cell)
+    if m:
+        return "scenario", m.group(1)
+    m = re.search(r"\(OF\d+\s*x(\d+)(\s*\+\s*transfers)?", cell, re.I)
+    if m:
+        return "explored", (int(m.group(1)), bool(m.group(2)))
     low = cell.lower()
     m = re.search(r"buy\s*(\d+)", low)
     if m:
@@ -372,29 +386,44 @@ def _identify_option(cell: str):
     return None, None
 
 
-def check_table(answer: str) -> list[str]:
-    """Compare the "Options compared" table with the engine ground truth.
+def _column_index(header_cells: list[str]) -> dict:
+    """Find the on-time, priority-1 and cost columns by their header text."""
+    idx = {}
+    for i, h in enumerate(header_cells):
+        h = h.lower()
+        if "priority" in h and "priority" not in idx:
+            idx["priority"] = i
+        elif "on-time" in h or "on time" in h:
+            idx.setdefault("on_time", i)
+        elif "cost" in h:
+            idx.setdefault("cost", i)
+    return idx
 
-    Returns a list of mismatch descriptions; empty means the table is
-    consistent (or there is no table).  Columns are assumed in the order
-    Option | On-time orders | Priority-1 on time | Extra cost USD.
+
+def check_table(answer: str) -> list[str]:
+    """Compare every options table in the answer with the engine ground truth.
+
+    Returns a list of mismatch descriptions; empty means every table is
+    consistent (or there is no table).  Columns are found by header text, so
+    extra columns (days late, within budget) are allowed.  Header names
+    without a header row fall back to Option | On-time | Priority-1 | Cost.
     """
     truth = _ground_truth()
-    lines = answer.splitlines()
-    try:
-        start = next(i for i, l in enumerate(lines)
-                     if "options compared" in l.lower())
-    except StopIteration:
-        return []
     mismatches = []
-    labels = ("on-time orders", "priority-1 on time", "extra cost")
-    for line in lines[start + 1:]:
-        if line.strip().startswith("#"):
-            break
+    idx = {"on_time": 1, "priority": 2, "cost": 3}
+    labels = {"on_time": 0, "priority": 1, "cost": 2}
+    lines = answer.splitlines()
+    for n, line in enumerate(lines):
         if not line.strip().startswith("|"):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 4 or set(cells[1]) <= set("-: "):
+        nxt = lines[n + 1].strip() if n + 1 < len(lines) else ""
+        if nxt.startswith("|") and set(nxt.replace("|", "")) <= set("-: "):
+            found = _column_index(cells)          # header row
+            if {"on_time", "priority", "cost"} <= set(found):
+                idx = found
+            continue
+        if len(cells) < 4 or set("".join(cells)) <= set("-: "):
             continue
         kind, key = _identify_option(cells[0])
         if kind == "scenario":
@@ -406,12 +435,15 @@ def check_table(answer: str) -> list[str]:
         if expected is None:
             mismatches.append(f"{cells[0]}: unknown option")
             continue
-        for label, cell, exp in zip(labels, cells[1:4], expected):
-            got = _cell_number(cell)
+        for col, pos in idx.items():
+            if pos >= len(cells):
+                continue
+            got = _cell_number(cells[pos])
+            exp = expected[labels[col]]
             if got is None:
                 continue
             if exp is None or got != exp:
-                mismatches.append(f"{cells[0]} {label} {got!r} != {exp!r}")
+                mismatches.append(f"{cells[0]} {col} {got!r} != {exp!r}")
     return mismatches
 
 
@@ -606,6 +638,7 @@ def eval_model(model_id: str, run_index: int = 1) -> list[dict]:
                 {"name": t["name"], "args": t["args"]} for t in result["earlier_tools"]
             ],
             "error":        result.get("error"),
+            "view_type":    (result.get("view") or {}).get("type"),
         })
     return rows
 

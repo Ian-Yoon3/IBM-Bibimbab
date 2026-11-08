@@ -1518,5 +1518,149 @@ class TestRun7Fixes(unittest.TestCase):
         self.assertEqual(ea._ONLY, set())
 
 
+
+def _tc(i, name, **args):
+    return {"tool_calls": [{"id": str(i), "name": name, "args": args}]}
+
+
+class TestDeterministicViews(unittest.TestCase):
+    """Code-rendered answers (agent/render.py).
+
+    Each golden question is driven by a scripted model that makes the right
+    tool calls.  The rendered answer must then pass the evaluation harness:
+    tables match the engine, every number is grounded, headings present.
+    """
+
+    def _run(self, qid, script_turns):
+        from scripts.eval_agent import GOLDEN_QUESTIONS, _run_question, _check_question
+        q = next(q for q in GOLDEN_QUESTIONS if q["id"] == qid)
+        flat = [step for turn in script_turns for step in turn]
+        result = _run_question(q, ScriptedLLM(flat))
+        ok, why = _check_question(q, result)
+        return ok, why, result
+
+    def test_q1_recommendation_view(self):
+        ok, why, r = self._run("Q1", [[
+            _tc(1, "compare_scenarios", budget=500),
+            _tc(2, "get_offers", disruption_id="D01"),
+            _tc(3, "explore_purchase_qty", offer_id="OF02", include_transfers=True),
+            {"content": "gathered"},
+            {"content": "Recommendation: Moving stock is the only option within the "
+                        "budget that improves on waiting.\nTrade-offs:\n- The search "
+                        "option with 40 units keeps 11 of 12 orders on time but costs $1,216."},
+        ]])
+        self.assertTrue(ok, why)
+        self.assertEqual(r["view"]["type"], "recommendation")
+        self.assertEqual(r["view"]["recommended"], "TRANSFER")
+        self.assertIn('Propose TRANSFER', r["answer"])
+        self.assertIn("Within $500", r["answer"])
+
+    def test_q4_star_is_cheapest_with_11(self):
+        ok, why, r = self._run("Q4", [[
+            _tc(1, "get_offers", disruption_id="D01"),
+            _tc(2, "explore_purchase_qty", offer_id="OF02", include_transfers=True,
+                min_on_time_orders=11, objective="cost"),
+            {"content": "gathered"},
+            {"content": "Recommendation: It keeps the same 11 orders on time as HYBRID "
+                        "for less.\nTrade-offs:\n- HYBRID costs $1,306."},
+        ]])
+        self.assertTrue(ok, why)
+        self.assertEqual(r["view"]["recommended"], "OF02 x40 + transfers")
+
+    def test_q8_named_only_star_hybrid(self):
+        ok, why, r = self._run("Q8", [[
+            _tc(1, "compare_scenarios", objective="total_late_days"),
+            {"content": "gathered"},
+            {"content": "Recommendation: It has the fewest total days late.\n"
+                        "Trade-offs:\n- Waiting costs nothing but leaves 27 days late."},
+        ]])
+        self.assertTrue(ok, why)
+        self.assertEqual(r["view"]["recommended"], "HYBRID")
+        self.assertNotIn("found by search", r["answer"])
+
+    def test_q5_unsupported_view_needs_no_compose(self):
+        ok, why, r = self._run("Q5", [[
+            _tc(1, "get_disruption", disruption_id="D01"),
+            {"content": "gathered"},
+        ]])
+        self.assertTrue(ok, why)
+        self.assertEqual(r["view"]["type"], "unsupported")
+        self.assertIn("cannot be simulated", r["answer"])
+
+    def test_q9_order_view_needs_no_compose(self):
+        ok, why, r = self._run("Q9", [[
+            _tc(1, "get_order_detail", order_id="SO08", scenario_id="HYBRID"),
+            {"content": "gathered"},
+        ]])
+        self.assertTrue(ok, why)
+        self.assertEqual(r["view"]["type"], "order")
+
+    def test_q13_follow_up_answers_the_follow_up(self):
+        ok, why, r = self._run("Q13", [
+            [_tc(1, "explore_purchase_qty", offer_id="OF02", include_transfers=True,
+                 min_on_time_orders=11, objective="cost"),
+             {"content": "gathered"},
+             {"content": "Recommendation: cheapest with 11 on time.\nTrade-offs:\n- none"}],
+            [_tc(2, "get_order_detail", order_id="SO08", offer_id="OF02", qty=40,
+                 include_transfers=True),
+             {"content": "gathered"}],
+        ])
+        self.assertTrue(ok, why)
+        self.assertIn("lacked 23 x C01", r["answer"])
+
+    def test_q12_proposal_view(self):
+        ok, why, r = self._run("Q12", [
+            [_tc(1, "explore_purchase_qty", offer_id="OF02", include_transfers=True,
+                 min_on_time_orders=11, objective="cost"),
+             {"content": "gathered"},
+             {"content": "Recommendation: cheapest with 11 on time.\nTrade-offs:\n- none"}],
+            [_tc(2, "propose_action", offer_id="OF02", qty=40, include_transfers=True,
+                 reason="cheapest option with 11 on time"),
+             {"content": "done"}],
+        ])
+        self.assertTrue(ok, why)
+        self.assertEqual(r["view"]["type"], "proposal")
+        self.assertIn("(OF02 x40 + transfers)", r["answer"])
+        self.assertEqual(r["answer"].count(r["proposal"]["proposal_id"]), 1)
+
+    def test_rendered_tables_match_engine(self):
+        from agent import render
+        from scripts.eval_agent import check_table
+        v = render.build_recommendation(
+            "Our budget is 500 dollars. What should we do?",
+            [{"name": "explore_purchase_qty", "args": {"offer_id": "OF02"}}])
+        md = render.recommendation_markdown(v, "x", "")
+        self.assertEqual(check_table(md), [])
+        self.assertEqual(check_table(render.unsupported_view()["markdown"]), [])
+
+    def test_narrative_failure_keeps_engine_answer(self):
+        class _Fail:
+            n = 0
+            def chat(self, messages, tools):
+                self.n += 1
+                if self.n == 1:
+                    return {"content": None, "tool_calls": [
+                        {"id": "1", "name": "compare_scenarios", "args": {"budget": 500}}]}
+                if self.n == 2:
+                    return {"content": "gathered", "tool_calls": []}
+                raise ConnectionError("down")
+        r = run_agent("Our budget is 500 dollars. What should we do?", llm=_Fail())
+        self.assertIn("Propose TRANSFER", r["answer"])
+        self.assertIn("explanation is unavailable", r["answer"])
+
+    def test_split_narrative(self):
+        from agent.render import split_narrative
+        a, b = split_narrative("Recommendation: Do X.\nTrade-offs:\n- Y costs more\nZ is slower")
+        self.assertEqual(a, "Do X.")
+        self.assertEqual(b, "- Y costs more\n- Z is slower")
+
+    def test_unsupported_detection(self):
+        from agent.render import is_unsupported
+        self.assertTrue(is_unsupported("What if the delay becomes 8 days?"))
+        self.assertTrue(is_unsupported("What about disruption D02?"))
+        self.assertFalse(is_unsupported("Why is SO08 late under HYBRID?"))
+        self.assertFalse(is_unsupported("The delay is 6 days, what should we do?"))
+
+
 if __name__ == "__main__":
     unittest.main()

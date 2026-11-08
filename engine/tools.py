@@ -539,6 +539,45 @@ def get_offers(disruption_id: str, data_dir=None) -> dict:
     }
 
 
+def get_scenario_actions(scenario_id: str, data_dir=None) -> dict:
+    """Return the action list and disruption of a named scenario.
+
+    Read-only.  Used by the agent layer to describe and simulate named
+    options without importing engine internals.
+    """
+    db = _get_db(data_dir)
+    if scenario_id not in db["scenarios"]:
+        raise ValueError(f"Unknown scenario_id: {scenario_id!r}")
+    actions, disruption_id = build_scenario_actions(scenario_id, db)
+    return {"scenario_id": scenario_id, "disruption_id": disruption_id,
+            "actions": actions}
+
+
+def get_catalog(data_dir=None) -> dict:
+    """Return display names for suppliers, components, warehouses, products,
+    and the supplier and component of each offer and lane.
+
+    Read-only.  Lets the agent layer show "Beacon Circuits" instead of "S02".
+    """
+    db = _get_db(data_dir)
+    return {
+        "suppliers": {k: v["supplier_name"] for k, v in db["suppliers"].items()},
+        "components": {k: v["component_name"] for k, v in db["components"].items()},
+        "warehouses": {k: v["warehouse_name"] for k, v in db["warehouses"].items()},
+        "products": {k: v["product_name"] for k, v in db["products"].items()},
+        "offers": {k: {"supplier_id": v["supplier_id"],
+                       "component_id": v["component_id"]}
+                   for k, v in db["offers"].items()},
+        "lanes": {k: {"from": v["from_warehouse_id"], "to": v["to_warehouse_id"],
+                      "lead_days": v["lead_days"]}
+                  for k, v in db["lanes"].items()},
+        "orders": {k: {"customer_id": v["customer_id"],
+                       "priority_rank": v["priority_rank"],
+                       "due_date": v["due_date"].isoformat()}
+                   for k, v in db["orders"].items()},
+    }
+
+
 def propose_action(
     scenario_id_or_actions,
     reason: str,
