@@ -502,5 +502,44 @@ class TestRunAgent(unittest.TestCase):
         self.assertEqual(result["proposal"]["status"], "pending_approval")
 
 
+# ── prompts ───────────────────────────────────────────────────────────────────
+
+class TestPrompts(unittest.TestCase):
+
+    def test_compose_instruction_contains_na_rule(self):
+        """The compose instruction must contain the n/a policy rule."""
+        from agent.prompts import _COMPOSE_INSTRUCTION
+        self.assertIn("n/a", _COMPOSE_INSTRUCTION)
+        # The rule must reference tool results as the only allowed source
+        self.assertIn("tool result", _COMPOSE_INSTRUCTION.lower())
+
+    def test_compose_instruction_forbids_contact(self):
+        """The compose instruction must tell the model not to direct users elsewhere."""
+        from agent.prompts import _COMPOSE_INSTRUCTION
+        self.assertIn("contact", _COMPOSE_INSTRUCTION.lower())
+
+    def test_system_prompt_playbook_has_all_four_scenarios(self):
+        """Recommendation playbook must list all 4 named scenarios for get_priority_view."""
+        from agent.prompts import SYSTEM_PROMPT
+        for scenario in ("WAIT", "TRANSFER", "ALT_BUY", "HYBRID"):
+            self.assertIn(scenario, SYSTEM_PROMPT)
+
+    def test_system_prompt_unsupported_includes_compare_scenarios(self):
+        """Unsupported-question playbook must include compare_scenarios."""
+        from agent.prompts import SYSTEM_PROMPT
+        # Find the unsupported section and check compare_scenarios appears in it
+        idx = SYSTEM_PROMPT.find("different delay length")
+        self.assertGreater(idx, 0)
+        unsupported_section = SYSTEM_PROMPT[idx:]
+        self.assertIn("compare_scenarios", unsupported_section)
+
+    def test_build_compose_message_contains_na_rule(self):
+        """build_compose_message output must carry the n/a rule."""
+        from agent.prompts import build_compose_message
+        msg = build_compose_message("test question")
+        self.assertIn("n/a", msg["content"])
+        self.assertEqual(msg["role"], "user")
+
+
 if __name__ == "__main__":
     unittest.main()

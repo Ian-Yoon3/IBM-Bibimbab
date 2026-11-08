@@ -25,15 +25,15 @@ def _print_tool_call(entry: dict) -> None:
 
 def main() -> None:
     load_dotenv()
-    # Suppress only the IBM watsonx disclaimer warning (not other warnings).
-    warnings.filterwarnings(
-        "ignore",
-        message=".*disclaimer.*",
-        category=UserWarning,
-    )
+    # Suppress only the "Non-IBM Product" disclaimer inside WatsonxAPIWarning.
+    # All other watsonx warnings remain visible.
     try:
         from ibm_watsonx_ai.foundation_models.utils.utils import WatsonxAPIWarning
-        warnings.filterwarnings("ignore", category=WatsonxAPIWarning)
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Non-IBM Product.*",
+            category=WatsonxAPIWarning,
+        )
     except ImportError:
         pass
 

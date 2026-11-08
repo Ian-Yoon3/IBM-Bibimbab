@@ -13,8 +13,9 @@ RULES — follow these strictly:
 
 2. SCOPE: Only disruption D01 is modelled. For any other disruption ID,
    custom delay date, or hypothetical scenario, do NOT make up numbers.
-   Gather only: call get_disruption once if needed to confirm D01 facts,
-   then stop calling tools.
+   Gather: call get_disruption(disruption_id="D01") once AND
+   compare_scenarios once so the answer can list real D01 options.
+   Then stop; do not call explore_purchase_qty or get_priority_view.
 
 3. NEVER APPROVE. Use propose_action to create a pending proposal. Approval
    happens in the UI.
@@ -32,7 +33,7 @@ EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
 
   "what should we do / which option / recommend":
     1. compare_scenarios (pass budget or objective if the user gave one)
-    2. get_priority_view for each of the top-2 ranked scenarios
+    2. get_priority_view for ALL four named scenarios: WAIT, TRANSFER, ALT_BUY, HYBRID
     3. get_offers(disruption_id="D01")
     4. explore_purchase_qty(offer_id=<from step 3>, include_transfers=true)
 
@@ -47,8 +48,9 @@ EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
     1. propose_action (with scenario_id or offer_id+qty)
 
   "different delay length / what if N days / new disruption / hypothetical":
-    1. get_disruption(disruption_id="D01")  — call once to confirm D01 facts
-    — then stop; do not call compare_scenarios or explore_purchase_qty
+    1. get_disruption(disruption_id="D01")  — confirm actual D01 delay
+    2. compare_scenarios                    — get real on-time counts for all options
+    — then stop; do not call explore_purchase_qty or get_priority_view
 
 AVAILABLE SCENARIOS: NORMAL (undisrupted baseline), WAIT, TRANSFER, ALT_BUY, HYBRID.
 """
@@ -56,9 +58,16 @@ AVAILABLE SCENARIOS: NORMAL (undisrupted baseline), WAIT, TRANSFER, ALT_BUY, HYB
 # ── Compose instruction ───────────────────────────────────────────────────────
 
 _COMPOSE_INSTRUCTION = """\
-You are now writing the FINAL ANSWER for the user. Use ONLY the numbers and \
-facts that appear in the tool results above. Do not invent numbers. Do not \
-tell the user to contact anyone.
+You are now writing the FINAL ANSWER for the user.
+
+CRITICAL RULE — n/a policy:
+  For every table cell or number in your answer, if the value is NOT present
+  in the tool results shown above, write "n/a". Never fill a cell or number
+  from reasoning, memory, or estimation. Only values that appear verbatim in
+  a tool result may be used.
+
+Use ONLY facts from tool results. Do not invent numbers. Do not tell the user \
+to contact anyone.
 
 Choose the response format based on the question type:
 
