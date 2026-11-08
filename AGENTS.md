@@ -85,10 +85,16 @@ cd reference && python3 verify.py --write
 | `inventory_ledger.csv` | variable — one row per stock event |
 | `checks.csv` | 5 — all three audit columns must be `PASS` |
 
-## Code style (`engine/`)
+## Code style (`reference/verify.py`)
 
 - stdlib only: `csv`, `collections`, `datetime`, `pathlib`, `sys`
 - `load(name, *keys)` returns a dict keyed by single value or tuple; duplicate keys raise `AssertionError`
 - `number(row, key)` / `day(row, key)` are the canonical accessors — enforce non-negative int and ISO date
 - Assertions are used for all data-integrity checks (no `raise` statements)
 - `ROOT` is resolved relative to `__file__`, not `cwd`
+
+## Code style (`engine/` and `agent/`)
+
+- Data and input errors raise `ValueError` with a clear message — no `assert` for validation logic
+- `engine/` reads CSVs exclusively via `engine/loader.py`; never open data files directly elsewhere
+- Public functions return JSON-serialisable dicts
