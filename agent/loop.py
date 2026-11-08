@@ -1,19 +1,34 @@
 """Agent loop — run_agent orchestrates the tool-calling conversation.
 
+Two-phase design
+----------------
+Gather phase  – tool-calling loop (max_steps=10).  Runs until the model
+                replies with no tool calls or max_steps is reached.
+Compose phase – one final LLM call with NO tools and a compose
+                instruction appended.  Always runs.  Its content is the
+                final answer.  Canned fallback only when content is empty.
+
+Duplicate-call guard
+--------------------
+Within one turn, if the same (tool name, normalised args) pair is called
+again, the engine is not invoked.  The result is::
+
+    {"note": "already called with these args; use the earlier result"}
+
 Public API
 ----------
-run_agent(user_message, history=None, llm=None, max_steps=6) -> dict
+run_agent(user_message, history=None, llm=None, max_steps=10) -> dict
 """
 
 import json
 
-from agent.prompts import build_messages
+from agent.prompts import build_messages, build_compose_message
 from agent.tool_specs import TOOL_SPECS, call_tool
 
 
-_MAX_STEPS_ANSWER = (
-    "I reached the maximum number of reasoning steps without a final answer. "
-    "Please try rephrasing your question or asking something more specific."
+_CANNED_FALLBACK = (
+    "I was unable to compose a final answer after gathering the evidence. "
+    "Please try rephrasing your question."
 )
 
 
@@ -21,7 +36,7 @@ def run_agent(
     user_message: str,
     history: list[dict] | None = None,
     llm=None,
-    max_steps: int = 6,
+    max_steps: int = 10,
 ) -> dict:
     """Run the tool-calling agent loop for one user turn.
 
@@ -37,12 +52,12 @@ def run_agent(
         ``None``, a ``WatsonxLLM`` instance is built from environment
         variables (requires a live .env).
     max_steps:
-        Maximum number of LLM calls before giving up.
+        Maximum number of gather-phase LLM calls before moving to compose.
 
     Returns
     -------
     dict with keys:
-        answer      – str, the final text reply to the user
+        answer      – str, the final text reply to the user (compose output)
         tool_trace  – list of {"step", "name", "args", "result"} dicts
         proposal    – the last propose_action result dict, or None
         history     – updated history list to pass into the next turn
@@ -55,31 +70,29 @@ def run_agent(
     tool_trace: list[dict] = []
     proposal = None
 
-    # Track the messages added during this turn (everything after system+history)
-    # so we can return them as the updated history.
+    # Track messages added this turn for history (everything after system+history).
     turn_messages: list[dict] = []
-    user_msg = {"role": "user", "content": user_message}
-    turn_messages.append(user_msg)
+    turn_messages.append({"role": "user", "content": user_message})
+
+    # seen_calls: set of (name, normalised-args-json) seen this turn
+    seen_calls: set[tuple] = set()
+
+    # ── Gather phase ──────────────────────────────────────────────────────────
+    gather_text: str | None = None   # text produced during gather (kept as context)
 
     for step in range(1, max_steps + 1):
         response = llm.chat(messages, TOOL_SPECS)
 
         if not response.get("tool_calls"):
-            # Model produced a text answer
-            answer = response.get("content") or ""
-            final_msg = {"role": "assistant", "content": answer}
-            turn_messages.append(final_msg)
-            updated_history = list(history or []) + turn_messages
-            return {
-                "answer":     answer,
-                "tool_trace": tool_trace,
-                "proposal":   proposal,
-                "history":    updated_history,
-            }
+            # Model produced a text answer in the gather phase — keep it as
+            # context for the compose prompt but do NOT use it as final answer.
+            gather_text = response.get("content") or ""
+            gather_msg = {"role": "assistant", "content": gather_text}
+            messages.append(gather_msg)
+            turn_messages.append(gather_msg)
+            break
 
         # ── one or more tool calls ────────────────────────────────────────────
-        # Step A: build and append the assistant message with tool_calls.
-        # arguments must be a JSON string (watsonx chat API expectation).
         assistant_msg: dict = {
             "role":       "assistant",
             "content":    "",
@@ -97,9 +110,16 @@ def run_agent(
         messages.append(assistant_msg)
         turn_messages.append(assistant_msg)
 
-        # Step B: execute each tool and append a matching "tool" role message.
         for tc in response["tool_calls"]:
-            result = call_tool(tc["name"], tc["args"])
+            call_key = (tc["name"], json.dumps(tc["args"], sort_keys=True))
+            if call_key in seen_calls:
+                result = {
+                    "note": "already called with these args; use the earlier result"
+                }
+            else:
+                seen_calls.add(call_key)
+                result = call_tool(tc["name"], tc["args"])
+
             tool_trace.append({
                 "step":   step,
                 "name":   tc["name"],
@@ -117,12 +137,20 @@ def run_agent(
             messages.append(tool_msg)
             turn_messages.append(tool_msg)
 
-    # max_steps exhausted without a text answer
-    final_msg = {"role": "assistant", "content": _MAX_STEPS_ANSWER}
+    # ── Compose phase ─────────────────────────────────────────────────────────
+    # Always make one final call with NO tools and the compose instruction.
+    compose_msgs = messages + [build_compose_message(user_message)]
+    compose_response = llm.chat(compose_msgs, [])
+    answer = (compose_response.get("content") or "").strip()
+    if not answer:
+        answer = _CANNED_FALLBACK
+
+    final_msg = {"role": "assistant", "content": answer}
     turn_messages.append(final_msg)
     updated_history = list(history or []) + turn_messages
+
     return {
-        "answer":     _MAX_STEPS_ANSWER,
+        "answer":     answer,
         "tool_trace": tool_trace,
         "proposal":   proposal,
         "history":    updated_history,

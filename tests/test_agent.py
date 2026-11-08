@@ -211,27 +211,43 @@ class TestToolSpecs(unittest.TestCase):
         self.assertIn("get_offers", self._tool_names())
 
 
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _tool_then_compose(tool_calls_turn, compose_answer="Composed answer."):
+    """Build a 2-turn script: one tool-calls turn + one compose turn."""
+    return [tool_calls_turn, {"content": compose_answer}]
+
+
+def _direct_compose(answer="Composed answer."):
+    """Build a 2-turn script: one gather text turn + one compose turn."""
+    return [{"content": "gather context"}, {"content": answer}]
+
+
 # ── run_agent loop ────────────────────────────────────────────────────────────
 
 class TestRunAgent(unittest.TestCase):
 
     def test_direct_text_answer(self):
-        """LLM returns text on first turn — no tool calls."""
-        llm = ScriptedLLM([{"content": "Only D01 is supported."}])
+        """Gather phase returns text immediately; compose produces the answer."""
+        llm = ScriptedLLM([
+            {"content": "gather: Only D01 is supported."},  # gather phase text
+            {"content": "Composed: Only D01 is supported."},  # compose phase
+        ])
         result = run_agent("What disruption is this?", llm=llm)
-        self.assertEqual(result["answer"], "Only D01 is supported.")
+        self.assertEqual(result["answer"], "Composed: Only D01 is supported.")
         self.assertEqual(result["tool_trace"], [])
         self.assertIsNone(result["proposal"])
 
     def test_single_tool_call_then_answer(self):
-        """LLM calls get_disruption once, then returns text."""
+        """Gather calls one tool, then compose produces the answer."""
         llm = ScriptedLLM([
             {"tool_calls": [{"id": "c1", "name": "get_disruption",
                              "args": {"disruption_id": "D01"}}]},
-            {"content": "The disruption delays PO01 by 6 days."},
+            {"content": "gather text"},       # gather phase text (context only)
+            {"content": "Composed: PO01 delayed 6 days."},  # compose answer
         ])
         result = run_agent("What happened?", llm=llm)
-        self.assertEqual(result["answer"], "The disruption delays PO01 by 6 days.")
+        self.assertEqual(result["answer"], "Composed: PO01 delayed 6 days.")
         self.assertEqual(len(result["tool_trace"]), 1)
         self.assertEqual(result["tool_trace"][0]["name"], "get_disruption")
 
@@ -240,7 +256,8 @@ class TestRunAgent(unittest.TestCase):
         llm = ScriptedLLM([
             {"tool_calls": [{"id": "c2", "name": "get_disruption",
                              "args": {"disruption_id": "D01"}}]},
-            {"content": "Done."},
+            {"content": "gather"},
+            {"content": "Composed."},
         ])
         result = run_agent("Details?", llm=llm)
         entry = result["tool_trace"][0]
@@ -248,28 +265,73 @@ class TestRunAgent(unittest.TestCase):
         self.assertEqual(entry["args"], {"disruption_id": "D01"})
         self.assertIn("disruption_id", entry["result"])
 
-    def test_max_steps_stop_returns_graceful_answer(self):
-        """Loop stops at max_steps and returns a graceful answer instead of crashing."""
-        # Every step returns a tool call — model never gives a text answer
-        llm = ScriptedLLM([
+    def test_max_steps_stop_still_composes(self):
+        """Loop stops at max_steps and compose still runs."""
+        tool_turns = [
             {"tool_calls": [{"id": f"c{i}", "name": "get_disruption",
                              "args": {"disruption_id": "D01"}}]}
-            for i in range(10)
-        ])
+            for i in range(3)
+        ]
+        llm = ScriptedLLM(tool_turns + [{"content": "Composed after max_steps."}])
         result = run_agent("Loop forever?", llm=llm, max_steps=3)
-        self.assertIsInstance(result["answer"], str)
-        self.assertGreater(len(result["answer"]), 0)
+        self.assertEqual(result["answer"], "Composed after max_steps.")
         self.assertEqual(len(result["tool_trace"]), 3)
+
+    def test_canned_fallback_when_compose_empty(self):
+        """Canned fallback used when compose returns empty content."""
+        tool_turns = [
+            {"tool_calls": [{"id": "c0", "name": "get_disruption",
+                             "args": {"disruption_id": "D01"}}]}
+        ]
+        llm = ScriptedLLM(tool_turns + [{"content": ""}])
+        result = run_agent("What?", llm=llm, max_steps=1)
+        self.assertIn("unable to compose", result["answer"].lower())
+
+    def test_compose_call_receives_no_tools(self):
+        """Compose phase calls llm.chat with an empty tools list."""
+        received_tools = []
+
+        class CapturingLLM:
+            def chat(self_inner, messages, tools):  # noqa: N805
+                received_tools.append(tools)
+                if len(received_tools) == 1:
+                    return {"content": "gather", "tool_calls": []}
+                return {"content": "composed", "tool_calls": []}
+
+        run_agent("Question?", llm=CapturingLLM())
+        # Last call (compose) must have empty tools
+        self.assertEqual(received_tools[-1], [])
+
+    def test_compose_content_is_final_answer(self):
+        """Answer comes from compose phase, not from gather text."""
+        llm = ScriptedLLM([
+            {"content": "gather text (not the answer)"},
+            {"content": "FINAL COMPOSED ANSWER"},
+        ])
+        result = run_agent("Any question?", llm=llm)
+        self.assertEqual(result["answer"], "FINAL COMPOSED ANSWER")
+        self.assertNotEqual(result["answer"], "gather text (not the answer)")
+
+    def test_compose_answer_is_last_history_message(self):
+        """The compose answer is the final assistant message in history."""
+        llm = ScriptedLLM([
+            {"content": "gather context"},
+            {"content": "FINAL COMPOSED ANSWER"},
+        ])
+        result = run_agent("Q?", llm=llm)
+        last = result["history"][-1]
+        self.assertEqual(last["role"], "assistant")
+        self.assertEqual(last["content"], "FINAL COMPOSED ANSWER")
 
     def test_unknown_tool_call_returns_error_to_llm(self):
         """Unknown tool name returns an error dict; loop continues."""
         llm = ScriptedLLM([
-            {"tool_calls": [{"id": "c1", "name": "approve_now",
-                             "args": {}}]},
-            {"content": "I cannot approve things."},
+            {"tool_calls": [{"id": "c1", "name": "approve_now", "args": {}}]},
+            {"content": "gather"},
+            {"content": "Composed: I cannot approve things."},
         ])
         result = run_agent("Approve!", llm=llm)
-        self.assertEqual(result["answer"], "I cannot approve things.")
+        self.assertEqual(result["answer"], "Composed: I cannot approve things.")
         self.assertIn("error", result["tool_trace"][0]["result"])
 
     def test_propose_action_result_in_proposal(self):
@@ -278,7 +340,8 @@ class TestRunAgent(unittest.TestCase):
             {"tool_calls": [{"id": "c1", "name": "propose_action",
                              "args": {"scenario_id": "HYBRID",
                                       "reason": "best trade-off"}}]},
-            {"content": "I've created a proposal for HYBRID."},
+            {"content": "gather"},
+            {"content": "Proposal created. Pending approval in the UI."},
         ])
         result = run_agent("Propose HYBRID", llm=llm)
         self.assertIsNotNone(result["proposal"])
@@ -286,43 +349,53 @@ class TestRunAgent(unittest.TestCase):
 
     def test_history_grows_across_turns(self):
         """History returned from run_agent feeds correctly into next turn."""
-        llm1 = ScriptedLLM([{"content": "The disruption is 6 days."}])
+        llm1 = ScriptedLLM([
+            {"content": "gather1"},
+            {"content": "Composed turn 1."},
+        ])
         r1 = run_agent("How long is the delay?", llm=llm1)
         history = r1["history"]
 
-        llm2 = ScriptedLLM([{"content": "HYBRID is best."}])
+        llm2 = ScriptedLLM([
+            {"content": "gather2"},
+            {"content": "Composed turn 2."},
+        ])
         r2 = run_agent("Which scenario is best?", history=history, llm=llm2)
-        # history should include both turns
         roles = [m["role"] for m in r2["history"]]
         self.assertIn("user", roles)
         self.assertIn("assistant", roles)
 
     def test_history_structure_no_tool_calls(self):
-        """History for a direct-answer turn: [user, assistant]."""
-        llm = ScriptedLLM([{"content": "D01 is the disruption."}])
+        """History for a direct-answer turn: [user, gather-assistant, compose-assistant]."""
+        llm = ScriptedLLM([
+            {"content": "gather context"},
+            {"content": "D01 is the disruption."},
+        ])
         result = run_agent("What is the disruption?", llm=llm)
         h = result["history"]
-        self.assertEqual(len(h), 2)
+        # user + gather assistant + compose assistant
+        self.assertEqual(len(h), 3)
         self.assertEqual(h[0]["role"], "user")
         self.assertEqual(h[0]["content"], "What is the disruption?")
-        self.assertEqual(h[1]["role"], "assistant")
-        self.assertEqual(h[1]["content"], "D01 is the disruption.")
+        self.assertEqual(h[1]["role"], "assistant")   # gather text
+        self.assertEqual(h[2]["role"], "assistant")   # compose answer
+        self.assertEqual(h[2]["content"], "D01 is the disruption.")
 
     def test_history_structure_with_tool_call(self):
-        """History for a turn with one tool call: [user, assistant+tool_calls, tool, assistant]."""
+        """History for a turn with one tool call includes correct message sequence."""
         llm = ScriptedLLM([
             {"tool_calls": [{"id": "tc1", "name": "get_disruption",
                              "args": {"disruption_id": "D01"}}]},
+            {"content": "gather text"},
             {"content": "PO01 is delayed 6 days."},
         ])
         result = run_agent("Tell me about D01.", llm=llm)
         h = result["history"]
-        # Expect: user, assistant(tool_calls), tool, assistant(answer)
-        self.assertEqual(len(h), 4)
+        # user, assistant(tool_calls), tool, gather-assistant, compose-assistant
+        self.assertEqual(len(h), 5)
         self.assertEqual(h[0]["role"], "user")
         self.assertEqual(h[1]["role"], "assistant")
         self.assertIn("tool_calls", h[1])
-        # assistant tool_calls entry should have content="" and arguments as JSON string
         self.assertEqual(h[1].get("content"), "")
         fn = h[1]["tool_calls"][0]["function"]
         self.assertIsInstance(fn["arguments"], str)
@@ -330,14 +403,16 @@ class TestRunAgent(unittest.TestCase):
         self.assertEqual(h[2]["role"], "tool")
         self.assertIn("tool_call_id", h[2])
         self.assertEqual(h[2]["tool_call_id"], "tc1")
-        self.assertEqual(h[3]["role"], "assistant")
-        self.assertEqual(h[3]["content"], "PO01 is delayed 6 days.")
+        self.assertEqual(h[3]["role"], "assistant")   # gather text
+        self.assertEqual(h[4]["role"], "assistant")   # compose answer
+        self.assertEqual(h[4]["content"], "PO01 is delayed 6 days.")
 
     def test_history_no_fabricated_tool_content(self):
         """History must not contain fabricated '[tool call: ...]' text."""
         llm = ScriptedLLM([
             {"tool_calls": [{"id": "tc1", "name": "get_disruption",
                              "args": {"disruption_id": "D01"}}]},
+            {"content": "gather"},
             {"content": "Done."},
         ])
         result = run_agent("Info?", llm=llm)
@@ -356,6 +431,7 @@ class TestRunAgent(unittest.TestCase):
                      "args": {"disruption_id": "D01"}},
                 ]
             },
+            {"content": "gather"},
             {"content": "Two tools called."},
         ])
         result = run_agent("Tell me everything about D01.", llm=llm)
@@ -363,6 +439,67 @@ class TestRunAgent(unittest.TestCase):
         names = [t["name"] for t in result["tool_trace"]]
         self.assertIn("get_disruption", names)
         self.assertIn("get_impact", names)
+
+    def test_duplicate_call_returns_note(self):
+        """Same tool+args called twice: second call gets note, engine called once."""
+        llm = ScriptedLLM([
+            # Step 1: call get_disruption
+            {"tool_calls": [{"id": "c1", "name": "get_disruption",
+                             "args": {"disruption_id": "D01"}}]},
+            # Step 2: call it again with same args
+            {"tool_calls": [{"id": "c2", "name": "get_disruption",
+                             "args": {"disruption_id": "D01"}}]},
+            {"content": "gather"},
+            {"content": "Composed."},
+        ])
+        result = run_agent("Tell me again.", llm=llm, max_steps=10)
+        self.assertEqual(len(result["tool_trace"]), 2)
+        # First call: real engine result (has disruption_id)
+        self.assertIn("disruption_id", result["tool_trace"][0]["result"])
+        # Second call: duplicate guard note
+        self.assertIn("note", result["tool_trace"][1]["result"])
+        self.assertIn("already called", result["tool_trace"][1]["result"]["note"])
+
+    def test_duplicate_guard_engine_called_once(self):
+        """Engine is called exactly once for a duplicated (name, args) pair."""
+        call_count = [0]
+        original_call_tool = __import__("agent.tool_specs", fromlist=["call_tool"]).call_tool
+
+        def counting_call_tool(name, args):
+            if name == "get_disruption":
+                call_count[0] += 1
+            return original_call_tool(name, args)
+
+        import agent.loop as loop_module
+        original = loop_module.call_tool
+        loop_module.call_tool = counting_call_tool
+        try:
+            llm = ScriptedLLM([
+                {"tool_calls": [{"id": "c1", "name": "get_disruption",
+                                 "args": {"disruption_id": "D01"}}]},
+                {"tool_calls": [{"id": "c2", "name": "get_disruption",
+                                 "args": {"disruption_id": "D01"}}]},
+                {"content": "gather"},
+                {"content": "Done."},
+            ])
+            run_agent("Repeat?", llm=llm, max_steps=10)
+        finally:
+            loop_module.call_tool = original
+
+        self.assertEqual(call_count[0], 1)
+
+    def test_propose_action_still_yields_pending(self):
+        """propose_action via run_agent still returns pending_approval status."""
+        llm = ScriptedLLM([
+            {"tool_calls": [{"id": "c1", "name": "propose_action",
+                             "args": {"scenario_id": "HYBRID",
+                                      "reason": "best option"}}]},
+            {"content": "gather"},
+            {"content": "Proposal HYBRID is pending approval."},
+        ])
+        result = run_agent("Propose HYBRID", llm=llm)
+        self.assertIsNotNone(result["proposal"])
+        self.assertEqual(result["proposal"]["status"], "pending_approval")
 
 
 if __name__ == "__main__":

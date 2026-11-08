@@ -11,6 +11,7 @@ Type 'quit' or 'exit' to end the session.
 
 import json
 import sys
+import warnings
 
 from dotenv import load_dotenv
 
@@ -24,6 +25,17 @@ def _print_tool_call(entry: dict) -> None:
 
 def main() -> None:
     load_dotenv()
+    # Suppress only the IBM watsonx disclaimer warning (not other warnings).
+    warnings.filterwarnings(
+        "ignore",
+        message=".*disclaimer.*",
+        category=UserWarning,
+    )
+    try:
+        from ibm_watsonx_ai.foundation_models.utils.utils import WatsonxAPIWarning
+        warnings.filterwarnings("ignore", category=WatsonxAPIWarning)
+    except ImportError:
+        pass
 
     model_id = sys.argv[1] if len(sys.argv) > 1 else None
 

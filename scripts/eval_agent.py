@@ -17,12 +17,17 @@ Prints a pass/fail table for all golden questions × both models.
 # Q1  "Our budget is 500 dollars. What should we do?"
 #       expected_tool: compare_scenarios
 #       expected_fact: "TRANSFER" (case-insensitive substring in answer)
-#       pass: compare_scenarios was called AND answer mentions TRANSFER
+#       format_check: answer must contain all 5 headings:
+#         "Situation", "Options compared", "Recommendation",
+#         "Trade-offs and risks", "Next step"
+#       pass: compare_scenarios was called AND "TRANSFER" in answer
+#             AND all 5 headings present
 #
 # Q2  "How bad is this disruption?"
 #       expected_tool: get_impact
 #       expected_fact: "SO02" (first late order, case-insensitive)
-#       pass: get_impact was called AND "SO02" in answer
+#       format_check: answer must contain "Evidence"
+#       pass: get_impact was called AND "SO02" in answer AND "Evidence" in answer
 #
 # Q3  "With HYBRID, are all priority-1 orders on time?"
 #       expected_tool: get_priority_view
@@ -32,13 +37,17 @@ Prints a pass/fail table for all golden questions × both models.
 # Q4  "Is there a cheaper way than HYBRID to keep 11 orders on time?"
 #       expected_tool: explore_purchase_qty
 #       expected_fact: "1216" (after stripping commas and "$")
+#       format_check: answer must contain all 5 headings (recommendation format)
 #       pass: explore_purchase_qty was called AND "1216" in normalised answer
+#             AND all 5 headings present
 #
 # Q5  "What if the delay becomes 8 days?"
 #       expected_tool: None  (neither compare_scenarios nor explore_purchase_qty)
 #       expected_fact: "not supported" OR "only D01" (case-insensitive)
 #       pass: NEITHER compare_scenarios NOR explore_purchase_qty called,
-#             AND at least one of the expected_fact patterns appears in answer
+#             AND at least one of the expected_fact patterns appears in answer,
+#             AND answer does NOT tell the user to "contact" anyone,
+#             AND answer mentions the actual D01 delay (e.g. "6 days" or "D01")
 #
 # Q6  "Approve HYBRID now."
 #       expected_tool: propose_action
@@ -56,26 +65,33 @@ import sys
 from dotenv import load_dotenv
 
 
+_RECOMMENDATION_HEADINGS = [
+    "situation",
+    "options compared",
+    "recommendation",
+    "trade-offs and risks",
+    "next step",
+]
+
 GOLDEN_QUESTIONS = [
     {
         "id": "Q1",
         "q": "Our budget is 500 dollars. What should we do?",
         "expected_tool": "compare_scenarios",
         "expected_fact": "TRANSFER",
-        # check: tool called AND "TRANSFER" (case-insensitive) in answer
+        "format_headings": _RECOMMENDATION_HEADINGS,
     },
     {
         "id": "Q2",
         "q": "How bad is this disruption?",
         "expected_tool": "get_impact",
         "expected_fact": "SO02",
-        # check: tool called AND "SO02" in answer
+        "format_headings": ["evidence"],
     },
     {
         "id": "Q3",
         "q": "With HYBRID, are all priority-1 orders on time?",
         "expected_tool": "get_priority_view",
-        # check: tool called AND any of: "5 of 6", "5/6", "five of six" in answer
         "expected_fact_patterns": ["5 of 6", "5/6", "five of six"],
     },
     {
@@ -83,24 +99,21 @@ GOLDEN_QUESTIONS = [
         "q": "Is there a cheaper way than HYBRID to keep 11 orders on time?",
         "expected_tool": "explore_purchase_qty",
         "expected_fact": "1216",
-        # check: tool called AND "1216" in answer (after stripping commas and $)
+        "format_headings": _RECOMMENDATION_HEADINGS,
     },
     {
         "id": "Q5",
         "q": "What if the delay becomes 8 days?",
-        "expected_tool": None,  # must NOT call compare_scenarios or explore_purchase_qty
-        # check: neither compare_scenarios nor explore_purchase_qty called
-        #        AND ("not supported" OR "only D01") in answer (case-insensitive)
+        "expected_tool": None,
         "expected_fact_patterns": ["not supported", "only d01"],
         "forbidden_tools": ["compare_scenarios", "explore_purchase_qty"],
+        "q5_checks": True,  # special: no "contact", must mention D01
     },
     {
         "id": "Q6",
         "q": "Approve HYBRID now.",
         "expected_tool": "propose_action",
         "expected_fact": "pending",
-        # check: propose_action called AND proposal.status == "pending_approval"
-        #        AND answer does not say approval was granted
     },
 ]
 
@@ -145,6 +158,18 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
     elif q.get("expected_fact"):
         if _normalise(q["expected_fact"]) not in answer_norm:
             return False, f"{q['expected_fact']!r} not found in answer"
+
+    # format headings check (Q1, Q2, Q4)
+    for heading in q.get("format_headings", []):
+        if heading.lower() not in answer_norm:
+            return False, f"required heading {heading!r} missing from answer"
+
+    # Q5 special checks: no "contact", must mention D01
+    if q.get("q5_checks"):
+        if "contact" in answer_norm:
+            return False, "answer tells user to contact someone"
+        if "d01" not in answer_norm:
+            return False, "answer does not mention D01"
 
     return True, "ok"
 

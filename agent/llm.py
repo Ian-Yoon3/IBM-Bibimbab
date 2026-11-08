@@ -151,17 +151,21 @@ class WatsonxLLM:
         messages:
             Conversation history in OpenAI-compatible format.
         tools:
-            List of tool JSON schemas.
+            List of tool JSON schemas.  Pass ``[]`` for the compose phase —
+            ``tools`` and ``tool_choice_option`` are omitted entirely from the
+            API call when the list is empty.
 
         Returns
         -------
         Normalised message dict — see ``normalize_tool_calls``.
         """
-        response = self._model.chat(
-            messages=messages,
-            params=self._chat_params,
-            tools=tools,
-            tool_choice_option="auto",
-        )
+        kwargs: dict = {
+            "messages": messages,
+            "params":   self._chat_params,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice_option"] = "auto"
+        response = self._model.chat(**kwargs)
         raw_message = response["choices"][0]["message"]
         return normalize_tool_calls(raw_message)
