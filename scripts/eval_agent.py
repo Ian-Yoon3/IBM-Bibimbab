@@ -88,7 +88,9 @@ GOLDEN_QUESTIONS = [
         "id": "Q3",
         "q": "With HYBRID, are all priority-1 orders on time?",
         "expected_tool": "get_priority_view",
-        "expected_fact_patterns": ["5 of 6", "5/6", "five of six", "5 out of 6"],
+        "expected_fact_patterns": [
+            "5 of 6", "5/6", "five of six", "5 out of 6", "5 of the 6",
+        ],
         "q3_checks": True,
     },
     {
@@ -96,6 +98,7 @@ GOLDEN_QUESTIONS = [
         "q": "Is there a cheaper way than HYBRID to keep 11 orders on time?",
         "expected_tool": "explore_purchase_qty",
         "expected_fact": "1216",
+        "extra_facts": ["40"],   # must also contain the qty
         "format_headings": _RECOMMENDATION_HEADINGS,
     },
     {
@@ -146,6 +149,11 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
     answer_norm = normalise(result["answer"])
     tool_names = [t["name"] for t in result["tool_trace"]]
 
+    # any tool result containing "error" is an automatic fail
+    for entry in result["tool_trace"]:
+        if "error" in entry.get("result", {}):
+            return False, f"tool {entry['name']!r} returned error: {entry['result']['error'][:80]}"
+
     # forbidden tools
     for ft in q.get("forbidden_tools", []):
         if ft in tool_names:
@@ -160,6 +168,11 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
         if normalise(q["expected_fact"]) not in answer_norm:
             return False, f"{q['expected_fact']!r} not found in answer"
 
+    # extra facts (all must be present)
+    for ef in q.get("extra_facts", []):
+        if normalise(ef) not in answer_norm:
+            return False, f"extra fact {ef!r} not found in answer"
+
     # fact check (pattern list)
     patterns = q.get("expected_fact_patterns")
     if patterns:
@@ -171,11 +184,22 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
         if heading.lower() not in answer_norm:
             return False, f"required heading {heading!r} missing from answer"
 
+    # Q1 special: compare_scenarios must use budget=500, TRANSFER in Recommendation,
+    # and propose_action must NOT be called
+    if q.get("id") == "Q1":
+        # check compare_scenarios was called with budget=500 (after coercion)
+        cs_calls = [t for t in result["tool_trace"] if t["name"] == "compare_scenarios"]
+        if not cs_calls:
+            return False, "compare_scenarios was not called for Q1"
+        budgets = [t["args"].get("budget") for t in cs_calls]
+        if not any(b in (500, "500") for b in budgets):
+            return False, f"compare_scenarios not called with budget=500 (got {budgets})"
+        if "propose_action" in tool_names:
+            return False, "propose_action was called during recommendation question"
+
     # Q3 special: also fail if answer wrongly claims all priority-1 are on time
     if q.get("q3_checks"):
-        # "all priority-1 ... on time" without a negation nearby is a wrong answer
         if re.search(r"all priority.1.*on time", answer_norm):
-            # Check there's no "not" or "n't" within 30 chars before the match
             m = re.search(r"all priority.1.*on time", answer_norm)
             context = answer_norm[max(0, m.start() - 30): m.start()]
             if "not" not in context and "n't" not in context:
@@ -202,16 +226,26 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
 
 
 def eval_model(model_id: str) -> list[dict]:
-    """Run all golden questions against one model. Returns full result rows."""
+    """Run all golden questions against one model. Returns full result rows.
+
+    Each question runs in a fresh conversation (history=None).
+    """
     from agent.llm import WatsonxLLM
     from agent.loop import run_agent
 
     llm = WatsonxLLM(model_id=model_id)
     rows = []
-    history = None
     for q in GOLDEN_QUESTIONS:
-        result = run_agent(q["q"], history=history, llm=llm)
+        result = run_agent(q["q"], history=None, llm=llm)
         passed, reason = _check_question(q, result)
+        tools_with_results = []
+        for t in result["tool_trace"]:
+            result_str = json.dumps(t["result"], default=str)
+            tools_with_results.append({
+                "name":   t["name"],
+                "args":   t["args"],
+                "result": result_str[:2000],
+            })
         rows.append({
             "id":       q["id"],
             "question": q["q"],
@@ -219,12 +253,8 @@ def eval_model(model_id: str) -> list[dict]:
             "passed":   passed,
             "reason":   reason,
             "answer":   result["answer"],
-            "tools":    [
-                {"name": t["name"], "args": t["args"]}
-                for t in result["tool_trace"]
-            ],
+            "tools":    tools_with_results,
         })
-        history = result["history"]
     return rows
 
 

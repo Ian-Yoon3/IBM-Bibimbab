@@ -599,5 +599,207 @@ class TestNormalise(unittest.TestCase):
         self.assertIn("trade-offs and risks", self.normalise(answer))
 
 
+# ── coercion ─────────────────────────────────────────────────────────────────
+
+class TestCoercion(unittest.TestCase):
+    """Tests for call_tool type coercion (integer and boolean fields)."""
+
+    def test_budget_as_numeric_string_accepted(self):
+        """budget='500' is coerced to 500 and passes validation."""
+        result = call_tool("compare_scenarios", {"budget": "500"})
+        self.assertNotIn("error", result)
+        self.assertIn("ranked", result)
+
+    def test_budget_as_int_accepted(self):
+        result = call_tool("compare_scenarios", {"budget": 500})
+        self.assertNotIn("error", result)
+
+    def test_budget_as_non_numeric_string_rejected(self):
+        result = call_tool("compare_scenarios", {"budget": "five hundred"})
+        self.assertIn("error", result)
+
+    def test_budget_as_bool_rejected(self):
+        result = call_tool("compare_scenarios", {"budget": True})
+        self.assertIn("error", result)
+
+    def test_include_transfers_string_false_is_false(self):
+        """include_transfers='false' must be coerced to False, not truthy string."""
+        result = call_tool("explore_purchase_qty", {
+            "offer_id": "OF02",
+            "include_transfers": "false",
+        })
+        self.assertNotIn("error", result)
+        # When include_transfers=False no transfer actions should appear in ranked actions
+        for r in result["ranked"]:
+            transfer_actions = [a for a in r.get("actions", []) if a["type"] == "transfer"]
+            self.assertEqual(transfer_actions, [])
+
+    def test_include_transfers_string_true_is_true(self):
+        """include_transfers='true' must be coerced to True."""
+        result = call_tool("explore_purchase_qty", {
+            "offer_id": "OF02",
+            "include_transfers": "true",
+        })
+        self.assertNotIn("error", result)
+
+    def test_include_transfers_string_TRUE_case_insensitive(self):
+        """'TRUE' (uppercase) also coerces to True."""
+        result = call_tool("explore_purchase_qty", {
+            "offer_id": "OF02",
+            "include_transfers": "TRUE",
+        })
+        self.assertNotIn("error", result)
+
+    def test_include_transfers_bad_value_rejected(self):
+        result = call_tool("explore_purchase_qty", {
+            "offer_id": "OF02",
+            "include_transfers": "yes",
+        })
+        self.assertIn("error", result)
+
+    def test_qty_as_string_coerced(self):
+        """qty='45' is coerced to int for propose_action."""
+        result = call_tool("propose_action", {
+            "offer_id": "OF02",
+            "qty": "45",
+            "include_transfers": True,
+            "reason": "coercion test",
+        })
+        self.assertNotIn("error", result)
+        self.assertEqual(result["status"], "pending_approval")
+
+    def test_qty_as_bad_value_rejected(self):
+        result = call_tool("propose_action", {
+            "offer_id": "OF02",
+            "qty": "forty-five",
+            "reason": "bad qty",
+        })
+        self.assertIn("error", result)
+
+
+# ── min_on_time_orders ────────────────────────────────────────────────────────
+
+class TestMinOnTimeOrders(unittest.TestCase):
+    """Tests for explore_purchase_qty min_on_time_orders filter."""
+
+    def test_min_11_objective_cost_best_qty_40_cost_1216(self):
+        """OF02, include_transfers=True, min_on_time_orders=11, objective='cost'
+        -> rank-1 option has purchase_qty=40 and total_extra_cost=1216."""
+        result = call_tool("explore_purchase_qty", {
+            "offer_id": "OF02",
+            "include_transfers": True,
+            "min_on_time_orders": 11,
+            "objective": "cost",
+        })
+        self.assertNotIn("error", result)
+        best = result["ranked"][0]
+        self.assertEqual(best["purchase_qty"], 40)
+        self.assertEqual(best["total_extra_cost"], 1216)
+
+    def test_min_11_excludes_low_on_time_options(self):
+        """All ranked options must have on_time_orders >= 11."""
+        result = call_tool("explore_purchase_qty", {
+            "offer_id": "OF02",
+            "include_transfers": True,
+            "min_on_time_orders": 11,
+        })
+        for r in result["ranked"]:
+            self.assertGreaterEqual(r["on_time_orders"], 11)
+
+    def test_min_on_time_as_string_coerced(self):
+        """min_on_time_orders='11' is coerced to int."""
+        result = call_tool("explore_purchase_qty", {
+            "offer_id": "OF02",
+            "min_on_time_orders": "11",
+        })
+        self.assertNotIn("error", result)
+
+
+# ── disrupted-offer guard ─────────────────────────────────────────────────────
+
+class TestDisruptedOfferGuard(unittest.TestCase):
+    """Tests for the disrupted-supplier guard in call_tool."""
+
+    def _get_disrupted_offer_id(self) -> str:
+        """Look up the disrupted offer ID from engine data."""
+        from engine.loader import load_all
+        db = load_all()
+        po = db["purchase_orders"][db["disruptions"]["D01"]["po_id"]]
+        return po["offer_id"]
+
+    def test_explore_disrupted_offer_returns_error(self):
+        disrupted_oid = self._get_disrupted_offer_id()
+        result = call_tool("explore_purchase_qty", {"offer_id": disrupted_oid})
+        self.assertIn("error", result)
+        self.assertIn("disrupted supplier", result["error"])
+
+    def test_propose_disrupted_offer_returns_error(self):
+        disrupted_oid = self._get_disrupted_offer_id()
+        result = call_tool("propose_action", {
+            "offer_id": disrupted_oid,
+            "qty": 40,
+            "reason": "trying disrupted offer",
+        })
+        self.assertIn("error", result)
+        self.assertIn("disrupted supplier", result["error"])
+
+    def test_alternative_offer_of02_not_disrupted(self):
+        """OF02 must NOT be the disrupted offer (it's the recovery offer)."""
+        result = call_tool("explore_purchase_qty", {"offer_id": "OF02"})
+        self.assertNotIn("error", result)
+
+
+# ── propose_action guard in loop ──────────────────────────────────────────────
+
+class TestProposeActionGate(unittest.TestCase):
+    """Tests for the heuristic that hides propose_action for non-action messages."""
+
+    def test_propose_hidden_without_action_intent(self):
+        """Tool list for a recommendation question must NOT include propose_action."""
+        from agent.tool_specs import tool_specs_for
+        specs = tool_specs_for("Our budget is 500 dollars. What should we do?")
+        names = {s["function"]["name"] for s in specs}
+        self.assertNotIn("propose_action", names)
+
+    def test_propose_present_with_approve_keyword(self):
+        from agent.tool_specs import tool_specs_for
+        specs = tool_specs_for("Approve HYBRID now.")
+        names = {s["function"]["name"] for s in specs}
+        self.assertIn("propose_action", names)
+
+    def test_propose_present_with_implement_keyword(self):
+        from agent.tool_specs import tool_specs_for
+        specs = tool_specs_for("Let's implement the TRANSFER option.")
+        names = {s["function"]["name"] for s in specs}
+        self.assertIn("propose_action", names)
+
+    def test_propose_present_with_submit_keyword(self):
+        from agent.tool_specs import tool_specs_for
+        specs = tool_specs_for("Submit the plan for approval.")
+        names = {s["function"]["name"] for s in specs}
+        self.assertIn("propose_action", names)
+
+    def test_propose_hidden_for_impact_question(self):
+        from agent.tool_specs import tool_specs_for
+        specs = tool_specs_for("How bad is this disruption?")
+        names = {s["function"]["name"] for s in specs}
+        self.assertNotIn("propose_action", names)
+
+    def test_run_agent_uses_action_intent_gate(self):
+        """run_agent with non-action message never sees propose_action spec."""
+        received_specs = []
+
+        class CapturingLLM:
+            def chat(self_inner, messages, tools):  # noqa: N805
+                received_specs.append([s["function"]["name"] for s in tools])
+                if len(received_specs) == 1:
+                    return {"content": "gather", "tool_calls": []}
+                return {"content": "composed", "tool_calls": []}
+
+        run_agent("Which option is best?", llm=CapturingLLM())
+        # Gather-phase call (index 0) must not include propose_action
+        self.assertNotIn("propose_action", received_specs[0])
+
+
 if __name__ == "__main__":
     unittest.main()

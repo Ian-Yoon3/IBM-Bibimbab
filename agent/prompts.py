@@ -35,7 +35,9 @@ EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
     1. compare_scenarios (pass budget or objective if the user gave one)
     2. get_priority_view for ALL four named scenarios: WAIT, TRANSFER, ALT_BUY, HYBRID
     3. get_offers(disruption_id="D01")
-    4. explore_purchase_qty(offer_id=<from step 3>, include_transfers=true)
+    4. explore_purchase_qty(offer_id=<non-disrupted offer from step 3>,
+       include_transfers=true, min_on_time_orders=<target if user gave one>,
+       objective="cost" if user wants cheapest)
 
   "how bad / impact / what happens if we do nothing":
     1. get_disruption(disruption_id="D01")

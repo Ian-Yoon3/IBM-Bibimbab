@@ -23,7 +23,7 @@ run_agent(user_message, history=None, llm=None, max_steps=10) -> dict
 import json
 
 from agent.prompts import build_messages, build_compose_message
-from agent.tool_specs import TOOL_SPECS, call_tool
+from agent.tool_specs import call_tool, tool_specs_for
 
 
 _CANNED_FALLBACK = (
@@ -80,8 +80,12 @@ def run_agent(
     # ── Gather phase ──────────────────────────────────────────────────────────
     gather_text: str | None = None   # text produced during gather (kept as context)
 
+    # Determine tool list once per turn based on action-intent heuristic.
+    # propose_action is omitted unless the user explicitly asks to act.
+    gather_tools = tool_specs_for(user_message)
+
     for step in range(1, max_steps + 1):
-        response = llm.chat(messages, TOOL_SPECS)
+        response = llm.chat(messages, gather_tools)
 
         if not response.get("tool_calls"):
             # Model produced a text answer in the gather phase — keep it as

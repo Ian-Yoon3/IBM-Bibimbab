@@ -199,6 +199,7 @@ def explore_purchase_qty(
     include_transfers: bool = False,
     budget: int | None = None,
     objective: str = "on_time_orders",
+    min_on_time_orders: int | None = None,
     data_dir=None,
 ) -> dict:
     """Sweep every valid purchase quantity for an offer and rank results.
@@ -219,6 +220,10 @@ def explore_purchase_qty(
         If set, options exceeding this cost are excluded from ranking.
     objective:
         Ranking objective.
+    min_on_time_orders:
+        If set, options with fewer on-time orders than this threshold are
+        excluded before ranking.  Use to find the cheapest option that
+        meets a target on-time count.
     data_dir:
         Optional path override for the data directory.
 
@@ -277,6 +282,12 @@ def explore_purchase_qty(
         kpi["purchase_qty"] = qty
         kpi["actions"] = actions  # allow agent to pass to propose_action
         options.append(kpi)
+
+    if min_on_time_orders is not None:
+        options = [
+            o for o in options
+            if o.get("on_time_orders", 0) >= min_on_time_orders
+        ]
 
     return rank_options(options, objective=objective, budget=budget)
 

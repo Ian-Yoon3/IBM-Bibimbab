@@ -4,6 +4,18 @@ TOOL_SPECS   – list of JSON-schema dicts for the 7 LLM-facing tools
 DISPATCH     – maps tool name -> engine function
 call_tool    – validates args, dispatches, returns result or {"error": ...}
 
+Type coercion
+-------------
+Integers: int or a numeric string ("500" -> 500).  Anything else is an error.
+Booleans: bool or "true"/"false" (case-insensitive).  Anything else is an error.
+Coercion is applied to all integer/boolean fields before validation.
+
+Disrupted-supplier guard
+------------------------
+explore_purchase_qty and propose_action (offer_id path) check whether
+the given offer_id is the disrupted supplier.  If so, an error is returned
+directing the LLM to choose an alternative from get_offers.
+
 Note on propose_action:
     The LLM may propose either a named scenario (scenario_id) or a
     specific purchase quantity from explore_purchase_qty results
@@ -26,6 +38,63 @@ def _valid_disruption_ids() -> set[str]:
     """Return the set of disruption IDs present in the data."""
     db = _tools._get_db()
     return set(db["disruptions"].keys())
+
+
+def _disrupted_offer_id(offer_id: str) -> bool:
+    """Return True if offer_id is the disrupted supplier's offer."""
+    try:
+        result = _tools.get_offers("D01")
+        for o in result.get("offers", []):
+            if o["offer_id"] == offer_id and o.get("is_disrupted_supplier"):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+# ── type coercion helpers ─────────────────────────────────────────────────────
+
+def _coerce_int(value, field: str):
+    """Return (int_value, None) or (None, error_str)."""
+    if isinstance(value, bool):
+        return None, f"{field!r} must be an integer, got boolean"
+    if isinstance(value, int):
+        return value, None
+    if isinstance(value, str):
+        try:
+            return int(value), None
+        except ValueError:
+            pass
+    return None, f"{field!r} must be an integer or numeric string, got {value!r}"
+
+
+def _coerce_bool(value, field: str):
+    """Return (bool_value, None) or (None, error_str)."""
+    if isinstance(value, bool):
+        return value, None
+    if isinstance(value, str):
+        if value.lower() == "true":
+            return True, None
+        if value.lower() == "false":
+            return False, None
+    return None, f"{field!r} must be true/false (boolean or string), got {value!r}"
+
+
+def _coerce_fields(args: dict, int_fields: list[str], bool_fields: list[str]):
+    """In-place coerce integer and boolean fields. Returns error string or None."""
+    for f in int_fields:
+        if f in args and args[f] is not None:
+            v, err = _coerce_int(args[f], f)
+            if err:
+                return err
+            args[f] = v
+    for f in bool_fields:
+        if f in args and args[f] is not None:
+            v, err = _coerce_bool(args[f], f)
+            if err:
+                return err
+            args[f] = v
+    return None
 
 
 # ── tool specs ────────────────────────────────────────────────────────────────
@@ -59,7 +128,9 @@ TOOL_SPECS: list[dict] = [
             "name": "get_offers",
             "description": (
                 "Return all supplier offers for the component affected by a disruption. "
-                "Call this BEFORE explore_purchase_qty to find the valid offer_id to use."
+                "Call this BEFORE explore_purchase_qty to find the valid offer_id to use. "
+                "The is_disrupted_supplier flag marks the offer behind the delay — "
+                "always choose an ALTERNATIVE offer for recovery."
             ),
             "parameters": {
                 "type": "object",
@@ -153,17 +224,17 @@ TOOL_SPECS: list[dict] = [
             "name": "explore_purchase_qty",
             "description": (
                 "Sweep every valid purchase quantity for a supplier offer and rank "
-                "results.  Call get_offers first to find the offer_id.  Use when the "
-                "user asks whether a smaller or cheaper purchase could achieve the same "
-                "on-time count as HYBRID, or to find the cheapest option that meets a "
-                "target on-time count."
+                "results.  Call get_offers first to find the offer_id.  "
+                "Use min_on_time_orders to find the cheapest option that meets a "
+                "target on-time count (e.g. 'cheaper way to keep 11 orders on time' "
+                "-> min_on_time_orders=11, include_transfers=true, objective='cost')."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "offer_id": {
                         "type": "string",
-                        "description": "Supplier offer ID, e.g. 'OF02'.",
+                        "description": "Supplier offer ID from get_offers (not the disrupted supplier's offer).",
                     },
                     "include_transfers": {
                         "type": "boolean",
@@ -184,6 +255,14 @@ TOOL_SPECS: list[dict] = [
                         ],
                         "description": "Ranking objective.  Default: on_time_orders.",
                     },
+                    "min_on_time_orders": {
+                        "type": "integer",
+                        "description": (
+                            "Exclude options with fewer on-time orders than this. "
+                            "Use with objective='cost' to find the cheapest option "
+                            "meeting a minimum on-time target."
+                        ),
+                    },
                 },
                 "required": ["offer_id"],
             },
@@ -195,7 +274,9 @@ TOOL_SPECS: list[dict] = [
             "name": "propose_action",
             "description": (
                 "Package a recovery plan as a pending proposal (never executes it). "
-                "Use when the user asks to act, approve, or implement an option.  "
+                "Use ONLY when the user explicitly says: approve, propose, implement, "
+                "submit, go ahead, execute, or do it.  Do NOT call this for "
+                "recommendation questions — suggest a proposal in the Next step instead.  "
                 "Accepts either a named scenario_id OR an (offer_id + qty) pair from "
                 "explore_purchase_qty results.  Always tell the user the proposal is "
                 "pending approval and that approval happens in the UI."
@@ -237,17 +318,52 @@ TOOL_SPECS: list[dict] = [
     },
 ]
 
+# propose_action spec extracted for use in the loop (conditional inclusion)
+_PROPOSE_ACTION_SPEC = TOOL_SPECS[-1]
+
+# TOOL_SPECS_NO_PROPOSE: all tools except propose_action
+TOOL_SPECS_NO_PROPOSE: list[dict] = [s for s in TOOL_SPECS if s["function"]["name"] != "propose_action"]
+
+# Keywords that signal explicit action intent
+_ACTION_KEYWORDS = frozenset([
+    "approve", "propose", "implement", "submit", "go ahead",
+    "execute", "do it",
+])
+
 # ── dispatch table ────────────────────────────────────────────────────────────
 
 DISPATCH: dict = {
-    "get_disruption":      _tools.get_disruption,
-    "get_offers":          _tools.get_offers,
-    "get_impact":          _tools.get_impact,
-    "compare_scenarios":   _tools.compare_scenarios,
-    "get_priority_view":   _tools.get_priority_view,
+    "get_disruption":       _tools.get_disruption,
+    "get_offers":           _tools.get_offers,
+    "get_impact":           _tools.get_impact,
+    "compare_scenarios":    _tools.compare_scenarios,
+    "get_priority_view":    _tools.get_priority_view,
     "explore_purchase_qty": _tools.explore_purchase_qty,
-    "propose_action":      None,  # handled specially in call_tool
+    "propose_action":       None,  # handled specially in call_tool
 }
+
+
+def tool_specs_for(user_message: str) -> list[dict]:
+    """Return TOOL_SPECS with propose_action included only when the user
+    message contains an explicit action intent keyword.
+
+    This is a heuristic to prevent the LLM from calling propose_action
+    during recommendation questions.
+
+    Parameters
+    ----------
+    user_message:
+        The raw user input text.
+
+    Returns
+    -------
+    List of tool spec dicts.
+    """
+    msg_lower = user_message.lower()
+    has_action_intent = any(kw in msg_lower for kw in _ACTION_KEYWORDS)
+    if has_action_intent:
+        return TOOL_SPECS
+    return TOOL_SPECS_NO_PROPOSE
 
 
 # ── call_tool ─────────────────────────────────────────────────────────────────
@@ -272,6 +388,7 @@ def call_tool(name: str, args) -> dict:
     -----
     Unknown tool *names* return ``{"error": "unknown tool: <name>"}`` so the
     loop can forward the error back to the LLM instead of crashing.
+    Type coercion is applied to all integer/boolean fields before validation.
     """
     if name not in DISPATCH:
         return {"error": f"unknown tool: {name}"}
@@ -284,6 +401,34 @@ def call_tool(name: str, args) -> dict:
                 "please retry with valid JSON"
             )
         }
+
+    # Work on a mutable copy so callers' dicts are not modified
+    args = dict(args)
+
+    # ── type coercion ─────────────────────────────────────────────────────────
+
+    if name == "compare_scenarios":
+        err = _coerce_fields(args, int_fields=["budget"], bool_fields=[])
+        if err:
+            return {"error": err}
+
+    if name == "explore_purchase_qty":
+        err = _coerce_fields(
+            args,
+            int_fields=["budget", "min_on_time_orders"],
+            bool_fields=["include_transfers"],
+        )
+        if err:
+            return {"error": err}
+
+    if name == "propose_action":
+        err = _coerce_fields(
+            args,
+            int_fields=["qty"],
+            bool_fields=["include_transfers"],
+        )
+        if err:
+            return {"error": err}
 
     # ── argument validation ───────────────────────────────────────────────────
 
@@ -305,7 +450,7 @@ def call_tool(name: str, args) -> dict:
         if obj not in _VALID_OBJECTIVES:
             return {"error": f"Unknown objective {obj!r}. Choose from: {sorted(_VALID_OBJECTIVES)}"}
         budget = args.get("budget")
-        if budget is not None and (not isinstance(budget, int) or budget < 0):
+        if budget is not None and budget < 0:
             return {"error": "budget must be a non-negative integer"}
 
     if name == "get_priority_view":
@@ -316,16 +461,34 @@ def call_tool(name: str, args) -> dict:
             return {"error": f"Unknown scenario_id {sid!r}. Choose from: {sorted(_VALID_SCENARIOS)}"}
 
     if name == "explore_purchase_qty":
-        if not args.get("offer_id"):
+        offer_id = args.get("offer_id")
+        if not offer_id:
             return {"error": "offer_id is required"}
         obj = args.get("objective", "on_time_orders")
         if obj not in _VALID_OBJECTIVES:
             return {"error": f"Unknown objective {obj!r}"}
+        # Disrupted-supplier guard
+        if _disrupted_offer_id(offer_id):
+            return {
+                "error": (
+                    f"{offer_id!r} is the disrupted supplier's offer; "
+                    "choose an alternative from get_offers"
+                )
+            }
 
     if name == "propose_action":
         reason = args.get("reason", "")
         if not reason:
             return {"error": "reason is required for propose_action"}
+        # Disrupted-supplier guard for offer_id path
+        offer_id = args.get("offer_id")
+        if offer_id and _disrupted_offer_id(offer_id):
+            return {
+                "error": (
+                    f"{offer_id!r} is the disrupted supplier's offer; "
+                    "choose an alternative from get_offers"
+                )
+            }
         return _dispatch_propose_action(args)
 
     # ── dispatch non-propose calls ────────────────────────────────────────────
@@ -339,10 +502,10 @@ def call_tool(name: str, args) -> dict:
 
 def _dispatch_propose_action(args: dict) -> dict:
     """Resolve propose_action args and call the engine."""
-    reason     = args.get("reason", "")
+    reason      = args.get("reason", "")
     scenario_id = args.get("scenario_id")
-    offer_id   = args.get("offer_id")
-    qty        = args.get("qty")
+    offer_id    = args.get("offer_id")
+    qty         = args.get("qty")
 
     if scenario_id:
         # Named-scenario path
