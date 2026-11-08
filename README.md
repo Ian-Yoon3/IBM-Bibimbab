@@ -140,7 +140,15 @@ The search finds two options that are not in this list. Transfers plus 40 units 
 
 The questions cover recommendations under a budget and under another objective, impact, priority customers, the cheaper option found by search, an unsupported hypothetical, approval, order-level explanations, and two multi-turn follow-ups.
 
-Result before the fixed answer layouts (`eval_results/20261107_220100.json`, model `meta-llama/llama-3-3-70b-instruct`, 3 runs): **12 of 13 questions passed in all 3 runs.** Q13 (a follow-up asking why SO08 is late under the option found in the previous turn) passed 1 of 3, because the model repeated its previous answer although it had called the right tool. The fixed order layout removes this failure mode, because that answer is now built by code from the tool result. The grounding check found no invented number in any of the 39 answers.
+Latest results with model `meta-llama/llama-3-3-70b-instruct`:
+
+| Check | File | Result |
+|---|---|---|
+| 13 golden questions, 1 run, fixed answer layouts | `eval_results/20261107_235717.json` | **13 of 13 passed** |
+| 13 golden questions, 3 runs, before the fixed layouts | `eval_results/20261107_220100.json` | 12 of 13 passed every run. Q13 repeated the previous answer in 2 runs, which the fixed order layout removes |
+| 19 realistic conversations, 22 answers, read by hand | `eval_results/sweep_20261107_235511.json` | No table mismatch, no ungrounded number, every ★ and proposal matched the request |
+
+The sweep (`python -m scripts.question_sweep`) found problems that the golden questions did not: the recommended option once followed the model's choice of objective instead of the user's budget, and a few question types had no fitting layout. Both were fixed before the latest runs.
 
 The default model was chosen with this evaluation. See `docs/decisions/0001-default-llm-model.md`.
 
@@ -149,6 +157,7 @@ The default model was chosen with this evaluation. See `docs/decisions/0001-defa
 - Only disruption D01 with its recorded 6-day delay is modelled. The agent says so and does not simulate hypothetical delays.
 - Question types without a fixed layout (impact, priority questions, general questions) are still written freely by the model, so their wording varies.
 - The evaluation checks tables, facts and number grounding, but not every sentence of prose. Wording is reviewed by hand.
+- The model's short reasoning sometimes states a difference it computed itself (for example "$834 less than ALT_BUY"). The ones seen in the sweep were correct, but they are not engine numbers.
 - `ibm/granite-4-h-small` can be selected but is not recommended. It wrote numbers that no tool returned in several runs (see the ADR).
 
 ## Repository layout
