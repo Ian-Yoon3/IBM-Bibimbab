@@ -185,7 +185,8 @@ IBM-Bibimbab/
 ├── eval_results/         Saved evaluation transcripts
 ├── docs/decisions/       Architecture decision records
 ├── reference/            Original reference implementation and data dictionary
-└── demo.py               Engine-only walkthrough of the tools
+├── demo.py               Engine-only walkthrough of the tools
+└── bob_sessions/ian
 ```
 
 For developers using IBM Bob, `AGENTS.md` and `.bob/` hold the project rules Bob reads before every task.
