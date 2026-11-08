@@ -66,7 +66,6 @@ def run_agent(
         from agent.llm import WatsonxLLM
         llm = WatsonxLLM()
 
-    messages = build_messages(user_message, history)
     tool_trace: list[dict] = []
     proposal = None
 
@@ -83,6 +82,8 @@ def run_agent(
     # Determine tool list once per turn based on action-intent heuristic.
     # propose_action is omitted unless the user explicitly asks to act.
     gather_tools = tool_specs_for(user_message)
+    allow_propose = any(t["function"]["name"] == "propose_action" for t in gather_tools)
+    messages = build_messages(user_message, history, allow_propose=allow_propose)
 
     for step in range(1, max_steps + 1):
         response = llm.chat(messages, gather_tools)

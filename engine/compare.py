@@ -90,7 +90,7 @@ def rank_options(
             "total_extra_cost": opt["total_extra_cost"],
         }
         # Pass through extra keys when present (set by explore_purchase_qty)
-        for extra_key in ("actions", "purchase_qty", "option_type"):
+        for extra_key in ("actions", "purchase_qty", "option_type", "late_orders", "total_orders"):
             if extra_key in opt:
                 entry[extra_key] = opt[extra_key]
         ranked.append(entry)

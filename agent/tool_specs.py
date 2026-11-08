@@ -80,6 +80,23 @@ def _coerce_bool(value, field: str):
     return None, f"{field!r} must be true/false (boolean or string), got {value!r}"
 
 
+_NULL_LIKE = {"null", "none", ""}
+
+
+def _drop_null_like(args: dict) -> dict:
+    """Return a copy of args without None values or null-like strings.
+
+    Some models send "null", "None" or "" for optional arguments instead of
+    leaving them out.  Treating them as absent lets required-argument checks
+    report a clear error and lets optional arguments fall back to defaults.
+    """
+    return {
+        k: v for k, v in args.items()
+        if v is not None
+        and not (isinstance(v, str) and v.strip().lower() in _NULL_LIKE)
+    }
+
+
 def _coerce_fields(args: dict, int_fields: list[str], bool_fields: list[str]):
     """In-place coerce integer and boolean fields. Returns error string or None."""
     for f in int_fields:
@@ -418,6 +435,10 @@ def call_tool(name: str, args, offered_names: set[str] | None = None) -> dict:
 
     # Work on a mutable copy so callers' dicts are not modified
     args = dict(args)
+
+    # Treat null-like values as "argument not given".  Some models send the
+    # string "null" (or "none", "") for optional arguments they want to omit.
+    args = _drop_null_like(args)
 
     # ── type coercion ─────────────────────────────────────────────────────────
 

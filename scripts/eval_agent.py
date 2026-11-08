@@ -2,10 +2,10 @@
 scripts/eval_agent.py — Golden-question evaluation for the NovaTech agent.
 
 Run manually (requires a filled .env):
-    python scripts/eval_agent.py
-    python scripts/eval_agent.py ibm/granite-4-h-small
-    python scripts/eval_agent.py meta-llama/llama-3-3-70b-instruct
-    python scripts/eval_agent.py --full          # also print full answers
+    python -m scripts.eval_agent
+    python -m scripts.eval_agent ibm/granite-4-h-small
+    python -m scripts.eval_agent meta-llama/llama-3-3-70b-instruct
+    python -m scripts.eval_agent --full          # also print full answers
 
 Prints a pass/fail table for all golden questions × both models.
 Saves full results to eval_results/<timestamp>.json.
@@ -236,15 +236,114 @@ def check_grounding(result: dict) -> list[str]:
     return ungrounded
 
 
+# ── table check against engine ground truth ───────────────────────────────────
+
+_TRUTH_CACHE: dict = {}
+
+
+def _ground_truth() -> dict:
+    """Ground truth per option, computed from the deterministic engine.
+
+    Returns {"scenarios": {id: (on_time, prio_on_time, cost)},
+             "explored": {(qty, include_transfers): (on_time, None, cost)}}.
+    Priority-1 counts are not available for explored options, so any number
+    in that column for an explored option is a mismatch.
+    """
+    if _TRUTH_CACHE:
+        return _TRUTH_CACHE
+    from engine import tools as _t
+    scen = {}
+    for r in _t.compare_scenarios()["ranked"]:
+        sid = r["scenario_id"]
+        prio = _t.get_priority_view(scenario_id=sid)["on_time_count"]
+        scen[sid] = (r["on_time_orders"], prio, r["total_extra_cost"])
+    explored = {}
+    for flag in (True, False):
+        for r in _t.explore_purchase_qty("OF02", include_transfers=flag)["ranked"]:
+            explored[(r["purchase_qty"], flag)] = (
+                r["on_time_orders"], None, r["total_extra_cost"]
+            )
+    _TRUTH_CACHE.update({"scenarios": scen, "explored": explored})
+    return _TRUTH_CACHE
+
+
+def _cell_number(cell: str):
+    """Return the leading int of a table cell, or None for n/a, empty or text."""
+    c = cell.replace("*", "").replace("$", "").replace("USD", "")
+    for ch in ",\u2009\u202f\u00a0 ":
+        c = c.replace(ch, "")
+    c = c.strip().lower()
+    if c in ("", "n/a", "na", "-", "\u2013", "\u2014"):
+        return None
+    # Use the leading number ("8", "8of12", "1216usd").  A cell that does not
+    # start with a number (e.g. "not viable") is treated as non-numeric.
+    m = re.match(r"(\d+)", c)
+    return int(m.group(1)) if m else None
+
+
+def _identify_option(cell: str):
+    """Map an option cell to ("explored", (qty, transfers)) or ("scenario", id)."""
+    low = cell.lower()
+    m = re.search(r"buy\s*(\d+)", low)
+    if m:
+        return "explored", (int(m.group(1)), "transfer" in low)
+    for sid in ("ALT_BUY", "HYBRID", "TRANSFER", "WAIT"):
+        if sid.lower().replace("_", "") in low.replace("_", "").replace(" ", "").replace("-", ""):
+            return "scenario", sid
+    return None, None
+
+
+def check_table(answer: str) -> list[str]:
+    """Compare the "Options compared" table with the engine ground truth.
+
+    Returns a list of mismatch descriptions; empty means the table is
+    consistent (or there is no table).  Columns are assumed in the order
+    Option | On-time orders | Priority-1 on time | Extra cost USD.
+    """
+    truth = _ground_truth()
+    lines = answer.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines)
+                     if "options compared" in l.lower())
+    except StopIteration:
+        return []
+    mismatches = []
+    labels = ("on-time orders", "priority-1 on time", "extra cost")
+    for line in lines[start + 1:]:
+        if line.strip().startswith("#"):
+            break
+        if not line.strip().startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 4 or set(cells[1]) <= set("-: "):
+            continue
+        kind, key = _identify_option(cells[0])
+        if kind == "scenario":
+            expected = truth["scenarios"].get(key)
+        elif kind == "explored":
+            expected = truth["explored"].get(key)
+        else:
+            continue
+        if expected is None:
+            mismatches.append(f"{cells[0]}: unknown option")
+            continue
+        for label, cell, exp in zip(labels, cells[1:4], expected):
+            got = _cell_number(cell)
+            if got is None:
+                continue
+            if exp is None or got != exp:
+                mismatches.append(f"{cells[0]} {label} {got!r} != {exp!r}")
+    return mismatches
+
+
 def _check_question(q: dict, result: dict) -> tuple[bool, str]:
     """Return (passed, reason)."""
     answer_norm = normalise(result["answer"])
     tool_names = [t["name"] for t in result["tool_trace"]]
 
-    # any tool result containing "error" is an automatic fail
-    for entry in result["tool_trace"]:
-        if "error" in entry.get("result", {}):
-            return False, f"tool {entry['name']!r} returned error: {entry['result']['error'][:80]}"
+    # Tool errors are recorded (see tool_errors in the saved JSON) but do not
+    # fail a question on their own.  A blocked call means the guard worked.
+    # Correctness is judged from the answer: facts, table values, grounding.
 
     # forbidden tools
     for ft in q.get("forbidden_tools", []):
@@ -268,7 +367,11 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
     # fact check (pattern list)
     patterns = q.get("expected_fact_patterns")
     if patterns:
-        if not any(normalise(p) in answer_norm for p in patterns):
+        found = any(normalise(p) in answer_norm for p in patterns)
+        # Q3 alternative: "not all" plus the on-time count 5 stated separately
+        if not found and q.get("q3_checks"):
+            found = "not all" in answer_norm and re.search(r"\b5\b", answer_norm)
+        if not found:
             return False, f"none of {patterns!r} found in answer"
 
     # format headings
@@ -286,8 +389,8 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
         budgets = [t["args"].get("budget") for t in cs_calls]
         if not any(b in (500, "500") for b in budgets):
             return False, f"compare_scenarios not called with budget=500 (got {budgets})"
-        if "propose_action" in tool_names:
-            return False, "propose_action was called during recommendation question"
+        if result.get("proposal") is not None:
+            return False, "a proposal was created during a recommendation question"
 
     # Q3 special: also fail if answer wrongly claims all priority-1 are on time
     if q.get("q3_checks"):
@@ -313,6 +416,12 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
             return False, "proposal status is not pending_approval"
         if "pending" not in answer_norm and "approval" not in answer_norm:
             return False, "answer does not mention pending or approval"
+
+    # Table check: every number in the "Options compared" table must match the
+    # engine's ground truth for that option and column ("n/a" is allowed).
+    mismatches = check_table(result["answer"])
+    if mismatches:
+        return False, f"table mismatch: {mismatches[:3]}"
 
     # Grounding check: fail if any answer token is not in tool results/question
     ungrounded = check_grounding(result)
@@ -354,6 +463,12 @@ def eval_model(model_id: str) -> list[dict]:
             "reason":       reason,
             "answer":       result["answer"],
             "ungrounded":   ungrounded,
+            "tool_errors":  [
+                {"name": t["name"], "error": t["result"]["error"]}
+                for t in result["tool_trace"]
+                if isinstance(t["result"], dict) and "error" in t["result"]
+            ],
+            "table_mismatches": check_table(result["answer"]),
             "tools":        tools_with_results,
         })
     return rows

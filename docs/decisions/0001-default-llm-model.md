@@ -1,6 +1,6 @@
 # ADR 0001. Default LLM for the recovery agent
 
-- **Status:** Accepted (provisional, to be confirmed after eval run 3)
+- **Status:** Accepted (confirmed by eval run 3, see below)
 - **Date:** 2026-11-07
 - **Branch:** `feature/agent`
 - **Decision owner:** Sunghyuk (Ian) Yoon
@@ -58,6 +58,32 @@ The harness score was 8/12. The score alone was misleading, so the findings belo
 - **Q1 was wrong but caused by our code.** It sent `budget` as the string `"500"`. Our validation rejected it, so it had no data and answered "n/a". The harness marked it as a pass by mistake.
 - **Q4 was wrong.** It picked the 65-unit row and called it 11 on-time orders. That row is 12 orders for 1,666 USD. The correct row (40 units, 11 orders, 1,216 USD) was second in the same list. This shows that scanning a ranked table is unreliable for an LLM, so the fix belongs in the engine.
 
+### Eval run 3 (fresh conversation per question)
+
+File `eval_results/20261107_204509.json`. Run after the fixes for argument types, the target filter and the history leak.
+The harness score was Granite 3/6 and Llama 4/6. Every answer was again checked against the ground truth.
+
+| | Granite 4 H Small | Llama 3.3 70B Instruct |
+|---|---|---|
+| Answers with every fact correct | Q3 | Q1 to Q6 (all six) |
+| Answers with invented or wrong facts | Q1 (minor), Q2, Q4, Q5, Q6 | none |
+| Process defects | none beyond the wrong facts | Q1 called `propose_action` while it was not offered. Q4 first sent a prompt placeholder as `offer_id`, then recovered. |
+
+Granite errors in run 3, with no shared history this time:
+
+- **Q6.** The table listed WAIT, TRANSFER and ALT_BUY as 0 on-time orders and HYBRID as 6 of 6 priority-1 orders on time. The real values are 5, 8, 9 and 5 of 6. It also listed stock levels that no tool returned. The harness marked this answer as a pass.
+- **Q5.** It presented the 6-day results as the outcome of an 8-day delay. It listed 5 of 6 priority-1 orders on time for every option and mentioned a 2,000 USD budget that nobody gave.
+- **Q2.** It stated that all orders are back on time after the revised receipt date. The late orders stay late.
+- **Q4.** The numbers were right, but it described the option as "buy 40 units" without the transfers. Buying 40 units alone does not reach 11 orders.
+- **Q1 (minor).** The main numbers were right. It stated a 3-day transfer lead time. The lanes take 2 and 4 days.
+
+Llama's two failures in run 3 came from our layer, not from wrong facts.
+The tool guard hid `propose_action` from the tool list but did not block a call to it.
+The playbook contained a placeholder in angle brackets, and the model copied it as an argument.
+Both are being fixed.
+
+Run 3 confirms the decision. With a clean conversation per question, Granite still put numbers into answers that no tool returned. Llama did not.
+
 ## Decision
 
 - **Default model is `meta-llama/llama-3-3-70b-instruct`.**
@@ -71,6 +97,7 @@ The agent design rule says every number must come from a tool result, and Granit
 ## Limitations of this evidence
 
 - Each question ran once at temperature 0. Six questions are a small sample.
+- Run 3 removed the history leak, and the decision did not change.
 - Run 2 shared conversation history across questions. The "$500 budget" in Granite's Q4 and Q5 answers leaked from Q1. The invented table values and the invented 2026-11-19 date are not explained by that leak.
 - Several failures came from our own layer, not from the models. These were string-typed arguments, truthy `"false"`, and no target filter in `explore_purchase_qty`. Fixes are in progress.
 
@@ -82,6 +109,5 @@ The agent design rule says every number must come from a tool result, and Granit
 
 ## Revisit when
 
-- Eval run 3 (after the fixes, one fresh conversation per question) is complete. This ADR is updated with its results.
 - Granite scores 6/6 with no invented numbers in two consecutive runs. It is then reconsidered as the default for the IBM-native story.
 - A newer Granite chat model appears in us-south.

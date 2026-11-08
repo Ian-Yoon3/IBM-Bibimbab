@@ -15,6 +15,8 @@ def evaluate(sim_result: dict) -> dict:
     -------
     dict with keys:
         on_time_orders              – count of orders with days_late == 0
+        late_orders                 – count of orders with days_late > 0
+        total_orders                – count of orders in the simulation
         on_time_units               – sum of qty for on-time orders
         orders_completed_by_horizon – count of orders delivered by 2026-11-21
         total_order_days_late       – sum of days_late (no qty weighting)
@@ -27,6 +29,8 @@ def evaluate(sim_result: dict) -> dict:
     order_results = sim_result["order_results"]
 
     on_time_orders = sum(1 for r in order_results if r["days_late"] == 0)
+    late_orders = sum(1 for r in order_results if r["days_late"] > 0)
+    total_orders = len(order_results)
     on_time_units = sum(r["qty"] for r in order_results if r["days_late"] == 0)
     orders_completed_by_horizon = sum(
         1 for r in order_results if r["delivery_date"] <= HORIZON_ISO
@@ -40,6 +44,8 @@ def evaluate(sim_result: dict) -> dict:
 
     return {
         "on_time_orders": on_time_orders,
+        "late_orders": late_orders,
+        "total_orders": total_orders,
         "on_time_units": on_time_units,
         "orders_completed_by_horizon": orders_completed_by_horizon,
         "total_order_days_late": total_order_days_late,

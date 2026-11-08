@@ -1086,5 +1086,117 @@ class TestCountFields(unittest.TestCase):
         self.assertEqual(result["late_count"], result["total_count"] - result["on_time_count"])
 
 
+
+class TestNullLikeArgs(unittest.TestCase):
+    """Eval run 4: Llama sent budget "null" and offer_id "null"."""
+
+    def test_null_string_budget_is_ignored(self):
+        r = call_tool("compare_scenarios", {"budget": "null", "objective": "cost"})
+        self.assertNotIn("error", r)
+        self.assertIsNone(r["budget"])
+
+    def test_none_and_empty_strings_are_ignored(self):
+        for v in ("None", "", "  NULL "):
+            r = call_tool("compare_scenarios", {"budget": v})
+            self.assertNotIn("error", r, msg=repr(v))
+
+    def test_null_offer_id_reports_missing(self):
+        r = call_tool("explore_purchase_qty", {"offer_id": "null"})
+        self.assertIn("error", r)
+        self.assertIn("offer_id", r["error"])
+
+
+class TestSystemPromptProposeGate(unittest.TestCase):
+    """Eval run 4: Llama called propose_action because the prompt named it."""
+
+    def test_no_propose_prompt_does_not_name_the_tool(self):
+        from agent.prompts import build_system_prompt
+        self.assertNotIn("propose_action", build_system_prompt(False))
+        self.assertIn("propose_action", build_system_prompt(True))
+
+    def test_recommendation_turn_uses_no_propose_prompt(self):
+        llm = ScriptedLLM([{"content": "gathered"}, {"content": "final"}])
+        seen = []
+        orig = llm.chat
+
+        def spy(messages, tools):
+            seen.append(messages[0]["content"])
+            return orig(messages, tools)
+
+        llm.chat = spy
+        run_agent("Our budget is 500 dollars. What should we do?", llm=llm)
+        self.assertNotIn("propose_action", seen[0])
+
+    def test_action_turn_uses_propose_prompt(self):
+        llm = ScriptedLLM([{"content": "gathered"}, {"content": "final"}])
+        seen = []
+        orig = llm.chat
+
+        def spy(messages, tools):
+            seen.append(messages[0]["content"])
+            return orig(messages, tools)
+
+        llm.chat = spy
+        run_agent("Approve HYBRID now.", llm=llm)
+        self.assertIn("propose_action", seen[0])
+
+
+class TestLateOrderCount(unittest.TestCase):
+    """The engine reports late_orders so the LLM never subtracts."""
+
+    def test_compare_entries_have_late_orders(self):
+        import engine.tools as t
+        for r in t.compare_scenarios()["ranked"]:
+            self.assertEqual(r["late_orders"], r["total_orders"] - r["on_time_orders"])
+
+    def test_proposal_metrics_have_late_orders(self):
+        import engine.tools as t
+        m = t.propose_action("HYBRID", "test")["metrics"]
+        self.assertEqual(m["late_orders"], 1)
+        self.assertEqual(m["total_orders"], 12)
+
+
+class TestCheckTable(unittest.TestCase):
+    """Table check against engine ground truth (scripts/eval_agent.py)."""
+
+    _HEADER = (
+        "## Options compared\n"
+        "| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n"
+        "|---|---|---|---|\n"
+    )
+
+    def _check(self, rows):
+        from scripts.eval_agent import check_table
+        return check_table(self._HEADER + rows + "\n## Recommendation\nx")
+
+    def test_correct_table_passes(self):
+        rows = (
+            "| TRANSFER | 8 | 4 | 416 |\n"
+            "| WAIT | 5 | 2 | 0 |\n"
+            "| Transfers + buy 40 x OF02 | 11 | n/a | $1,216 |"
+        )
+        self.assertEqual(self._check(rows), [])
+
+    def test_wrong_column_is_flagged(self):
+        # Llama run 4 Q4 put priority-1 counts into the on-time column
+        self.assertTrue(self._check("| HYBRID | 5 | 5 | n/a |"))
+
+    def test_invented_priority_for_explored_option_is_flagged(self):
+        # Granite run 4 Q4 wrote 6 of 6 for explored options
+        self.assertTrue(self._check("| Transfers + buy 40 units (OF02) | 11 | 6 | 1,216 |"))
+
+    def test_thin_spaces_and_bold_are_parsed(self):
+        rows = "| **HYBRID** | **11** | **5** | **1\u202f306** |"
+        self.assertEqual(self._check(rows), [])
+
+    def test_text_cell_is_not_a_number(self):
+        rows = "| ALT_BUY | n/a | n/a | not viable within budget |"
+        self.assertEqual(self._check(rows), [])
+
+    def test_no_table_returns_empty(self):
+        from scripts.eval_agent import check_table
+        self.assertEqual(check_table("## Answer\nNo table here."), [])
+
+
 if __name__ == "__main__":
     unittest.main()
