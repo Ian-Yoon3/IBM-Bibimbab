@@ -1,6 +1,6 @@
 # ADR 0001. Default LLM for the recovery agent
 
-- **Status:** Accepted (confirmed by eval run 3, see below)
+- **Status:** Accepted (confirmed by eval runs 3 to 5, see below)
 - **Date:** 2026-11-07
 - **Branch:** `feature/agent`
 - **Decision owner:** Sunghyuk (Ian) Yoon
@@ -82,7 +82,24 @@ The tool guard hid `propose_action` from the tool list but did not block a call 
 The playbook contained a placeholder in angle brackets, and the model copied it as an argument.
 Both are being fixed.
 
-Run 3 confirms the decision. With a clean conversation per question, Granite still put numbers into answers that no tool returned. Llama did not.
+### Eval run 4
+
+File `eval_results/20261107_210808.json`. Same pattern as run 3.
+
+- Granite again wrote values no tool returned. It gave 6 of 6 priority-1 orders on time for explored options (no tool reports this) and for HYBRID (the real value is 5). It also stated the wrong revised receipt date in Q1 and the wrong peak shortage in Q2.
+- Llama answered Q1, Q2, Q3, Q5 and Q6 correctly. In Q1 it tried to call `propose_action` again, and the call-time guard blocked it as designed.
+- **Llama Q4 was wrong.** It sent `"null"` as `budget` and as `offer_id`. Our argument check rejected both, so every data tool failed. Llama then put the priority-1 counts into the on-time orders column and concluded that no cheaper option exists. This is the first wrong fact from Llama. It was triggered by our layer, but it also shows that Llama will fill gaps with the wrong field when its tools fail.
+
+Fixes after run 4: null-like strings are treated as missing arguments, the system prompt no longer names `propose_action` when it is not offered, the compose step must say which data is missing instead of substituting other fields, and the engine reports `late_orders` so the model never subtracts. The harness now checks every table value against the engine.
+
+### Eval run 5
+
+File `eval_results/20261107_211843.json`. First run with the table check against the engine.
+
+- **Llama passed 6 of 6.** Every number in every answer was checked by hand against the engine and matched. It made no tool errors and did not try to call `propose_action` in Q1.
+- **Granite passed 3 of 6 in the harness, but only Q3 was fully correct on manual review.** Q1 stated a 5-day delay (real 6). Q2 stated a peak shortage of 63 units (real 95) and passed the harness because the check does not cover prose. Q4 gave HYBRID a cost of "about 1,500 to 1,600" (real 1,306). Q5 filled the whole table with invented values. Q6 said the proposal "has been approved" while it is pending.
+
+Runs 3 to 5 confirm the decision. With a clean conversation per question, Granite repeatedly put numbers into answers that no tool returned. Llama's one wrong fact came after all of its data tools had failed because of our own argument check.
 
 ## Decision
 
@@ -96,8 +113,9 @@ The agent design rule says every number must come from a tool result, and Granit
 
 ## Limitations of this evidence
 
-- Each question ran once at temperature 0. Six questions are a small sample.
-- Run 3 removed the history leak, and the decision did not change.
+- Each question ran once per run at temperature 0. Six questions are a small sample.
+- Runs 3 to 5 used a fresh conversation per question, and the decision did not change.
+- The harness checks table values and number grounding, but not every sentence of prose. Wrong prose facts (for example a wrong peak shortage) were found by manual review.
 - Run 2 shared conversation history across questions. The "$500 budget" in Granite's Q4 and Q5 answers leaked from Q1. The invented table values and the invented 2026-11-19 date are not explained by that leak.
 - Several failures came from our own layer, not from the models. These were string-typed arguments, truthy `"false"`, and no target filter in `explore_purchase_qty`. Fixes are in progress.
 

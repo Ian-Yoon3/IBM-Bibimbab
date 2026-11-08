@@ -149,7 +149,7 @@ def run_agent(
 
     # ── Compose phase ─────────────────────────────────────────────────────────
     # Always make one final call with NO tools and the compose instruction.
-    compose_msgs = messages + [build_compose_message(user_message)]
+    compose_msgs = messages + [build_compose_message(user_message, proposal is not None)]
     try:
         compose_response = llm.chat(compose_msgs, [])
     except Exception as exc:
@@ -157,6 +157,10 @@ def run_agent(
     answer = (compose_response.get("content") or "").strip()
     if not answer:
         answer = _CANNED_FALLBACK
+    if proposal is not None:
+        # Written by code, not by the model, so the user always learns that a
+        # proposal exists and that nothing has been executed.
+        answer += "\n\n" + proposal_notice(proposal)
 
     final_msg = {"role": "assistant", "content": answer}
     turn_messages.append(final_msg)
@@ -171,6 +175,18 @@ def run_agent(
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def proposal_notice(proposal: dict) -> str:
+    """Deterministic confirmation line for a proposal created in this turn."""
+    m = proposal.get("metrics") or {}
+    return (
+        f"**Proposal {proposal['proposal_id']} is pending approval in the UI. "
+        f"Nothing has been executed.** "
+        f"(on-time orders: {m.get('on_time_orders', 'n/a')} of "
+        f"{m.get('total_orders', 'n/a')}, extra cost: "
+        f"{m.get('total_extra_cost', 'n/a')} USD)"
+    )
+
 
 _UNAVAILABLE_ANSWER = (
     "The AI service could not be reached, so no analysis was produced. "

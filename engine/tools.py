@@ -287,7 +287,8 @@ def get_order_detail(
     dict with keys:
         option, order_id, customer_id, product_id, qty, priority_rank,
         due_date, latest_start_date, start_date, delivery_date, days_late,
-        components_needed, cause
+        components_needed, cause, summary (one plain-English sentence built
+        from the other fields, so the LLM can quote it instead of paraphrasing)
     ``cause`` is ``{"type": "on_time"}``, or for late orders
     ``{"type": "queue_blocked" | "component_shortage", "check_date",
     "waiting_order_id", "shortfall": {component_id: missing_qty}}`` where
@@ -325,6 +326,11 @@ def get_order_detail(
     }
     if result["days_late"] == 0:
         detail["cause"] = {"type": "on_time"}
+        detail["summary"] = (
+            f"{order_id} is on time under {label}: it starts on "
+            f"{result['start_date']} and is delivered on {result['delivery_date']} "
+            f"(due {detail['due_date']})."
+        )
         return detail
 
     # Head of the queue on the latest on-time start date: the first order in
@@ -355,6 +361,20 @@ def get_order_detail(
         "waiting_order_id": head,
         "shortfall": shortfall,
     }
+    lacked = ", ".join(f"{q} x {c}" for c, q in shortfall.items()) or "nothing"
+    n = result["days_late"]
+    days = f"{n} day{'s' if n != 1 else ''} late"
+    if head == order_id:
+        why = f"it lacked {lacked}"
+    else:
+        why = (f"it was waiting in the production queue behind {head}, "
+               f"which lacked {lacked}")
+    detail["summary"] = (
+        f"{order_id} is {days} under {label}. On {latest_start.isoformat()}, "
+        f"its latest on-time start date, {why}. It starts on "
+        f"{result['start_date']} and is delivered on {result['delivery_date']} "
+        f"(due {detail['due_date']})."
+    )
     return detail
 
 

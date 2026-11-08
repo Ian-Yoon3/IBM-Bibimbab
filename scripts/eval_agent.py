@@ -159,6 +159,7 @@ GOLDEN_QUESTIONS = [
         "expected_tool": "get_priority_view",
         "expected_tool_args": {"get_priority_view": {"offer_id": "OF02", "qty": 40}},
         "expected_fact_patterns": ["5 of 6", "5/6", "five of six", "5 out of 6", "5 of the 6"],
+        "accept_bare_count": 5,
         "no_proposal": True,
     },
     {
@@ -275,6 +276,12 @@ def _extract_tokens(text: str) -> set[str]:
 def _grounding_corpus(result: dict) -> str:
     """Build the full grounding corpus from tool results + question text."""
     parts = [result.get("question", "")]
+    # IDs the agent is told about in the system prompt (e.g. D01) count as known
+    try:
+        from engine import tools as _t
+        parts.append(" ".join(_t._get_db()["disruptions"].keys()))
+    except Exception:
+        pass
     for entry in result.get("earlier_tools", []) + result.get("tool_trace", []):
         # result may be stored as a string (truncated) or dict
         r = entry.get("result", {})
@@ -443,6 +450,11 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
         # Q3 alternative: "not all" plus the on-time count 5 stated separately
         if not found and q.get("q3_checks"):
             found = "not all" in answer_norm and re.search(r"\b5\b", answer_norm)
+        # Count questions: the bare count next to "priority" is enough
+        if not found and q.get("accept_bare_count"):
+            n = q["accept_bare_count"]
+            found = ("priority" in answer_norm
+                     and re.search(rf"\b{n}\b[^.\n]*on.time|on.time[^.\n]*\b{n}\b", answer_norm))
         if not found:
             return False, f"none of {patterns!r} found in answer"
 

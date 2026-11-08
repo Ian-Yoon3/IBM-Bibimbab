@@ -38,6 +38,10 @@ EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
        If the user asked for a minimum on-time count, pass that value as
        min_on_time_orders.  If the user wants the cheapest option, pass
        objective="cost".  Pass the budget too if the user gave one.
+    If the user asks about priority-1 orders for "the cheapest option" or
+    another explored option, run steps 2 and 3 first, then call
+    get_priority_view with the explore result's best offer_id, qty and
+    include_transfers.  Never guess offer IDs or quantities.
     4. get_priority_view for every option you will show in the table:
        each named scenario (scenario_id=...) and the best explored option
        (offer_id, qty and include_transfers copied from the explore result's
@@ -134,6 +138,14 @@ CRITICAL RULE — column sources:
   "Extra cost USD" comes only from total_extra_cost.
   Never move a number from one kind of field into another column.
 
+CRITICAL RULE — the user's objective:
+  If the user asked to optimise something other than on-time orders
+  (cost, total days late, maximum delay), add ONE extra column at the END
+  of the table for that metric (total_extra_cost, total_order_days_late or
+  max_order_days_late from the tool results) and justify the recommendation
+  with that metric, not with on-time orders.  late_orders and
+  total_order_days_late are present in compare_scenarios results.
+
 CRITICAL RULE — failed tools:
   If a tool returned an error, its data is missing. Do not replace it with
   numbers from other tools. Say which data could not be retrieved.
@@ -159,8 +171,8 @@ RECOMMENDATION questions ("what should we do", "which option", "recommend"):
 
 ORDER questions ("why is SO08 late", "what happens to order X"):
   ## Answer
-  (one or two sentences: under which option, how many days late, and the
-  cause from get_order_detail. "queue_blocked" means the order waited behind
+  (start with the "summary" field of get_order_detail, copied word for
+  word, then at most one more sentence: "queue_blocked" means the order waited behind
   waiting_order_id in the production queue. "component_shortage" means the
   order itself lacked the components in shortfall on check_date.)
   ## Evidence
@@ -188,20 +200,28 @@ Write the answer now.\
 """
 
 
-def build_compose_message(user_message: str) -> dict:
+def build_compose_message(user_message: str, proposal_created: bool = False) -> dict:
     """Return the compose-phase user message that triggers structured output.
 
     Parameters
     ----------
     user_message:
         The original user question (included for context).
+    proposal_created:
+        True when propose_action succeeded in this turn.  The model is then
+        told to use the PROPOSAL confirmation format.
 
     Returns
     -------
     A single ``{"role": "user", "content": ...}`` dict.
     """
+    note = (
+        "\n\nA proposal WAS created in this turn. Use the PROPOSAL "
+        "confirmation format."
+        if proposal_created else ""
+    )
     content = (
-        f"Original question: {user_message}\n\n"
+        f"Original question: {user_message}{note}\n\n"
         f"{_COMPOSE_INSTRUCTION}"
     )
     return {"role": "user", "content": content}

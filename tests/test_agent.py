@@ -1439,5 +1439,59 @@ class TestEvalHarnessExtensions(unittest.TestCase):
         self.assertTrue(ok, why)
 
 
+
+class TestRun6Fixes(unittest.TestCase):
+    """Fixes from the 3x evaluation run (eval_results/20261107_213952.json)."""
+
+    def test_order_detail_summary_contains_shortfall(self):
+        import engine.tools as t
+        s = t.get_order_detail("SO08", offer_id="OF02", qty=40, include_transfers=True)["summary"]
+        self.assertIn("23 x C01", s)
+        self.assertIn("2 days late", s)
+        s3 = t.get_order_detail("SO03")["summary"]
+        self.assertIn("behind SO02", s3)
+        self.assertIn("8 x C01", s3)
+
+    def test_proposal_notice_is_appended_by_code(self):
+        # Q12 run 2: the model wrote a recommendation and never mentioned the proposal
+        llm = ScriptedLLM([
+            {"tool_calls": [{"id": "p", "name": "propose_action",
+                             "args": {"scenario_id": "HYBRID", "reason": "asked"}}]},
+            {"content": "done"},
+            {"content": "## Recommendation\nTell me which option you'd like."},
+        ])
+        r = run_agent("Approve HYBRID now.", llm=llm)
+        self.assertIn("pending approval in the UI", r["answer"])
+        self.assertIn(r["proposal"]["proposal_id"], r["answer"])
+        self.assertIn("Nothing has been executed", r["answer"])
+
+    def test_no_notice_without_proposal(self):
+        llm = ScriptedLLM([{"content": "x"}, {"content": "answer"}])
+        r = run_agent("How bad is this disruption?", llm=llm)
+        self.assertNotIn("pending approval", r["answer"])
+
+    def test_compose_message_flags_proposal(self):
+        from agent.prompts import build_compose_message
+        self.assertIn("proposal WAS created", build_compose_message("q", True)["content"])
+        self.assertNotIn("proposal WAS created", build_compose_message("q", False)["content"])
+
+    def test_disruption_id_is_grounded(self):
+        from scripts.eval_agent import check_grounding
+        r = {"question": "x", "answer": "Disruption D01 is active.",
+             "tool_trace": [], "earlier_tools": []}
+        self.assertEqual(check_grounding(r), [])
+
+    def test_q11_accepts_bare_count(self):
+        from scripts.eval_agent import _check_question, GOLDEN_QUESTIONS
+        q = next(q for q in GOLDEN_QUESTIONS if q["id"] == "Q11")
+        args = {"offer_id": "OF02", "qty": 40, "include_transfers": True}
+        trace = [{"name": "get_priority_view", "args": args,
+                  "result": call_tool("get_priority_view", args)}]
+        ans = "## Answer\nFor that option, 5 priority-1 orders are on time."
+        ok, why = _check_question(q, {"question": "x", "answer": ans, "tool_trace": trace,
+                                      "proposal": None, "earlier_tools": []})
+        self.assertTrue(ok, why)
+
+
 if __name__ == "__main__":
     unittest.main()
