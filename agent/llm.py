@@ -40,12 +40,22 @@ def normalize_tool_calls(raw_message: dict) -> dict:
     -------
     dict with keys:
         content     – str or None
-        tool_calls  – list of {"id": str, "name": str, "args": dict}
+        tool_calls  – list of {"id": str, "name": str, "args": dict | None,
+                               "_parse_error": str | None}
+
+    When ``arguments`` cannot be decoded to a dict, ``"args"`` is set to
+    ``None`` and ``"_parse_error"`` is set to a message string.  ``call_tool``
+    detects this and returns an ``{"error": ...}`` to the LLM instead of
+    crashing the engine.
     """
     tool_calls = []
     for tc in raw_message.get("tool_calls") or []:
         fn = tc.get("function", {})
+        name = fn.get("name", "")
         raw_args = fn.get("arguments", {})
+        args = None
+        parse_error = None
+
         if isinstance(raw_args, str):
             try:
                 decoded = json.loads(raw_args)
@@ -54,19 +64,32 @@ def normalize_tool_calls(raw_message: dict) -> dict:
                     try:
                         decoded = json.loads(decoded)
                     except json.JSONDecodeError:
-                        decoded = {}
-                args = decoded if isinstance(decoded, dict) else {}
+                        parse_error = f"could not parse arguments for {name!r}, please retry with valid JSON"
+                        decoded = None
+                if decoded is not None and not isinstance(decoded, dict):
+                    parse_error = f"could not parse arguments for {name!r}, please retry with valid JSON"
+                    args = None
+                else:
+                    args = decoded  # may be None if double-decode failed
             except json.JSONDecodeError:
-                args = {}
+                parse_error = f"could not parse arguments for {name!r}, please retry with valid JSON"
         else:
-            args = raw_args if isinstance(raw_args, dict) else {}
+            if isinstance(raw_args, dict):
+                args = raw_args
+            else:
+                parse_error = f"could not parse arguments for {name!r}, please retry with valid JSON"
+
+        if parse_error:
+            args = None
+
         tool_calls.append({
-            "id": tc.get("id", ""),
-            "name": fn.get("name", ""),
-            "args": args,
+            "id":           tc.get("id", ""),
+            "name":         name,
+            "args":         args,
+            "_parse_error": parse_error,
         })
     return {
-        "content": raw_message.get("content"),
+        "content":    raw_message.get("content"),
         "tool_calls": tool_calls,
     }
 
@@ -104,13 +127,19 @@ class WatsonxLLM:
         # installed (e.g. in pure-stdlib engine tests).
         from ibm_watsonx_ai import APIClient, Credentials
         from ibm_watsonx_ai.foundation_models import ModelInference
+        from ibm_watsonx_ai.foundation_models.schema import TextChatParameters
 
         creds  = Credentials(url=url, api_key=api_key)
         client = APIClient(credentials=creds, project_id=project_id)
+        # TextChatParameters uses max_tokens (not max_new_tokens) and temperature.
+        # Confirmed via inspect.signature(TextChatParameters.__init__).
+        self._chat_params = TextChatParameters(
+            max_tokens=max_tokens,
+            temperature=0,
+        )
         self._model = ModelInference(
             model_id=resolved_model,
             api_client=client,
-            params={"max_new_tokens": max_tokens, "temperature": 0},
         )
         self.model_id = resolved_model
 
@@ -130,6 +159,7 @@ class WatsonxLLM:
         """
         response = self._model.chat(
             messages=messages,
+            params=self._chat_params,
             tools=tools,
             tool_choice_option="auto",
         )

@@ -306,7 +306,8 @@ def get_offers(disruption_id: str, data_dir=None) -> dict:
 
     dis = db["disruptions"][disruption_id]
     po = db["purchase_orders"][dis["po_id"]]
-    po_offer = db["offers"][po["offer_id"]]
+    disrupted_offer_id = po["offer_id"]
+    po_offer = db["offers"][disrupted_offer_id]
     component_id = po_offer["component_id"]
 
     offers = [
@@ -320,6 +321,7 @@ def get_offers(disruption_id: str, data_dir=None) -> dict:
             "min_qty": o["min_qty"],
             "multiple_qty": o["multiple_qty"],
             "max_qty": o["max_qty"],
+            "is_disrupted_supplier": oid == disrupted_offer_id,
         }
         for oid, o in db["offers"].items()
         if o["component_id"] == component_id

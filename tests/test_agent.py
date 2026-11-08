@@ -75,6 +75,30 @@ class TestNormalizeToolCalls(unittest.TestCase):
         self.assertEqual(result["content"], "Hello!")
         self.assertEqual(result["tool_calls"], [])
 
+    def test_unparseable_string_args_sets_parse_error(self):
+        """Malformed JSON string → args=None, _parse_error set."""
+        raw = self._granite_raw("get_disruption", "not valid json {{{{")
+        result = normalize_tool_calls(raw)
+        tc = result["tool_calls"][0]
+        self.assertIsNone(tc["args"])
+        self.assertIsNotNone(tc["_parse_error"])
+        self.assertIn("get_disruption", tc["_parse_error"])
+
+    def test_non_dict_non_string_args_sets_parse_error(self):
+        """Non-dict, non-string arguments (e.g. a list) → args=None."""
+        raw = self._llama_raw("get_disruption", ["D01"])
+        result = normalize_tool_calls(raw)
+        tc = result["tool_calls"][0]
+        self.assertIsNone(tc["args"])
+        self.assertIsNotNone(tc["_parse_error"])
+
+    def test_good_args_have_no_parse_error(self):
+        """Successfully parsed args → _parse_error is None."""
+        raw = self._granite_raw("get_disruption", '{"disruption_id": "D01"}')
+        result = normalize_tool_calls(raw)
+        tc = result["tool_calls"][0]
+        self.assertIsNone(tc["_parse_error"])
+
 
 # ── call_tool ─────────────────────────────────────────────────────────────────
 
@@ -140,6 +164,18 @@ class TestCallTool(unittest.TestCase):
             "reason": "bad qty",
         })
         self.assertIn("error", result)
+
+    def test_none_args_returns_parse_error(self):
+        """call_tool with args=None returns an error dict (parse failure path)."""
+        result = call_tool("get_disruption", None)
+        self.assertIn("error", result)
+        self.assertIn("get_disruption", result["error"])
+
+    def test_none_args_unknown_tool_returns_unknown_error(self):
+        """Unknown tool name takes precedence over None args."""
+        result = call_tool("bogus_tool", None)
+        self.assertIn("error", result)
+        self.assertIn("bogus_tool", result["error"])
 
 
 # ── TOOL_SPECS ────────────────────────────────────────────────────────────────
@@ -260,6 +296,54 @@ class TestRunAgent(unittest.TestCase):
         roles = [m["role"] for m in r2["history"]]
         self.assertIn("user", roles)
         self.assertIn("assistant", roles)
+
+    def test_history_structure_no_tool_calls(self):
+        """History for a direct-answer turn: [user, assistant]."""
+        llm = ScriptedLLM([{"content": "D01 is the disruption."}])
+        result = run_agent("What is the disruption?", llm=llm)
+        h = result["history"]
+        self.assertEqual(len(h), 2)
+        self.assertEqual(h[0]["role"], "user")
+        self.assertEqual(h[0]["content"], "What is the disruption?")
+        self.assertEqual(h[1]["role"], "assistant")
+        self.assertEqual(h[1]["content"], "D01 is the disruption.")
+
+    def test_history_structure_with_tool_call(self):
+        """History for a turn with one tool call: [user, assistant+tool_calls, tool, assistant]."""
+        llm = ScriptedLLM([
+            {"tool_calls": [{"id": "tc1", "name": "get_disruption",
+                             "args": {"disruption_id": "D01"}}]},
+            {"content": "PO01 is delayed 6 days."},
+        ])
+        result = run_agent("Tell me about D01.", llm=llm)
+        h = result["history"]
+        # Expect: user, assistant(tool_calls), tool, assistant(answer)
+        self.assertEqual(len(h), 4)
+        self.assertEqual(h[0]["role"], "user")
+        self.assertEqual(h[1]["role"], "assistant")
+        self.assertIn("tool_calls", h[1])
+        # assistant tool_calls entry should have content="" and arguments as JSON string
+        self.assertEqual(h[1].get("content"), "")
+        fn = h[1]["tool_calls"][0]["function"]
+        self.assertIsInstance(fn["arguments"], str)
+        json.loads(fn["arguments"])  # must be valid JSON
+        self.assertEqual(h[2]["role"], "tool")
+        self.assertIn("tool_call_id", h[2])
+        self.assertEqual(h[2]["tool_call_id"], "tc1")
+        self.assertEqual(h[3]["role"], "assistant")
+        self.assertEqual(h[3]["content"], "PO01 is delayed 6 days.")
+
+    def test_history_no_fabricated_tool_content(self):
+        """History must not contain fabricated '[tool call: ...]' text."""
+        llm = ScriptedLLM([
+            {"tool_calls": [{"id": "tc1", "name": "get_disruption",
+                             "args": {"disruption_id": "D01"}}]},
+            {"content": "Done."},
+        ])
+        result = run_agent("Info?", llm=llm)
+        for msg in result["history"]:
+            content = msg.get("content") or ""
+            self.assertNotIn("[tool call:", content)
 
     def test_multi_tool_calls_in_one_step(self):
         """Multiple tool calls in one response are all executed."""

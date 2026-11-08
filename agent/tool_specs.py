@@ -252,7 +252,7 @@ DISPATCH: dict = {
 
 # ── call_tool ─────────────────────────────────────────────────────────────────
 
-def call_tool(name: str, args: dict) -> dict:
+def call_tool(name: str, args) -> dict:
     """Validate args and dispatch a tool call to the engine.
 
     Parameters
@@ -260,12 +260,13 @@ def call_tool(name: str, args: dict) -> dict:
     name:
         Tool name string from the LLM.
     args:
-        Normalised argument dict (already converted from JSON string if needed).
+        Normalised argument dict, or ``None`` when ``normalize_tool_calls``
+        could not parse the arguments (e.g. malformed JSON from the LLM).
 
     Returns
     -------
     Engine result dict, or ``{"error": "<message>"}`` for LLM-facing errors
-    (invalid args, unknown IDs, engine ValueError).
+    (invalid args, unknown IDs, engine ValueError, parse failure).
 
     Notes
     -----
@@ -274,6 +275,15 @@ def call_tool(name: str, args: dict) -> dict:
     """
     if name not in DISPATCH:
         return {"error": f"unknown tool: {name}"}
+
+    # args is None when normalize_tool_calls could not decode the arguments
+    if args is None:
+        return {
+            "error": (
+                f"could not parse arguments for {name!r}, "
+                "please retry with valid JSON"
+            )
+        }
 
     # ── argument validation ───────────────────────────────────────────────────
 

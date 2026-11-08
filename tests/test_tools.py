@@ -223,6 +223,29 @@ class TestGetOffers(unittest.TestCase):
         result = get_offers("D01")
         json.dumps(result)
 
+    def test_is_disrupted_supplier_field_present(self):
+        """Each offer must have an is_disrupted_supplier bool field."""
+        result = get_offers("D01")
+        for o in result["offers"]:
+            self.assertIn("is_disrupted_supplier", o)
+            self.assertIsInstance(o["is_disrupted_supplier"], bool)
+
+    def test_exactly_one_disrupted_supplier(self):
+        """Exactly one offer must be flagged as the disrupted supplier."""
+        result = get_offers("D01")
+        disrupted = [o for o in result["offers"] if o["is_disrupted_supplier"]]
+        self.assertEqual(len(disrupted), 1)
+
+    def test_disrupted_supplier_matches_po(self):
+        """The flagged offer must correspond to PO01 (the disrupted PO)."""
+        from engine.loader import load_all
+        db = load_all()
+        po = db["purchase_orders"][db["disruptions"]["D01"]["po_id"]]
+        expected_offer_id = po["offer_id"]
+        result = get_offers("D01")
+        disrupted = [o for o in result["offers"] if o["is_disrupted_supplier"]]
+        self.assertEqual(disrupted[0]["offer_id"], expected_offer_id)
+
 
 class TestProposeAction(unittest.TestCase):
 
