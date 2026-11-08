@@ -541,5 +541,63 @@ class TestPrompts(unittest.TestCase):
         self.assertEqual(msg["role"], "user")
 
 
+# ── normalise ─────────────────────────────────────────────────────────────────
+
+class TestNormalise(unittest.TestCase):
+    """Tests for scripts/eval_agent.normalise (pure function, no network)."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Import here so the test file works even without dotenv loaded
+        from scripts.eval_agent import normalise
+        cls.normalise = staticmethod(normalise)
+
+    def test_lowercase(self):
+        self.assertEqual(self.normalise("TRANSFER"), "transfer")
+
+    def test_dollar_stripped(self):
+        self.assertEqual(self.normalise("$1,216"), "1216")
+
+    def test_comma_between_digits_stripped(self):
+        self.assertEqual(self.normalise("$1,216 USD"), "1216 usd")
+
+    def test_comma_not_stripped_in_text(self):
+        """Comma not between digits must be kept."""
+        result = self.normalise("Hello, world")
+        self.assertIn(",", result)
+
+    def test_unicode_en_dash_normalised(self):
+        """U+2013 EN DASH → '-'"""
+        self.assertEqual(self.normalise("trade\u2013offs"), "trade-offs")
+
+    def test_unicode_em_dash_normalised(self):
+        """U+2014 EM DASH → '-'"""
+        self.assertEqual(self.normalise("cost\u2014benefit"), "cost-benefit")
+
+    def test_unicode_minus_sign_normalised(self):
+        """U+2212 MINUS SIGN → '-'"""
+        self.assertEqual(self.normalise("5\u22126"), "5-6")
+
+    def test_non_breaking_space_normalised(self):
+        """U+00A0 NON-BREAKING SPACE → regular space"""
+        result = self.normalise("5\u00a0of\u00a06")
+        self.assertEqual(result, "5 of 6")
+
+    def test_5_out_of_6_matches_after_normalise(self):
+        """'5 out of 6' pattern survives normalisation and is found."""
+        answer = "Priority-1 orders: 5 out of 6 are on time."
+        self.assertIn("5 out of 6", self.normalise(answer))
+
+    def test_1216_found_after_stripping_comma_and_dollar(self):
+        """'$1,216' in answer → '1216' after normalisation."""
+        answer = "The cheapest option costs $1,216."
+        self.assertIn("1216", self.normalise(answer))
+
+    def test_unicode_dash_in_trade_offs_heading(self):
+        """'Trade\u2013offs and risks' → 'trade-offs and risks' (matches heading)."""
+        answer = "## Trade\u2013offs and Risks"
+        self.assertIn("trade-offs and risks", self.normalise(answer))
+
+
 if __name__ == "__main__":
     unittest.main()

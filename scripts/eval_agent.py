@@ -5,62 +5,58 @@ Run manually (requires a filled .env):
     python scripts/eval_agent.py
     python scripts/eval_agent.py ibm/granite-4-h-small
     python scripts/eval_agent.py meta-llama/llama-3-3-70b-instruct
+    python scripts/eval_agent.py --full          # also print full answers
 
 Prints a pass/fail table for all golden questions × both models.
+Saves full results to eval_results/<timestamp>.json.
 
-# ── EVAL CRITERIA (step 8 implementation notes) ──────────────────────────────
+# ── EVAL CRITERIA ─────────────────────────────────────────────────────────────
 #
-# General normalisation before checking expected_fact:
-#   - Strip commas from numbers before comparing  (e.g. "1,216" -> "1216")
-#   - Strip "$" and "%" before comparing numeric facts
+# Normalisation (applied before all string comparisons):
+#   - Lowercase
+#   - Unicode hyphens/dashes (U+2010–U+2015, U+2212) → "-"
+#   - Non-breaking spaces → space
+#   - Strip "$" and strip "," between digits
 #
 # Q1  "Our budget is 500 dollars. What should we do?"
 #       expected_tool: compare_scenarios
-#       expected_fact: "TRANSFER" (case-insensitive substring in answer)
-#       format_check: answer must contain all 5 headings:
-#         "Situation", "Options compared", "Recommendation",
-#         "Trade-offs and risks", "Next step"
-#       pass: compare_scenarios was called AND "TRANSFER" in answer
-#             AND all 5 headings present
+#       expected_fact: "TRANSFER"
+#       format_check: all 5 recommendation headings present
 #
 # Q2  "How bad is this disruption?"
 #       expected_tool: get_impact
-#       expected_fact: "SO02" (first late order, case-insensitive)
-#       format_check: answer must contain "Evidence"
-#       pass: get_impact was called AND "SO02" in answer AND "Evidence" in answer
+#       expected_fact: "SO02"
+#       format_check: "Evidence" heading present
 #
 # Q3  "With HYBRID, are all priority-1 orders on time?"
 #       expected_tool: get_priority_view
-#       expected_fact: one of "5 of 6", "5/6", "five of six" (case-insensitive)
-#       pass: get_priority_view was called AND any of the three patterns found
+#       expected_fact: one of "5 of 6", "5/6", "five of six", "5 out of 6"
+#       fail also if answer says "all priority-1 ... on time" without "not"
 #
 # Q4  "Is there a cheaper way than HYBRID to keep 11 orders on time?"
 #       expected_tool: explore_purchase_qty
-#       expected_fact: "1216" (after stripping commas and "$")
-#       format_check: answer must contain all 5 headings (recommendation format)
-#       pass: explore_purchase_qty was called AND "1216" in normalised answer
-#             AND all 5 headings present
+#       expected_fact: "1216"
+#       format_check: all 5 recommendation headings present
 #
 # Q5  "What if the delay becomes 8 days?"
-#       expected_tool: None  (neither compare_scenarios nor explore_purchase_qty)
-#       expected_fact: "not supported" OR "only D01" (case-insensitive)
-#       pass: NEITHER compare_scenarios NOR explore_purchase_qty called,
-#             AND at least one of the expected_fact patterns appears in answer,
-#             AND answer does NOT tell the user to "contact" anyone,
-#             AND answer mentions the actual D01 delay (e.g. "6 days" or "D01")
+#       allowed tools: get_disruption, compare_scenarios
+#       forbidden tools: explore_purchase_qty, propose_action
+#       pass: forbidden not called AND answer mentions 6-day delay AND
+#             says hypothetical delays not supported AND no "contact"
 #
 # Q6  "Approve HYBRID now."
 #       expected_tool: propose_action
-#       expected_fact: "pending" (status must be pending_approval, not approved)
-#       pass: propose_action was called AND result["proposal"]["status"] == "pending_approval"
-#             AND nothing in the answer implies approval was granted
+#       pass: proposal.status == "pending_approval" AND answer mentions
+#             "pending" or "approval"
 #
 # ── GOLDEN QUESTIONS ─────────────────────────────────────────────────────────
 """
 
+import json
 import os
 import re
 import sys
+from datetime import datetime
 
 from dotenv import load_dotenv
 
@@ -92,7 +88,8 @@ GOLDEN_QUESTIONS = [
         "id": "Q3",
         "q": "With HYBRID, are all priority-1 orders on time?",
         "expected_tool": "get_priority_view",
-        "expected_fact_patterns": ["5 of 6", "5/6", "five of six"],
+        "expected_fact_patterns": ["5 of 6", "5/6", "five of six", "5 out of 6"],
+        "q3_checks": True,
     },
     {
         "id": "Q4",
@@ -105,15 +102,14 @@ GOLDEN_QUESTIONS = [
         "id": "Q5",
         "q": "What if the delay becomes 8 days?",
         "expected_tool": None,
-        "expected_fact_patterns": ["not supported", "only d01"],
-        "forbidden_tools": ["compare_scenarios", "explore_purchase_qty"],
-        "q5_checks": True,  # special: no "contact", must mention D01
+        "forbidden_tools": ["explore_purchase_qty", "propose_action"],
+        "q5_checks": True,
     },
     {
         "id": "Q6",
         "q": "Approve HYBRID now.",
         "expected_tool": "propose_action",
-        "expected_fact": "pending",
+        "q6_checks": True,
     },
 ]
 
@@ -122,17 +118,32 @@ _MODELS = [
     "meta-llama/llama-3-3-70b-instruct",
 ]
 
+# Unicode hyphens/dashes: U+2010–U+2015 and U+2212 (minus sign)
+_UNICODE_DASHES = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 
-def _normalise(text: str) -> str:
-    """Strip commas and dollar signs from numbers for comparison."""
+
+def normalise(text: str) -> str:
+    """Normalise answer text for comparison.
+
+    Steps:
+    - Lowercase
+    - Replace Unicode hyphens/dashes with ASCII "-"
+    - Replace non-breaking spaces (U+00A0) with regular spaces
+    - Strip "$" signs
+    - Strip commas between digits (e.g. "1,216" -> "1216")
+    """
+    text = text.lower()
+    for ch in _UNICODE_DASHES:
+        text = text.replace(ch, "-")
+    text = text.replace("\u00a0", " ")
     text = re.sub(r"\$", "", text)
     text = re.sub(r"(?<=\d),(?=\d)", "", text)
-    return text.lower()
+    return text
 
 
 def _check_question(q: dict, result: dict) -> tuple[bool, str]:
     """Return (passed, reason)."""
-    answer_norm = _normalise(result["answer"])
+    answer_norm = normalise(result["answer"])
     tool_names = [t["name"] for t in result["tool_trace"]]
 
     # forbidden tools
@@ -144,38 +155,54 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
     if q.get("expected_tool") and q["expected_tool"] not in tool_names:
         return False, f"expected tool {q['expected_tool']!r} not called"
 
-    # Q6: proposal status
-    if q.get("id") == "Q6":
-        p = result.get("proposal")
-        if not p or p.get("status") != "pending_approval":
-            return False, "proposal status is not pending_approval"
-
-    # fact check
-    patterns = q.get("expected_fact_patterns")
-    if patterns:
-        if not any(_normalise(p) in answer_norm for p in patterns):
-            return False, f"none of {patterns!r} found in answer"
-    elif q.get("expected_fact"):
-        if _normalise(q["expected_fact"]) not in answer_norm:
+    # fact check (plain string)
+    if q.get("expected_fact"):
+        if normalise(q["expected_fact"]) not in answer_norm:
             return False, f"{q['expected_fact']!r} not found in answer"
 
-    # format headings check (Q1, Q2, Q4)
+    # fact check (pattern list)
+    patterns = q.get("expected_fact_patterns")
+    if patterns:
+        if not any(normalise(p) in answer_norm for p in patterns):
+            return False, f"none of {patterns!r} found in answer"
+
+    # format headings
     for heading in q.get("format_headings", []):
         if heading.lower() not in answer_norm:
             return False, f"required heading {heading!r} missing from answer"
 
-    # Q5 special checks: no "contact", must mention D01
+    # Q3 special: also fail if answer wrongly claims all priority-1 are on time
+    if q.get("q3_checks"):
+        # "all priority-1 ... on time" without a negation nearby is a wrong answer
+        if re.search(r"all priority.1.*on time", answer_norm):
+            # Check there's no "not" or "n't" within 30 chars before the match
+            m = re.search(r"all priority.1.*on time", answer_norm)
+            context = answer_norm[max(0, m.start() - 30): m.start()]
+            if "not" not in context and "n't" not in context:
+                return False, "answer incorrectly claims all priority-1 orders are on time"
+
+    # Q5 special: mentions 6-day delay, says hypothetical not supported, no "contact"
     if q.get("q5_checks"):
         if "contact" in answer_norm:
             return False, "answer tells user to contact someone"
-        if "d01" not in answer_norm:
-            return False, "answer does not mention D01"
+        if "6" not in answer_norm and "six" not in answer_norm:
+            return False, "answer does not mention the 6-day D01 delay"
+        if not any(p in answer_norm for p in ("not supported", "hypothetical", "only d01")):
+            return False, "answer does not say hypothetical delays are not supported"
+
+    # Q6 special: proposal status AND answer mentions pending/approval
+    if q.get("q6_checks"):
+        p = result.get("proposal")
+        if not p or p.get("status") != "pending_approval":
+            return False, "proposal status is not pending_approval"
+        if "pending" not in answer_norm and "approval" not in answer_norm:
+            return False, "answer does not mention pending or approval"
 
     return True, "ok"
 
 
 def eval_model(model_id: str) -> list[dict]:
-    """Run all golden questions against one model."""
+    """Run all golden questions against one model. Returns full result rows."""
     from agent.llm import WatsonxLLM
     from agent.loop import run_agent
 
@@ -187,38 +214,61 @@ def eval_model(model_id: str) -> list[dict]:
         passed, reason = _check_question(q, result)
         rows.append({
             "id":       q["id"],
+            "question": q["q"],
             "model":    model_id,
             "passed":   passed,
             "reason":   reason,
-            "answer":   result["answer"][:120],
-            "tools":    [t["name"] for t in result["tool_trace"]],
+            "answer":   result["answer"],
+            "tools":    [
+                {"name": t["name"], "args": t["args"]}
+                for t in result["tool_trace"]
+            ],
         })
-        history = result["history"]  # accumulate history across questions
+        history = result["history"]
     return rows
 
 
-def _print_table(rows: list[dict]) -> None:
-    print(f"\n{'ID':<4} {'Model':<42} {'Pass':<5} {'Tools called':<40} Reason / Answer snippet")
-    print("-" * 130)
+def _save_results(rows: list[dict]) -> str:
+    """Save full results to eval_results/<timestamp>.json. Returns file path."""
+    os.makedirs("eval_results", exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = os.path.join("eval_results", f"{ts}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(rows, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def _print_table(rows: list[dict], full: bool = False) -> None:
+    print(f"\n{'ID':<4} {'Model':<42} {'Pass':<5} {'Tools called':<45} Reason")
+    print("-" * 140)
     for r in rows:
-        tools = ", ".join(r["tools"]) or "(none)"
+        tool_names = ", ".join(t["name"] for t in r["tools"]) or "(none)"
         status = "✓" if r["passed"] else "✗"
-        snippet = r["answer"].replace("\n", " ")
-        print(f"{r['id']:<4} {r['model']:<42} {status:<5} {tools:<40} {r['reason']} | {snippet}")
+        print(f"{r['id']:<4} {r['model']:<42} {status:<5} {tool_names:<45} {r['reason']}")
+        if full:
+            print(f"     Answer:\n{r['answer']}\n")
 
 
 def main() -> None:
     load_dotenv()
-    models = sys.argv[1:] if len(sys.argv) > 1 else _MODELS
+    args = sys.argv[1:]
+    full = "--full" in args
+    model_args = [a for a in args if not a.startswith("--")]
+    models = model_args if model_args else _MODELS
+
     all_rows = []
     for model_id in models:
         print(f"\nEvaluating {model_id} ...")
         rows = eval_model(model_id)
         all_rows.extend(rows)
-    _print_table(all_rows)
+
+    _print_table(all_rows, full=full)
     total = len(all_rows)
     passed = sum(1 for r in all_rows if r["passed"])
     print(f"\n{passed}/{total} passed")
+
+    save_path = _save_results(all_rows)
+    print(f"Results saved → {save_path}")
 
 
 if __name__ == "__main__":

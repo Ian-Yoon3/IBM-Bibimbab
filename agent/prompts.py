@@ -44,8 +44,12 @@ EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
   "priority customers / high-priority orders for scenario X":
     1. get_priority_view(scenario_id=X)
 
-  "approve / act / do it / implement":
+  "approve / act / do it / implement / submit":
     1. propose_action (with scenario_id or offer_id+qty)
+    Only use propose_action when the user EXPLICITLY asks to act, approve,
+    implement, or submit. Do NOT call propose_action for recommendation
+    questions — the "Next step" section should tell the user to ask for a
+    proposal instead.
 
   "different delay length / what if N days / new disruption / hypothetical":
     1. get_disruption(disruption_id="D01")  — confirm actual D01 delay
@@ -81,7 +85,9 @@ RECOMMENDATION questions ("what should we do", "which option", "recommend"):
   ## Trade-offs and risks
   (which orders remain late, assumptions)
   ## Next step
-  (e.g. "Use propose_action or the UI to submit the plan for approval")
+  (e.g. "Tell me which option you'd like to proceed with and I'll create
+  a proposal for you." Do NOT call propose_action here — wait for the
+  user to explicitly ask.)
 
 FACTUAL questions ("how bad", "what is the impact", "how many orders"):
   ## Answer
