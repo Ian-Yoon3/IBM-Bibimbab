@@ -39,10 +39,13 @@ cd reference && python3 verify.py --write
 - **Platform:** watsonx.ai chat with tool calling via `ibm_watsonx_ai.foundation_models.ModelInference`.
 - **Model:** read from env `WX_MODEL_ID`; default `ibm/granite-4-h-small`. Always set `max_tokens` explicitly.
 - **Tool-call arguments** may arrive as a JSON string or as a parsed object — normalise to a dict before calling the engine.
-- **Tools exposed to the LLM:**
-  `get_disruption`, `get_impact`, `compare_scenarios`, `get_priority_view`,
-  `explore_purchase_qty`, `propose_action`.
+- **Tools exposed to the LLM (7 total):**
+  `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`,
+  `get_priority_view`, `explore_purchase_qty`, `propose_action`.
   (`run_scenario` is not exposed yet.)
+- `get_offers` must be called before `explore_purchase_qty` to discover the offer ID for the disrupted component.
+- `get_priority_view` accepts `scenario_id=` (preferred) or a raw `actions` list.
+- `propose_action` (LLM-facing) accepts either `scenario_id` **or** `(offer_id, qty, include_transfers)` — the agent layer resolves the latter via `explore_purchase_qty` before calling the engine.
 - The agent **never approves** recovery actions — it only proposes.
 - Only disruption **D01** exists in the data. If asked about other disruption IDs or new delay dates, the agent must reply that they are not supported yet rather than inventing numbers.
 

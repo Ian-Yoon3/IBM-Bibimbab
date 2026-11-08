@@ -78,7 +78,7 @@ def rank_options(
     for rank, opt in enumerate(ranked_sorted, start=1):
         # Use scenario_id as the identity key when available; fall back to label
         identity = opt.get("scenario_id", opt["label"])
-        ranked.append({
+        entry = {
             "rank": rank,
             "scenario_id": identity,
             "label": opt["label"],
@@ -88,7 +88,12 @@ def rank_options(
             "total_order_days_late": opt["total_order_days_late"],
             "max_order_days_late": opt["max_order_days_late"],
             "total_extra_cost": opt["total_extra_cost"],
-        })
+        }
+        # Pass through extra keys when present (set by explore_purchase_qty)
+        for extra_key in ("actions", "purchase_qty"):
+            if extra_key in opt:
+                entry[extra_key] = opt[extra_key]
+        ranked.append(entry)
 
     return {
         "objective": objective,

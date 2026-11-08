@@ -1,12 +1,16 @@
 # Project Coding Rules (Non-Obvious Only)
 
-- **Test runner:** `python -m unittest discover -s tests -v` — all 76 tests must stay green; do not break them
+- **Test runner:** `python -m unittest discover -s tests -v` — all tests must stay green; do not break them
 - **Engine API boundary:** `engine/tools.py` is the only module agents and scripts may call; never import `engine/loader.py`, `engine/simulate.py`, etc. directly from `agent/` or `scripts/`
 - **stdlib boundary:** `engine/` is stdlib-only (`csv`, `collections`, `datetime`, `pathlib`, `sys`); third-party packages (`ibm-watsonx-ai`, `python-dotenv`) are only allowed in `agent/` and `scripts/`
-- **Tool-call argument normalisation:** `ibm_watsonx_ai` may return `tool_calls[].function.arguments` as a JSON-encoded string or as a parsed dict — always normalise to a dict with `json.loads()` guarded by `isinstance(args, str)` before passing to the engine
+- **Tool-call argument normalisation:** `ibm_watsonx_ai` may return `tool_calls[].function.arguments` as a JSON-encoded string or as a parsed dict — use `normalize_tool_calls()` from `agent/llm.py`; handles both Granite (string) and Llama (dict) shapes
 - **Model config:** read `WX_MODEL_ID` from env (default `ibm/granite-4-h-small`); always pass an explicit `max_tokens` to `ModelInference` — the SDK default (1024) emits a warning and may truncate responses
-- **Agent tests are network-free:** patch/mock `ModelInference.chat` — never make real watsonx.ai calls in `tests/`
-- **D01 only:** only disruption D01 exists; the agent must not invent delay dates or outcomes for other disruption IDs
+- **Agent tests are network-free:** use `ScriptedLLM` from `agent/fake_llm.py` — never make real watsonx.ai calls in `tests/`
+- **D01 only:** validate disruption IDs against `db["disruptions"]`, not a hardcoded string; the agent must not invent delay dates or outcomes for unknown IDs
+- **7 LLM tools:** `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`, `get_priority_view`, `explore_purchase_qty`, `propose_action`; `run_scenario` is NOT in `TOOL_SPECS`
+- **unknown tool names** from the LLM return `{"error": "unknown tool: <name>"}` from `call_tool()` — the loop continues; it does not raise
+- **propose_action (LLM-facing):** accepts `scenario_id` OR `(offer_id, qty, include_transfers)`; `call_tool` resolves the offer+qty path via `explore_purchase_qty` before calling the engine
+- **Loop message order:** append the assistant message with `tool_calls` BEFORE the corresponding `role:"tool"` messages — this is what the watsonx chat API expects
 - **(reference/verify.py only)** `load()` asserts no duplicate keys AND no empty fields (except `scenarios.disruption_id`) — any new CSV must conform or `load()` will crash
 - **(reference/verify.py only)** `number()` and `day()` are the only correct ways to read int/date fields; bare `int(row[k])` skips the non-negative guard
 - **(reference/verify.py only)** `floor` dict is pre-computed as `reserved_qty + protected_qty` and is reused across all 5 scenario simulations — it must not be mutated

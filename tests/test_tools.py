@@ -5,6 +5,7 @@ import unittest
 from engine.loader import load_all
 from engine.tools import (
     get_disruption,
+    get_offers,
     run_scenario,
     compare_scenarios,
     get_impact,
@@ -121,6 +122,23 @@ class TestGetPriorityView(unittest.TestCase):
         result = get_priority_view([], "D01")
         json.dumps(result)
 
+    def test_scenario_id_hybrid_on_time_count(self):
+        """get_priority_view(scenario_id='HYBRID') -> 5 of 6 priority-1 on time."""
+        result = get_priority_view(scenario_id="HYBRID")
+        self.assertEqual(result["on_time_count"], 5)
+        self.assertEqual(result["total_count"], 6)
+
+    def test_scenario_id_matches_actions_path(self):
+        """Results via scenario_id= match the equivalent explicit actions path."""
+        actions, disruption_id = build_scenario_actions("TRANSFER", _DB)
+        via_actions = get_priority_view(actions, disruption_id)
+        via_scenario = get_priority_view(scenario_id="TRANSFER")
+        self.assertEqual(via_actions["on_time_count"], via_scenario["on_time_count"])
+
+    def test_unknown_scenario_id_raises(self):
+        with self.assertRaises(ValueError):
+            get_priority_view(scenario_id="BOGUS")
+
 
 class TestExplorePurchaseQty(unittest.TestCase):
 
@@ -152,6 +170,58 @@ class TestExplorePurchaseQty(unittest.TestCase):
         result = explore_purchase_qty("OF02", budget=500)
         for r in result["ranked"]:
             self.assertLessEqual(r["total_extra_cost"], 500)
+
+    def test_ranked_options_have_actions_key(self):
+        """Each ranked option must carry an 'actions' list for propose_action."""
+        result = explore_purchase_qty("OF02")
+        for r in result["ranked"]:
+            self.assertIn("actions", r)
+            self.assertIsInstance(r["actions"], list)
+            self.assertTrue(len(r["actions"]) >= 1)
+
+    def test_actions_key_with_transfers(self):
+        """Actions list includes transfer actions when include_transfers=True."""
+        result = explore_purchase_qty("OF02", include_transfers=True)
+        for r in result["ranked"]:
+            self.assertIn("actions", r)
+            transfer_actions = [a for a in r["actions"] if a["type"] == "transfer"]
+            self.assertTrue(len(transfer_actions) >= 1)
+
+
+class TestGetOffers(unittest.TestCase):
+
+    def test_d01_returns_component_id(self):
+        result = get_offers("D01")
+        self.assertEqual(result["disruption_id"], "D01")
+        self.assertEqual(result["component_id"], "C01")
+
+    def test_offers_list_nonempty(self):
+        result = get_offers("D01")
+        self.assertGreater(len(result["offers"]), 0)
+
+    def test_offer_fields(self):
+        result = get_offers("D01")
+        for o in result["offers"]:
+            self.assertIn("offer_id", o)
+            self.assertIn("supplier_id", o)
+            self.assertIn("lead_days", o)
+            self.assertIn("unit_cost_usd", o)
+            self.assertIn("min_qty", o)
+            self.assertIn("max_qty", o)
+
+    def test_all_offers_for_c01(self):
+        """All returned offers must be for the C01 component."""
+        result = get_offers("D01")
+        for o in result["offers"]:
+            self.assertEqual(o["component_id"], "C01")
+
+    def test_unknown_disruption_raises(self):
+        with self.assertRaises(ValueError):
+            get_offers("D99")
+
+    def test_json_serialisable(self):
+        result = get_offers("D01")
+        json.dumps(result)
 
 
 class TestProposeAction(unittest.TestCase):
