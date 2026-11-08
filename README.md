@@ -186,7 +186,7 @@ IBM-Bibimbab/
 ├── docs/decisions/       Architecture decision records
 ├── reference/            Original reference implementation and data dictionary
 ├── demo.py               Engine-only walkthrough of the tools
-└── bob_sessions/ian
+└── bob_sessions/ian      Add Bob session record for the agent layer (Ian)
 ```
 
 For developers using IBM Bob, `AGENTS.md` and `.bob/` hold the project rules Bob reads before every task.
