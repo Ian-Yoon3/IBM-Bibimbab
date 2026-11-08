@@ -124,6 +124,9 @@ _MODELS = [
 # Unicode hyphens/dashes: U+2010–U+2015 and U+2212 (minus sign)
 _UNICODE_DASHES = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 
+# Thin/narrow no-break spaces that may appear inside formatted numbers
+_THIN_SPACES = "\u2009\u202f\u00a0"
+
 
 def normalise(text: str) -> str:
     """Normalise answer text for comparison.
@@ -131,17 +134,86 @@ def normalise(text: str) -> str:
     Steps:
     - Lowercase
     - Replace Unicode hyphens/dashes with ASCII "-"
-    - Replace non-breaking spaces (U+00A0) with regular spaces
+    - Replace thin/narrow spaces (U+2009, U+202F) between digits with ""
+      ("1 216" -> "1216" when the space is thin/narrow)
+    - Replace U+00A0 non-breaking space with regular space
     - Strip "$" signs
     - Strip commas between digits (e.g. "1,216" -> "1216")
+    - Rejoin split IDs like "so 02" -> "so02" (letters directly followed by
+      a space then digits, e.g. from "SO 02")
     """
     text = text.lower()
     for ch in _UNICODE_DASHES:
         text = text.replace(ch, "-")
-    text = text.replace("\u00a0", " ")
+    # Remove thin/narrow spaces when they sit between digits (number formatting)
+    text = re.sub(r"(?<=\d)[\u2009\u202f](?=\d)", "", text)
+    # Replace remaining thin/narrow and non-breaking spaces with regular space
+    for ch in _THIN_SPACES:
+        text = text.replace(ch, " ")
     text = re.sub(r"\$", "", text)
     text = re.sub(r"(?<=\d),(?=\d)", "", text)
+    # Rejoin split IDs: 2–4 letters at a word boundary + space + exactly 2–3
+    # digits ("so 02"->"so02", "po 01"->"po01", "wh 01"->"wh01").
+    # Restricting to 2–3 digits prevents "is 9999" from matching.
+    text = re.sub(r"(?<!\w)([a-z]{2,4}) (?=\d{2,3}(?!\w))", r"\1", text)
     return text
+
+
+# ── grounding check ───────────────────────────────────────────────────────────
+
+# Tokens exempt from grounding (table denominators always known from schema)
+_GROUNDING_EXEMPT = {"12", "6"}
+
+# Pattern to extract candidate tokens: numbers (incl. decimals), dates, IDs
+# ID pattern: word-boundary + known short prefix + digits (avoids matching "is9999")
+_TOKEN_RE = re.compile(
+    r"(?<!\w)(\d{4}-\d{2}-\d{2})(?!\w)"      # ISO date
+    r"|(?<!\w)([a-z]{1,4}\d{2,})(?!\w)"       # IDs like so02, d01, po01, of02, wh01, ln01
+    r"|(?<!\w)(\d+(?:\.\d+)?)(?!\w)"          # plain numbers (int or decimal)
+)
+
+
+def _extract_tokens(text: str) -> set[str]:
+    """Extract candidate fact tokens from a (normalised) text string."""
+    tokens = set()
+    for m in _TOKEN_RE.finditer(text.lower()):
+        tok = m.group(0)
+        if tok:
+            tokens.add(tok)
+    return tokens
+
+
+def _grounding_corpus(result: dict) -> str:
+    """Build the full grounding corpus from tool results + question text."""
+    parts = [result.get("question", "")]
+    for entry in result.get("tool_trace", []):
+        # result may be stored as a string (truncated) or dict
+        r = entry.get("result", {})
+        if isinstance(r, str):
+            parts.append(r)
+        elif isinstance(r, dict):
+            parts.append(json.dumps(r, default=str))
+    return normalise(" ".join(parts))
+
+
+def check_grounding(result: dict) -> list[str]:
+    """Return a list of tokens in the answer that are not grounded in tool results.
+
+    Tokens from _GROUNDING_EXEMPT (12, 6) and tokens present in the question
+    or tool results are considered grounded.  Everything else is ungrounded.
+    """
+    answer_norm = normalise(result["answer"])
+    corpus = _grounding_corpus(result)
+    answer_tokens = _extract_tokens(answer_norm)
+    corpus_tokens = _extract_tokens(corpus)
+    ungrounded = []
+    for tok in sorted(answer_tokens):
+        if tok in _GROUNDING_EXEMPT:
+            continue
+        if tok in corpus_tokens:
+            continue
+        ungrounded.append(tok)
+    return ungrounded
 
 
 def _check_question(q: dict, result: dict) -> tuple[bool, str]:
@@ -222,6 +294,11 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
         if "pending" not in answer_norm and "approval" not in answer_norm:
             return False, "answer does not mention pending or approval"
 
+    # Grounding check: fail if any answer token is not in tool results/question
+    ungrounded = check_grounding(result)
+    if ungrounded:
+        return False, f"ungrounded tokens in answer: {ungrounded[:8]}"
+
     return True, "ok"
 
 
@@ -237,7 +314,10 @@ def eval_model(model_id: str) -> list[dict]:
     rows = []
     for q in GOLDEN_QUESTIONS:
         result = run_agent(q["q"], history=None, llm=llm)
+        # Attach question to result so check_grounding can use it
+        result["question"] = q["q"]
         passed, reason = _check_question(q, result)
+        ungrounded = check_grounding(result)
         tools_with_results = []
         for t in result["tool_trace"]:
             result_str = json.dumps(t["result"], default=str)
@@ -247,13 +327,14 @@ def eval_model(model_id: str) -> list[dict]:
                 "result": result_str[:2000],
             })
         rows.append({
-            "id":       q["id"],
-            "question": q["q"],
-            "model":    model_id,
-            "passed":   passed,
-            "reason":   reason,
-            "answer":   result["answer"],
-            "tools":    tools_with_results,
+            "id":           q["id"],
+            "question":     q["q"],
+            "model":        model_id,
+            "passed":       passed,
+            "reason":       reason,
+            "answer":       result["answer"],
+            "ungrounded":   ungrounded,
+            "tools":        tools_with_results,
         })
     return rows
 

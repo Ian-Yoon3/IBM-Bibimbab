@@ -143,24 +143,49 @@ class TestGetPriorityView(unittest.TestCase):
 class TestExplorePurchaseQty(unittest.TestCase):
 
     def test_qty_65_reproduces_alt_buy(self):
-        """buy_65 with disruption should reproduce ALT_BUY: 9 on-time, $1250."""
+        """OF02 qty=65 should reproduce ALT_BUY: 9 on-time, $1250."""
         result = explore_purchase_qty("OF02")
-        options = {r["label"]: r for r in result["ranked"]}
-        self.assertEqual(options["buy_65"]["on_time_orders"], 9)
-        self.assertEqual(options["buy_65"]["total_extra_cost"], 1250)
+        options = {r["purchase_qty"]: r for r in result["ranked"]}
+        self.assertEqual(options[65]["on_time_orders"], 9)
+        self.assertEqual(options[65]["total_extra_cost"], 1250)
 
     def test_qty_45_with_transfers_reproduces_hybrid(self):
-        """buy_45 + all transfers should reproduce HYBRID: 11 on-time, $1306."""
+        """OF02 qty=45 + all transfers should reproduce HYBRID: 11 on-time, $1306."""
         result = explore_purchase_qty("OF02", include_transfers=True)
-        options = {r["label"]: r for r in result["ranked"]}
-        self.assertEqual(options["buy_45"]["on_time_orders"], 11)
-        self.assertEqual(options["buy_45"]["total_extra_cost"], 1306)
+        options = {r["purchase_qty"]: r for r in result["ranked"]}
+        self.assertEqual(options[45]["on_time_orders"], 11)
+        self.assertEqual(options[45]["total_extra_cost"], 1306)
 
     def test_all_valid_quantities_present(self):
         result = explore_purchase_qty("OF02")
-        labels = {r["label"] for r in result["ranked"]}
+        qtys = {r["purchase_qty"] for r in result["ranked"]}
         for qty in range(20, 66, 5):
-            self.assertIn(f"buy_{qty}", labels)
+            self.assertIn(qty, qtys)
+
+    def test_explore_labels_descriptive(self):
+        """Labels must be descriptive and not contain 'buy_' prefix."""
+        result = explore_purchase_qty("OF02")
+        for r in result["ranked"]:
+            self.assertNotIn("buy_", r["label"])
+            self.assertIn("OF02", r["label"])
+
+    def test_explore_with_transfers_label_mentions_transfers(self):
+        """Labels with transfers must mention 'Transfers'."""
+        result = explore_purchase_qty("OF02", include_transfers=True)
+        for r in result["ranked"]:
+            self.assertIn("Transfers", r["label"])
+
+    def test_explore_option_type_is_explored(self):
+        """option_type must be 'explored'."""
+        result = explore_purchase_qty("OF02")
+        for r in result["ranked"]:
+            self.assertEqual(r["option_type"], "explored")
+
+    def test_explore_scenario_id_is_null(self):
+        """scenario_id must be None for explored options."""
+        result = explore_purchase_qty("OF02")
+        for r in result["ranked"]:
+            self.assertIsNone(r["scenario_id"])
 
     def test_json_serialisable(self):
         result = explore_purchase_qty("OF02")

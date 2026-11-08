@@ -368,7 +368,7 @@ def tool_specs_for(user_message: str) -> list[dict]:
 
 # ── call_tool ─────────────────────────────────────────────────────────────────
 
-def call_tool(name: str, args) -> dict:
+def call_tool(name: str, args, offered_names: set[str] | None = None) -> dict:
     """Validate args and dispatch a tool call to the engine.
 
     Parameters
@@ -378,6 +378,11 @@ def call_tool(name: str, args) -> dict:
     args:
         Normalised argument dict, or ``None`` when ``normalize_tool_calls``
         could not parse the arguments (e.g. malformed JSON from the LLM).
+    offered_names:
+        Set of tool names that were offered to the LLM this turn.  When
+        provided, any call to a tool NOT in this set is rejected without
+        calling the engine, returning an informative error.  This enforces
+        the propose_action gate even when the LLM ignores the tool list.
 
     Returns
     -------
@@ -390,6 +395,15 @@ def call_tool(name: str, args) -> dict:
     loop can forward the error back to the LLM instead of crashing.
     Type coercion is applied to all integer/boolean fields before validation.
     """
+    # Enforce the offered-tools guard before anything else
+    if offered_names is not None and name not in offered_names:
+        return {
+            "error": (
+                f"{name!r} is not available in this turn; "
+                "the user has not asked to act"
+            )
+        }
+
     if name not in DISPATCH:
         return {"error": f"unknown tool: {name}"}
 
@@ -510,7 +524,13 @@ def _dispatch_propose_action(args: dict) -> dict:
     if scenario_id:
         # Named-scenario path
         if scenario_id not in _VALID_SCENARIOS:
-            return {"error": f"Unknown scenario_id {scenario_id!r}"}
+            return {
+                "error": (
+                    f"Unknown scenario_id {scenario_id!r}. "
+                    "Explored options (from explore_purchase_qty) must be proposed "
+                    "with offer_id, qty and include_transfers — not a scenario_id."
+                )
+            }
         try:
             return _tools.propose_action(scenario_id, reason)
         except (ValueError, TypeError) as exc:

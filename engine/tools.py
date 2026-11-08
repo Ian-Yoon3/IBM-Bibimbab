@@ -278,7 +278,12 @@ def explore_purchase_qty(
         actions = [purchase_action] + transfer_actions
         sim = simulate(actions, disruption_id, db)
         kpi = evaluate(sim)
-        kpi["label"] = f"buy_{qty}"
+        if include_transfers and transfer_actions:
+            kpi["label"] = f"Transfers + buy {qty} x {offer_id}"
+        else:
+            kpi["label"] = f"Buy {qty} x {offer_id}"
+        kpi["option_type"] = "explored"
+        kpi["scenario_id"] = None  # not a named scenario
         kpi["purchase_qty"] = qty
         kpi["actions"] = actions  # allow agent to pass to propose_action
         options.append(kpi)

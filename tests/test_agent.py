@@ -465,10 +465,10 @@ class TestRunAgent(unittest.TestCase):
         call_count = [0]
         original_call_tool = __import__("agent.tool_specs", fromlist=["call_tool"]).call_tool
 
-        def counting_call_tool(name, args):
+        def counting_call_tool(name, args, offered_names=None):
             if name == "get_disruption":
                 call_count[0] += 1
-            return original_call_tool(name, args)
+            return original_call_tool(name, args, offered_names=offered_names)
 
         import agent.loop as loop_module
         original = loop_module.call_tool
@@ -799,6 +799,142 @@ class TestProposeActionGate(unittest.TestCase):
         run_agent("Which option is best?", llm=CapturingLLM())
         # Gather-phase call (index 0) must not include propose_action
         self.assertNotIn("propose_action", received_specs[0])
+
+
+# ── tool-offer guard ─────────────────────────────────────────────────────────
+
+class TestToolOfferGuard(unittest.TestCase):
+    """Tests for the call-time tool-offer enforcement (fix 1)."""
+
+    def test_hidden_tool_blocked_at_call_time(self):
+        """call_tool with offered_names that excludes a tool returns an error."""
+        offered = {"get_disruption", "get_impact", "compare_scenarios"}
+        result = call_tool("propose_action", {"scenario_id": "HYBRID", "reason": "r"},
+                           offered_names=offered)
+        self.assertIn("error", result)
+        self.assertIn("not available", result["error"])
+        self.assertIn("propose_action", result["error"])
+
+    def test_offered_tool_not_blocked(self):
+        """call_tool with offered_names that includes the tool proceeds normally."""
+        offered = {"get_disruption", "propose_action"}
+        result = call_tool("propose_action",
+                           {"scenario_id": "HYBRID", "reason": "test"},
+                           offered_names=offered)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["status"], "pending_approval")
+
+    def test_none_offered_names_no_guard(self):
+        """offered_names=None disables the guard entirely."""
+        result = call_tool("propose_action",
+                           {"scenario_id": "HYBRID", "reason": "test"},
+                           offered_names=None)
+        self.assertNotIn("error", result)
+
+    def test_run_agent_blocks_propose_on_non_action_turn(self):
+        """propose_action called by the LLM on a non-action turn gets blocked."""
+        # Non-action message -> propose_action is not in offered tools
+        llm = ScriptedLLM([
+            {"tool_calls": [{"id": "c1", "name": "propose_action",
+                             "args": {"scenario_id": "HYBRID",
+                                      "reason": "sneak approval"}}]},
+            {"content": "gather"},
+            {"content": "Composed."},
+        ])
+        result = run_agent("Which scenario is best?", llm=llm)
+        # The tool trace must show an error (blocked), not a pending_approval
+        self.assertIn("error", result["tool_trace"][0]["result"])
+        self.assertIsNone(result["proposal"])
+
+
+# ── no angle-bracket placeholders ─────────────────────────────────────────────
+
+class TestNoPlaceholders(unittest.TestCase):
+    """SYSTEM_PROMPT and compose instruction must not contain < ... > placeholders."""
+
+    def test_system_prompt_no_angle_brackets(self):
+        from agent.prompts import SYSTEM_PROMPT
+        import re
+        placeholders = re.findall(r"<[^>]+>", SYSTEM_PROMPT)
+        self.assertEqual(placeholders, [],
+                         f"Found angle-bracket placeholders: {placeholders}")
+
+    def test_compose_instruction_no_angle_brackets(self):
+        from agent.prompts import _COMPOSE_INSTRUCTION
+        import re
+        placeholders = re.findall(r"<[^>]+>", _COMPOSE_INSTRUCTION)
+        self.assertEqual(placeholders, [],
+                         f"Found angle-bracket placeholders: {placeholders}")
+
+
+# ── grounding check ───────────────────────────────────────────────────────────
+
+class TestGroundingCheck(unittest.TestCase):
+    """Tests for check_grounding and normalise in eval_agent."""
+
+    @classmethod
+    def setUpClass(cls):
+        from scripts.eval_agent import check_grounding, normalise
+        cls.check_grounding = staticmethod(check_grounding)
+        cls.normalise = staticmethod(normalise)
+
+    def _make_result(self, answer, tool_results=None, question="Test?"):
+        """Build a minimal result dict for grounding tests."""
+        trace = []
+        for r in (tool_results or []):
+            trace.append({"name": "mock_tool", "args": {}, "result": r})
+        return {"answer": answer, "tool_trace": trace, "question": question}
+
+    def test_grounded_number_passes(self):
+        """A number from tool results is grounded."""
+        result = self._make_result(
+            answer="The delay is 6 days.",
+            tool_results=[{"delay_days": 6}],
+        )
+        ungrounded = self.check_grounding(result)
+        self.assertNotIn("6", ungrounded)
+
+    def test_invented_number_flagged(self):
+        """A number not in tool results or question is flagged."""
+        result = self._make_result(
+            answer="The extra cost is 9999 USD.",
+            tool_results=[{"delay_days": 6}],
+        )
+        ungrounded = self.check_grounding(result)
+        self.assertIn("9999", ungrounded)
+
+    def test_denominator_12_exempt(self):
+        """'12' (orders denominator) is always exempt."""
+        result = self._make_result(
+            answer="11 of 12 orders are on time.",
+            tool_results=[{"on_time_orders": 11}],
+        )
+        ungrounded = self.check_grounding(result)
+        self.assertNotIn("12", ungrounded)
+
+    def test_denominator_6_exempt(self):
+        """'6' (priority-1 denominator) is always exempt."""
+        result = self._make_result(
+            answer="5 of 6 priority-1 orders on time.",
+            tool_results=[{"on_time_count": 5}],
+        )
+        ungrounded = self.check_grounding(result)
+        self.assertNotIn("6", ungrounded)
+
+    def test_thin_space_1216_normalised(self):
+        """'1\u2009216' (thin space) normalises to '1216'."""
+        result = self.normalise("cost: 1\u2009216 USD")
+        self.assertIn("1216", result)
+
+    def test_so02_split_normalised(self):
+        """'SO 02' normalises to 'so02'."""
+        result = self.normalise("Order SO 02 is late.")
+        self.assertIn("so02", result)
+
+    def test_narrow_no_break_space_1216(self):
+        """U+202F narrow no-break space between digits collapses to nothing."""
+        result = self.normalise("1\u202f216")
+        self.assertIn("1216", result)
 
 
 if __name__ == "__main__":

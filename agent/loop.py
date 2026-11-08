@@ -114,6 +114,7 @@ def run_agent(
         messages.append(assistant_msg)
         turn_messages.append(assistant_msg)
 
+        offered_names = {s["function"]["name"] for s in gather_tools}
         for tc in response["tool_calls"]:
             call_key = (tc["name"], json.dumps(tc["args"], sort_keys=True))
             if call_key in seen_calls:
@@ -122,7 +123,8 @@ def run_agent(
                 }
             else:
                 seen_calls.add(call_key)
-                result = call_tool(tc["name"], tc["args"])
+                result = call_tool(tc["name"], tc["args"],
+                                   offered_names=offered_names)
 
             tool_trace.append({
                 "step":   step,
