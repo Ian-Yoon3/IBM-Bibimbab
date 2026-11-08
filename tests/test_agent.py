@@ -1493,5 +1493,30 @@ class TestRun6Fixes(unittest.TestCase):
         self.assertTrue(ok, why)
 
 
+
+class TestRun7Fixes(unittest.TestCase):
+    """Fixes from eval_results/20261107_215130.json (Q13 0/3, Q5 1/3)."""
+
+    def test_compose_message_targets_latest_message(self):
+        from agent.prompts import build_compose_message
+        c = build_compose_message("With that option, why is SO08 still late?")["content"]
+        self.assertIn("Answer THIS latest user message", c)
+        self.assertIn("Latest user message: With that option", c)
+        self.assertNotIn("Original question", c)
+
+    def test_get_disruption_has_scope_note(self):
+        import engine.tools as t
+        note = t.get_disruption("D01")["scope_note"]
+        self.assertIn("recorded delay of 6 days", note)
+        self.assertIn("not supported yet", note)
+
+    def test_only_filter(self):
+        from scripts import eval_agent as ea
+        ea._parse_args(["--only", "q5,Q13"])
+        self.assertEqual(ea._ONLY, {"Q5", "Q13"})
+        ea._parse_args([])
+        self.assertEqual(ea._ONLY, set())
+
+
 if __name__ == "__main__":
     unittest.main()

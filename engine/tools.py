@@ -64,6 +64,11 @@ def get_disruption(disruption_id: str, data_dir=None) -> dict:
         "reason": dis["reason"],
         "component_id": offer["component_id"],
         "qty": po["qty"],
+        "scope_note": (
+            f"Only disruption {disruption_id} with its recorded delay of "
+            f"{delay_days} days is modelled. Hypothetical delays or new "
+            f"disruptions are not supported yet and cannot be simulated."
+        ),
     }
 
 

@@ -186,10 +186,13 @@ FACTUAL questions ("how bad", "what is the impact", "how many orders"):
   (bullet list: one bullet per key number, citing the tool that returned it)
 
 UNSUPPORTED questions (different delay, hypothetical, unknown disruption):
-  Explain that the engine currently models only D01 with its actual delay and
-  that hypothetical delays are not supported yet. Then summarise the current
-  D01 impact (from tool results if available) and list the recovery options
-  with their on-time counts.
+  ## Answer
+  (start with the "scope_note" field of get_disruption, copied word for
+  word. Do not recommend an option for the hypothetical case and do not
+  suggest that running the tools again would answer it.)
+  ## Current D01 situation
+  (the recorded D01 options with their on-time counts and extra cost, from
+  compare_scenarios, clearly labelled as the recorded 6-day case)
 
 PROPOSAL confirmation (after propose_action):
   State that a proposal has been created and is pending approval in the UI,
@@ -220,8 +223,12 @@ def build_compose_message(user_message: str, proposal_created: bool = False) -> 
         "confirmation format."
         if proposal_created else ""
     )
+    # Multi-turn: the model must answer the LATEST message, not repeat the
+    # answer to an earlier question in the history (eval run 6, Q13).
     content = (
-        f"Original question: {user_message}{note}\n\n"
+        "Answer THIS latest user message. Earlier messages are context only; "
+        "do not repeat an earlier answer.\n"
+        f"Latest user message: {user_message}{note}\n\n"
         f"{_COMPOSE_INSTRUCTION}"
     )
     return {"role": "user", "content": content}

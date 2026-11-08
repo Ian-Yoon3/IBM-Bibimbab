@@ -1,0 +1,1506 @@
+[
+  {
+    "id": "Q1",
+    "run": 1,
+    "question": "Our budget is 500 dollars. What should we do?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe current disruption is D01, and the budget is $500.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| TRANSFER | 8 | 4 | 416 |\n| HYBRID | n/a | 5 | n/a |\n| Transfers + buy 65 x OF02 | 12 | 6 | 1666 |\n\n## Recommendation\nWithin a $500 budget, the recommended option is TRANSFER, as it has the highest on-time orders count among the options with available data.\n\n## Trade-offs and risks\nThe TRANSFER option has 4 priority-1 orders on time out of 6, and an extra cost of $416. The other options either have higher extra costs or lack data for a comparison.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "500",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": 500, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"TRANSFER\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 65 x OF02\", \"score\": 12, \"on_time_orders\": 12, \"on_time_units\": 125, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"total_extra_cost\": 1666, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 65}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 65, \"option_type\": \"explored\", \"late_orders\": 0, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\""
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "65"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-15\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 6, \"late_count\": 0, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 4, \"late_count\": 2, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 3}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q2",
+    "run": 1,
+    "question": "How bad is this disruption?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nThe disruption D01 is caused by a supplier equipment outage, affecting PO01 and component C01, with a delay of 6 days. The impact of the disruption is that 7 orders are late, with the first late order being SO02, which is 6 days late.\n\n## Evidence\n* Disruption cause: supplier equipment outage (get_disruption)\n* Delay days: 6 (get_disruption)\n* Late order count: 7 (get_impact)\n* First late order: SO02 (get_impact)\n* First late order days late: 6 (get_impact)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"po_id\": \"PO01\", \"reported_date\": \"2026-11-09\", \"original_receipt_date\": \"2026-11-11\", \"revised_receipt_date\": \"2026-11-17\", \"delay_days\": 6, \"reason\": \"Supplier equipment outage\", \"component_id\": \"C01\", \"qty\": 145, \"scope_note\": \"Only disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\"}"
+      },
+      {
+        "name": "get_impact",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"first_late_order_id\": \"SO02\", \"first_late_days\": 6, \"late_order_count\": 7, \"late_orders\": [{\"order_id\": \"SO02\", \"due_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-19\", \"days_late\": 6}, {\"order_id\": \"SO03\", \"due_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-18\", \"days_late\": 5}, {\"order_id\": \"SO04\", \"due_date\": \"2026-11-14\", \"delivery_date\": \"2026-11-18\", \"days_late\": 4}, {\"order_id\": \"SO05\", \"due_date\": \"2026-11-14\", \"delivery_date\": \"2026-11-19\", \"days_late\": 5}, {\"order_id\": \"SO06\", \"due_date\": \"2026-11-15\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3}, {\"order_id\": \"SO07\", \"due_date\": \"2026-11-16\", \"delivery_date\": \"2026-11-18\", \"days_late\": 2}, {\"order_id\": \"SO08\", \"due_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2}], \"c01_shortage_by_day\": [{\"date\": \"2026-11-09\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 0, \"shortage\": 0}, {\"date\": \"2026-11-10\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 12, \"shortage\": 0}, {\"date\": \"2026-11-11\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 32, \"shortage\": 8}, {\"date\": \"2026-11-12\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 58, \"shortage\": 34}, {\"date\": \"2026-11-13\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 73, \"shortage\": 49}, {\"date\": \"2026-11-14\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 87, \"shortage\": 63}, {\"date\": \"2026-11-15\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 119, \"shortage\": 95}, {\"date\": \"2026-11-16\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 119, \"shortage\": 95}, {\"date\": \"2026-11-17\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 129, \"shortage\": 0}, {\"date\": \"2026-11-18\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 154, \"shortage\": 0}, {\"date\": \"2026-11-19\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 154, \"shortage\": 0}, {\"date\": \"2026-11-20\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 163, \"shortage\": 0}, {\"date\": \"2026-11-21\", \"c01_"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q3",
+    "run": 1,
+    "question": "With HYBRID, are all priority-1 orders on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nWith HYBRID, 5 out of 6 priority-1 orders are on time.\n\n## Evidence\n* on_time_count: 5 (from get_priority_view)\n* total_count: 6 (from get_priority_view)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q4",
+    "run": 1,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe user is looking for a cheaper way to keep 11 orders on time compared to the HYBRID scenario.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| HYBRID | 11 | n/a | 1306 |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n\n## Recommendation\nTo keep 11 orders on time at a lower cost than the HYBRID scenario, we recommend the option \"Transfers + buy 40 x OF02\" because it has the same number of on-time orders as HYBRID but with a lower extra cost.\n\n## Trade-offs and risks\nThis option may have some risks, such as potential delays in transferring stock and buying from an alternate supplier. Additionally, 1 priority-1 order (SO08) will be late by 2 days.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 9, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"HYBRID\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 1216, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 1306, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\": 1396, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1396, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 50}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 50, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 55 x OF02\", \"score\": 14"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q5",
+    "run": 1,
+    "question": "What if the delay becomes 8 days?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nOnly disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\n\n## Current D01 situation\nThe recorded options for the 6-day delay D01 are:\n- HYBRID: 11 on-time orders, $1306 extra cost\n- ALT_BUY: 9 on-time orders, $1250 extra cost\n- TRANSFER: 8 on-time orders, $416 extra cost\n- WAIT: 5 on-time orders, $0 extra cost",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"po_id\": \"PO01\", \"reported_date\": \"2026-11-09\", \"original_receipt_date\": \"2026-11-11\", \"revised_receipt_date\": \"2026-11-17\", \"delay_days\": 6, \"reason\": \"Supplier equipment outage\", \"component_id\": \"C01\", \"qty\": 145, \"scope_note\": \"Only disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\"}"
+      },
+      {
+        "name": "compare_scenarios",
+        "args": {},
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 9, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"HYBRID\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q6",
+    "run": 1,
+    "question": "Approve HYBRID now.",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Proposal confirmation\nA proposal for the HYBRID scenario has been created and is pending approval in the UI. The proposal ID is 90fb04b4-12be-441c-9395-016cd81eb019. According to the proposal metrics, this option is expected to have 11 on-time orders and an extra cost of 1306 USD. Nothing has been executed yet, and the proposal is subject to approval.\n\n**Proposal 90fb04b4-12be-441c-9395-016cd81eb019 is pending approval in the UI. Nothing has been executed.** (on-time orders: 11 of 12, extra cost: 1306 USD)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "scenario_id": "HYBRID",
+          "reason": "User requested approval of HYBRID scenario"
+        },
+        "result": "{\"proposal_id\": \"90fb04b4-12be-441c-9395-016cd81eb019\", \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"disruption_id\": \"D01\", \"metrics\": {\"on_time_orders\": 11, \"late_orders\": 1, \"total_orders\": 12, \"on_time_units\": 113, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"purchase_cost\": 890, \"transfer_cost\": 416, \"total_extra_cost\": 1306, \"end_c01\": {\"WH01\": 83, \"WH02\": 7, \"WH03\": 8}}, \"reason\": \"User requested approval of HYBRID scenario\", \"status\": \"pending_approval\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q7",
+    "run": 1,
+    "question": "Our budget is 1,000 dollars. Which option should we choose?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nWe are dealing with disruption D01 and have a budget of $1000.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| TRANSFER | 8 | 4 | 416 |\n| HYBRID | n/a | 5 | n/a |\n| Transfers + buy 20 x OF02 | 8 | 4 | 856 |\n\n## Recommendation\nTo maximise on-time orders within the $1000 budget, we should choose the TRANSFER option, as it has the highest on-time orders (8) and the lowest extra cost ($416).\n\n## Trade-offs and risks\nChoosing the TRANSFER option means that 4 orders will still be late. The other options, HYBRID and Transfers + buy 20 x OF02, may have different trade-offs, but their extra costs are either unknown or higher than the TRANSFER option.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "1000"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": 1000, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"TRANSFER\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "objective": "cost"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 20 x OF02\", \"score\": 856, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 8, \"max_order_days_late\": 3, \"total_extra_cost\": 856, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 20}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 20, \"option_type\": \"explored\", \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 25 x OF02\", \"score\": 946, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 8, \"max_order_days_late\": 3, \"total_extra_cost\": 946, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 25}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 25, \"option_type\": \"explored\", \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 30 x OF02\", \"score\": 1036, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 8, \"max_order_days_late\": 3, \"total_extra_cost\": 1036, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 30}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 30, \"option_type\": \"explored\", \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 35 x OF02\", \"score\": 1126, \"on_ti"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "20"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 4, \"late_count\": 2, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 3}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 4, \"late_count\": 2, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 3}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q8",
+    "run": 1,
+    "question": "Among the four named scenarios, which one minimises the total days late across all orders?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe user wants to know which of the four named scenarios minimises the total days late across all orders.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD | Total days late |\n| --- | --- | --- | --- | --- |\n| WAIT | 5 | n/a | 0 | 27 |\n| TRANSFER | 8 | n/a | 416 | 12 |\n| ALT_BUY | 9 | n/a | 1250 | 5 |\n| HYBRID | 11 | n/a | 1306 | 2 |\n\n## Recommendation\nTo minimise the total days late across all orders, the HYBRID scenario is recommended, as it has the lowest total days late.\n\n## Trade-offs and risks\nThe HYBRID scenario has a higher extra cost compared to the other options, but it minimises the total days late. The other options have more days late, which may impact the overall performance.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you explore the next steps. If you want to propose the HYBRID option, please let me know and I'll guide you through the proposal process.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "objective": "total_late_days"
+        },
+        "result": "{\"objective\": \"total_late_days\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 2, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 5, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 12, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 27, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"HYBRID\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q9",
+    "run": 1,
+    "question": "Why is SO08 late under HYBRID?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nSO08 is 2 days late under HYBRID. On 2026-11-15, its latest on-time start date, it lacked 18 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19, which is 2 days after its due date of 2026-11-17. The cause of the delay is a component shortage, meaning the order itself lacked the components in shortfall on the check date.\n\n## Evidence\n* Due date: 2026-11-17\n* Latest start date: 2026-11-15\n* Start date: 2026-11-17\n* Delivery date: 2026-11-19\n* Days late: 2\n* Cause: component_shortage\n* Shortfall quantities: 18 x C01",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "order_id": "SO08",
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"option\": \"HYBRID\", \"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"product_id\": \"P02\", \"qty\": 12, \"priority_rank\": 1, \"due_date\": \"2026-11-17\", \"latest_start_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"components_needed\": {\"C01\": 24, \"C03\": 12, \"C04\": 12, \"C05\": 12}, \"cause\": {\"type\": \"component_shortage\", \"check_date\": \"2026-11-15\", \"waiting_order_id\": \"SO08\", \"shortfall\": {\"C01\": 18}}, \"summary\": \"SO08 is 2 days late under HYBRID. On 2026-11-15, its latest on-time start date, it lacked 18 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-17).\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q10",
+    "run": 1,
+    "question": "If we do nothing, why is SO03 late?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nSO03 is 5 days late under WAIT. On 2026-11-12, its latest on-time start date, it was waiting in the production queue behind SO02, which lacked 8 x C01. It starts on 2026-11-17 and is delivered on 2026-11-18, instead of the due date of 2026-11-13. \"queue_blocked\" means the order waited behind waiting_order_id in the production queue.\n\n## Evidence\n* Due date: 2026-11-13\n* Latest start date: 2026-11-12\n* Start date: 2026-11-17\n* Delivery date: 2026-11-18\n* Days late: 5\n* Waiting order: SO02\n* Shortfall quantities: 8 x C01",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "order_id": "SO03"
+        },
+        "result": "{\"option\": \"WAIT\", \"order_id\": \"SO03\", \"customer_id\": \"CU03\", \"product_id\": \"P03\", \"qty\": 8, \"priority_rank\": 2, \"due_date\": \"2026-11-13\", \"latest_start_date\": \"2026-11-12\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 5, \"components_needed\": {\"C01\": 8, \"C03\": 16, \"C04\": 16, \"C05\": 8}, \"cause\": {\"type\": \"queue_blocked\", \"check_date\": \"2026-11-12\", \"waiting_order_id\": \"SO02\", \"shortfall\": {\"C01\": 8}}, \"summary\": \"SO03 is 5 days late under WAIT. On 2026-11-12, its latest on-time start date, it was waiting in the production queue behind SO02, which lacked 8 x C01. It starts on 2026-11-17 and is delivered on 2026-11-18 (due 2026-11-13).\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q11",
+    "run": 1,
+    "question": "For the cheapest option that keeps 11 orders on time, how many priority-1 orders are on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe user is looking for the cheapest option that keeps 11 orders on time and wants to know how many priority-1 orders are on time.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n\n## Recommendation\nTo achieve the cheapest option that keeps 11 orders on time, the recommended option is Transfers + buy 40 x OF02.\n\n## Trade-offs and risks\nThis option results in 5 priority-1 orders being on time. The extra cost for this option is $1216.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "min_on_time_orders": "11",
+          "include_transfers": "true",
+          "objective": "cost"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 1216, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 1306, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\": 1396, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1396, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 50}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 50, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 55 x OF02\", \"score\": 14"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "offer_id": "OF02",
+          "qty": "40",
+          "include_transfers": "true"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q12",
+    "run": 1,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time? / Propose that option.",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Proposal confirmation\nA proposal has been created and is pending approval in the UI, with proposal ID \"7d7114d5-6427-4b39-a1cd-d315ba46954b\". Nothing has been executed yet. The proposal metrics show 11 on-time orders and a total extra cost of $1216.\n\n## Details\nThe proposed actions include purchasing 40 units of component C01 from supplier S02 and transferring available stock. \n\n## Next steps\nThe proposal is pending approval in the UI. Once approved, the proposed actions will be executed.\n\n**Proposal 7d7114d5-6427-4b39-a1cd-d315ba46954b is pending approval in the UI. Nothing has been executed.** (on-time orders: 11 of 12, extra cost: 1216 USD)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40",
+          "reason": "cheaper way to keep 11 orders on time"
+        },
+        "result": "{\"proposal_id\": \"7d7114d5-6427-4b39-a1cd-d315ba46954b\", \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"disruption_id\": \"D01\", \"metrics\": {\"on_time_orders\": 11, \"late_orders\": 1, \"total_orders\": 12, \"on_time_units\": 113, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"purchase_cost\": 800, \"transfer_cost\": 416, \"total_extra_cost\": 1216, \"end_c01\": {\"WH01\": 78, \"WH02\": 7, \"WH03\": 8}}, \"reason\": \"cheaper way to keep 11 orders on time\", \"status\": \"pending_approval\"}"
+      }
+    ],
+    "earlier_tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "cost"
+        }
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        }
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        }
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        }
+      }
+    ],
+    "error": null
+  },
+  {
+    "id": "Q13",
+    "run": 1,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time? / With that option, why is SO08 still late?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": false,
+    "reason": "extra fact '23' not found in answer",
+    "answer": "## Situation\nThe user is considering the option to transfer available stock and buy 40 units of component C01 from supplier S02, which was found to be the cheapest way to keep 11 orders on time.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n| HYBRID | 11 | n/a | 1306 |\n\n## Recommendation\nTo keep 11 orders on time at a lower cost than the HYBRID option, we recommend transferring available stock and buying 40 units of component C01 from supplier S02.\n\n## Trade-offs and risks\nThis option has 5 priority-1 orders on time and 1 late order (SO08) with 2 days late. The customer impact is as follows: CU01 has 1 order on time, CU02 has 1 order on time, CU04 has 1 order on time, CU06 has 1 order on time, CU08 has 1 order late with 2 days late, and CU03 has 1 order on time.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "order_id": "SO08",
+          "qty": "40"
+        },
+        "result": "{\"option\": \"Transfers + buy 40 x OF02\", \"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"product_id\": \"P02\", \"qty\": 12, \"priority_rank\": 1, \"due_date\": \"2026-11-17\", \"latest_start_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"components_needed\": {\"C01\": 24, \"C03\": 12, \"C04\": 12, \"C05\": 12}, \"cause\": {\"type\": \"component_shortage\", \"check_date\": \"2026-11-15\", \"waiting_order_id\": \"SO08\", \"shortfall\": {\"C01\": 23}}, \"summary\": \"SO08 is 2 days late under Transfers + buy 40 x OF02. On 2026-11-15, its latest on-time start date, it lacked 23 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-17).\"}"
+      }
+    ],
+    "earlier_tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "cost"
+        }
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        }
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        }
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        }
+      }
+    ],
+    "error": null
+  },
+  {
+    "id": "Q1",
+    "run": 2,
+    "question": "Our budget is 500 dollars. What should we do?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe current disruption is D01, and we have a budget of $500.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| TRANSFER | 8 | 4 | 416 |\n| WAIT | 5 | n/a | 0 |\n\n## Recommendation\nWithin a $500 budget, to maximise on-time orders, the recommended option is TRANSFER.\n\n## Trade-offs and risks\nThis option will result in 8 on-time orders, with 4 priority-1 orders being on time. However, it will incur an extra cost of $416. The remaining orders will be late, but the exact number is not available.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "500",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": 500, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"TRANSFER\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "objective": "cost",
+          "budget": "500"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": 500, \"ranked\": [], \"best\": null}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 4, \"late_count\": 2, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 3}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q2",
+    "run": 2,
+    "question": "How bad is this disruption?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nThe disruption D01 is caused by a supplier equipment outage, affecting purchase order PO01 and component C01, with a delay of 6 days. The impact of the disruption is that 7 customer orders are late. \n\n## Evidence\n* Delay days: 6 (get_disruption)\n* Late order count: 7 (get_impact)\n* First late order: SO02 (get_impact)\n* First late days: 6 (get_impact)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"po_id\": \"PO01\", \"reported_date\": \"2026-11-09\", \"original_receipt_date\": \"2026-11-11\", \"revised_receipt_date\": \"2026-11-17\", \"delay_days\": 6, \"reason\": \"Supplier equipment outage\", \"component_id\": \"C01\", \"qty\": 145, \"scope_note\": \"Only disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\"}"
+      },
+      {
+        "name": "get_impact",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"first_late_order_id\": \"SO02\", \"first_late_days\": 6, \"late_order_count\": 7, \"late_orders\": [{\"order_id\": \"SO02\", \"due_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-19\", \"days_late\": 6}, {\"order_id\": \"SO03\", \"due_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-18\", \"days_late\": 5}, {\"order_id\": \"SO04\", \"due_date\": \"2026-11-14\", \"delivery_date\": \"2026-11-18\", \"days_late\": 4}, {\"order_id\": \"SO05\", \"due_date\": \"2026-11-14\", \"delivery_date\": \"2026-11-19\", \"days_late\": 5}, {\"order_id\": \"SO06\", \"due_date\": \"2026-11-15\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3}, {\"order_id\": \"SO07\", \"due_date\": \"2026-11-16\", \"delivery_date\": \"2026-11-18\", \"days_late\": 2}, {\"order_id\": \"SO08\", \"due_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2}], \"c01_shortage_by_day\": [{\"date\": \"2026-11-09\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 0, \"shortage\": 0}, {\"date\": \"2026-11-10\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 12, \"shortage\": 0}, {\"date\": \"2026-11-11\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 32, \"shortage\": 8}, {\"date\": \"2026-11-12\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 58, \"shortage\": 34}, {\"date\": \"2026-11-13\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 73, \"shortage\": 49}, {\"date\": \"2026-11-14\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 87, \"shortage\": 63}, {\"date\": \"2026-11-15\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 119, \"shortage\": 95}, {\"date\": \"2026-11-16\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 119, \"shortage\": 95}, {\"date\": \"2026-11-17\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 129, \"shortage\": 0}, {\"date\": \"2026-11-18\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 154, \"shortage\": 0}, {\"date\": \"2026-11-19\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 154, \"shortage\": 0}, {\"date\": \"2026-11-20\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 163, \"shortage\": 0}, {\"date\": \"2026-11-21\", \"c01_"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q3",
+    "run": 2,
+    "question": "With HYBRID, are all priority-1 orders on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nWith HYBRID, not all priority-1 orders are on time. The on-time count is 5 and the late count is 1.\n\n## Evidence\n* on_time_count: 5 (get_priority_view)\n* late_count: 1 (get_priority_view)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q4",
+    "run": 2,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe current disruption D01 has an impact on orders, and we are looking for a cheaper way to keep 11 orders on time.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| HYBRID | 11 | n/a | 1306 |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n\n## Recommendation\nTo keep 11 orders on time at a lower cost, we recommend transferring available stock and buying 40 units of offer OF02, which has a total extra cost of $1216.\n\n## Trade-offs and risks\nThis option has 5 priority-1 orders on time and 1 late order. The customer impact is as follows: CU01 has 1 order on time, CU02 has 1 order on time, CU04 has 1 order on time, CU06 has 1 order on time, CU08 has 1 order late with 2 days late, and CU03 has 1 order on time.\n\n## Next step\nTell me which option you'd like to proceed with and I'll create a proposal for you.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 9, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"HYBRID\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 1216, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 1306, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\": 1396, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1396, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 50}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 50, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 55 x OF02\", \"score\": 14"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q5",
+    "run": 2,
+    "question": "What if the delay becomes 8 days?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nOnly disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\n\n## Current D01 situation\nThe current disruption D01 has the following options: \n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| HYBRID | 11 | n/a | 1306 |\n| ALT_BUY | 9 | n/a | 1250 |\n| TRANSFER | 8 | n/a | 416 |\n| WAIT | 5 | n/a | 0 |",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"po_id\": \"PO01\", \"reported_date\": \"2026-11-09\", \"original_receipt_date\": \"2026-11-11\", \"revised_receipt_date\": \"2026-11-17\", \"delay_days\": 6, \"reason\": \"Supplier equipment outage\", \"component_id\": \"C01\", \"qty\": 145, \"scope_note\": \"Only disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\"}"
+      },
+      {
+        "name": "compare_scenarios",
+        "args": {},
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 9, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"HYBRID\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q6",
+    "run": 2,
+    "question": "Approve HYBRID now.",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Proposal confirmation\nA proposal for the HYBRID scenario has been created and is pending approval in the UI. The proposal ID is \"cddb4640-3e17-470f-b7ba-8ef8bf46e93a\". According to the proposal metrics, this option is expected to have 11 on-time orders and an extra cost of $1306. Nothing has been executed yet, and the proposal must be approved in the UI before any actions are taken.\n\n**Proposal cddb4640-3e17-470f-b7ba-8ef8bf46e93a is pending approval in the UI. Nothing has been executed.** (on-time orders: 11 of 12, extra cost: 1306 USD)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "scenario_id": "HYBRID",
+          "reason": "User requested approval of HYBRID scenario"
+        },
+        "result": "{\"proposal_id\": \"cddb4640-3e17-470f-b7ba-8ef8bf46e93a\", \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"disruption_id\": \"D01\", \"metrics\": {\"on_time_orders\": 11, \"late_orders\": 1, \"total_orders\": 12, \"on_time_units\": 113, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"purchase_cost\": 890, \"transfer_cost\": 416, \"total_extra_cost\": 1306, \"end_c01\": {\"WH01\": 83, \"WH02\": 7, \"WH03\": 8}}, \"reason\": \"User requested approval of HYBRID scenario\", \"status\": \"pending_approval\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q7",
+    "run": 2,
+    "question": "Our budget is 1,000 dollars. Which option should we choose?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe current disruption is D01, and we have a budget of $1000.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| TRANSFER | 8 | n/a | 416 |\n| WAIT | 5 | n/a | 0 |\n| Transfers + buy 65 x OF02 | 12 | 6 | 1666 |\n\n## Recommendation\nTo maximise on-time orders within the given budget of $1000, we should consider the TRANSFER option, as it has the highest on-time orders among the options that fit within the budget.\n\n## Trade-offs and risks\nThe TRANSFER option has 8 on-time orders, which means 4 orders will be late. The WAIT option has a lower extra cost, but it also has fewer on-time orders.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "1000",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": 1000, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"TRANSFER\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 65 x OF02\", \"score\": 12, \"on_time_orders\": 12, \"on_time_units\": 125, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"total_extra_cost\": 1666, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 65}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 65, \"option_type\": \"explored\", \"late_orders\": 0, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\""
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "65"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-15\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 6, \"late_count\": 0, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q8",
+    "run": 2,
+    "question": "Among the four named scenarios, which one minimises the total days late across all orders?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe user is considering four named scenarios to minimize the total days late across all orders.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD | Total days late |\n| --- | --- | --- | --- | --- |\n| WAIT | 5 | n/a | 0 | 27 |\n| TRANSFER | 8 | n/a | 416 | 12 |\n| ALT_BUY | 9 | n/a | 1250 | 5 |\n| HYBRID | 11 | n/a | 1306 | 2 |\n\n## Recommendation\nTo minimize the total days late across all orders, the HYBRID scenario is recommended, as it has the lowest total days late.\n\n## Trade-offs and risks\nThe HYBRID scenario has the highest extra cost among the options, but it also has the highest number of on-time orders. The other scenarios have more orders that are late, with WAIT having the most days late.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you consider the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "objective": "total_late_days"
+        },
+        "result": "{\"objective\": \"total_late_days\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 2, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 5, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 12, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 27, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"HYBRID\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q9",
+    "run": 2,
+    "question": "Why is SO08 late under HYBRID?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nSO08 is 2 days late under HYBRID. On 2026-11-15, its latest on-time start date, it lacked 18 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19, which is 2 days after its due date of 2026-11-17. \"component_shortage\" means the order itself lacked the components in shortfall on check_date.\n\n## Evidence\n* Due date: 2026-11-17\n* Latest start date: 2026-11-15\n* Start date: 2026-11-17\n* Delivery date: 2026-11-19\n* Days late: 2\n* Shortfall quantities: 18 x C01\n* Cause: component_shortage on check_date 2026-11-15",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "order_id": "SO08",
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"option\": \"HYBRID\", \"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"product_id\": \"P02\", \"qty\": 12, \"priority_rank\": 1, \"due_date\": \"2026-11-17\", \"latest_start_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"components_needed\": {\"C01\": 24, \"C03\": 12, \"C04\": 12, \"C05\": 12}, \"cause\": {\"type\": \"component_shortage\", \"check_date\": \"2026-11-15\", \"waiting_order_id\": \"SO08\", \"shortfall\": {\"C01\": 18}}, \"summary\": \"SO08 is 2 days late under HYBRID. On 2026-11-15, its latest on-time start date, it lacked 18 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-17).\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q10",
+    "run": 2,
+    "question": "If we do nothing, why is SO03 late?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nSO03 is 5 days late under WAIT. On 2026-11-12, its latest on-time start date, it was waiting in the production queue behind SO02, which lacked 8 x C01. It starts on 2026-11-17 and is delivered on 2026-11-18 (due 2026-11-13). \"queue_blocked\" means the order waited behind waiting_order_id in the production queue.\n\n## Evidence\n* Due date: 2026-11-13\n* Latest start date: 2026-11-12\n* Start date: 2026-11-17\n* Delivery date: 2026-11-18\n* Days late: 5\n* Waiting order: SO02\n* Shortfall quantities: 8 x C01",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "order_id": "SO03"
+        },
+        "result": "{\"option\": \"WAIT\", \"order_id\": \"SO03\", \"customer_id\": \"CU03\", \"product_id\": \"P03\", \"qty\": 8, \"priority_rank\": 2, \"due_date\": \"2026-11-13\", \"latest_start_date\": \"2026-11-12\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 5, \"components_needed\": {\"C01\": 8, \"C03\": 16, \"C04\": 16, \"C05\": 8}, \"cause\": {\"type\": \"queue_blocked\", \"check_date\": \"2026-11-12\", \"waiting_order_id\": \"SO02\", \"shortfall\": {\"C01\": 8}}, \"summary\": \"SO03 is 5 days late under WAIT. On 2026-11-12, its latest on-time start date, it was waiting in the production queue behind SO02, which lacked 8 x C01. It starts on 2026-11-17 and is delivered on 2026-11-18 (due 2026-11-13).\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q11",
+    "run": 2,
+    "question": "For the cheapest option that keeps 11 orders on time, how many priority-1 orders are on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe user is looking for the cheapest option that keeps 11 orders on time and wants to know how many priority-1 orders are on time.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n\n## Recommendation\nTo achieve the cheapest option that keeps 11 orders on time, the recommended option is Transfers + buy 40 x OF02, which has 5 priority-1 orders on time.\n\n## Trade-offs and risks\nThis option assumes that buying 40 units of OF02 and making transfers will keep 11 orders on time, with 5 of those being priority-1 orders. The extra cost for this option is $1216.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "min_on_time_orders": "11",
+          "include_transfers": "true",
+          "objective": "cost"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 1216, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 1306, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\": 1396, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1396, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 50}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 50, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 55 x OF02\", \"score\": 14"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q12",
+    "run": 2,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time? / Propose that option.",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Proposal confirmation\nA proposal has been created for the selected option and is pending approval in the UI. The proposal ID is 986b20eb-8b2d-47e2-a578-7a10d513d5f0. \nThe proposed option keeps 11 orders on time with a total extra cost of $1216.\n\n## Situation\nThe proposed recovery action is to buy 40 units of component C01 from supplier S02 (offer OF02) and transfer 18 units from warehouse WH01 and 14 units from warehouse WH02.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n\n## Recommendation\nThe proposed option was chosen to keep 11 orders on time with the lowest extra cost.\n\n## Trade-offs and risks\nThis option has 1 late order. \n\n## Next step\nPlease review and approve the proposal in the UI. Nothing has been executed yet.\n\n**Proposal 986b20eb-8b2d-47e2-a578-7a10d513d5f0 is pending approval in the UI. Nothing has been executed.** (on-time orders: 11 of 12, extra cost: 1216 USD)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40",
+          "reason": "Cheaper way to keep 11 orders on time"
+        },
+        "result": "{\"proposal_id\": \"986b20eb-8b2d-47e2-a578-7a10d513d5f0\", \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"disruption_id\": \"D01\", \"metrics\": {\"on_time_orders\": 11, \"late_orders\": 1, \"total_orders\": 12, \"on_time_units\": 113, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"purchase_cost\": 800, \"transfer_cost\": 416, \"total_extra_cost\": 1216, \"end_c01\": {\"WH01\": 78, \"WH02\": 7, \"WH03\": 8}}, \"reason\": \"Cheaper way to keep 11 orders on time\", \"status\": \"pending_approval\"}"
+      }
+    ],
+    "earlier_tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "cost"
+        }
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        }
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        }
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        }
+      }
+    ],
+    "error": null
+  },
+  {
+    "id": "Q13",
+    "run": 2,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time? / With that option, why is SO08 still late?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": false,
+    "reason": "extra fact '23' not found in answer",
+    "answer": "## Situation\nThe user is considering the option to transfer available stock and buy 40 units of component C01 from supplier S02 (offer OF02) to keep 11 orders on time.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| HYBRID | 11 | n/a | 1306 |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n\n## Recommendation\nTo minimize extra cost while keeping 11 orders on time, the recommended option is to transfer available stock and buy 40 units of component C01 from supplier S02 (offer OF02), because it has the lowest extra cost.\n\n## Trade-offs and risks\nThis option has 1 late order, SO08, which is 2 days late. The priority-1 on-time count is 5 out of 6.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "order_id": "SO08",
+          "qty": "40"
+        },
+        "result": "{\"option\": \"Transfers + buy 40 x OF02\", \"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"product_id\": \"P02\", \"qty\": 12, \"priority_rank\": 1, \"due_date\": \"2026-11-17\", \"latest_start_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"components_needed\": {\"C01\": 24, \"C03\": 12, \"C04\": 12, \"C05\": 12}, \"cause\": {\"type\": \"component_shortage\", \"check_date\": \"2026-11-15\", \"waiting_order_id\": \"SO08\", \"shortfall\": {\"C01\": 23}}, \"summary\": \"SO08 is 2 days late under Transfers + buy 40 x OF02. On 2026-11-15, its latest on-time start date, it lacked 23 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-17).\"}"
+      }
+    ],
+    "earlier_tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "cost"
+        }
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        }
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        }
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        }
+      }
+    ],
+    "error": null
+  },
+  {
+    "id": "Q1",
+    "run": 3,
+    "question": "Our budget is 500 dollars. What should we do?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe current disruption D01 has a budget of $500.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| TRANSFER | 8 | 4 | 416 |\n| WAIT | 5 | 2 | 0 |\n| Transfers + buy 65 x OF02 | 12 | 6 | 1666 |\n\n## Recommendation\nWithin a $500 budget, to maximise on-time orders, the recommended option is TRANSFER, as it has the highest number of on-time orders (8) among the options that fit within the budget.\n\n## Trade-offs and risks\nThe TRANSFER option still leaves 4 orders late. The WAIT option has a lower extra cost but also has fewer on-time orders.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "500",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": 500, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"TRANSFER\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 65 x OF02\", \"score\": 12, \"on_time_orders\": 12, \"on_time_units\": 125, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"total_extra_cost\": 1666, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 65}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 65, \"option_type\": \"explored\", \"late_orders\": 0, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\""
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "65"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-15\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 6, \"late_count\": 0, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 4, \"late_count\": 2, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 3}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "WAIT"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 6, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 4, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 2, \"late_count\": 4, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 6}, \"CU04\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 4}, \"CU06\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 3}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q2",
+    "run": 3,
+    "question": "How bad is this disruption?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nThe disruption D01 has a delay of 6 days due to a supplier equipment outage. The first late order is SO02, which is 6 days late. There are 7 late orders in total.\n\n## Evidence\n* Delay days: 6 (get_disruption)\n* First late order: SO02 (get_impact)\n* Late order count: 7 (get_impact)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"po_id\": \"PO01\", \"reported_date\": \"2026-11-09\", \"original_receipt_date\": \"2026-11-11\", \"revised_receipt_date\": \"2026-11-17\", \"delay_days\": 6, \"reason\": \"Supplier equipment outage\", \"component_id\": \"C01\", \"qty\": 145, \"scope_note\": \"Only disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\"}"
+      },
+      {
+        "name": "get_impact",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"first_late_order_id\": \"SO02\", \"first_late_days\": 6, \"late_order_count\": 7, \"late_orders\": [{\"order_id\": \"SO02\", \"due_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-19\", \"days_late\": 6}, {\"order_id\": \"SO03\", \"due_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-18\", \"days_late\": 5}, {\"order_id\": \"SO04\", \"due_date\": \"2026-11-14\", \"delivery_date\": \"2026-11-18\", \"days_late\": 4}, {\"order_id\": \"SO05\", \"due_date\": \"2026-11-14\", \"delivery_date\": \"2026-11-19\", \"days_late\": 5}, {\"order_id\": \"SO06\", \"due_date\": \"2026-11-15\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3}, {\"order_id\": \"SO07\", \"due_date\": \"2026-11-16\", \"delivery_date\": \"2026-11-18\", \"days_late\": 2}, {\"order_id\": \"SO08\", \"due_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2}], \"c01_shortage_by_day\": [{\"date\": \"2026-11-09\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 0, \"shortage\": 0}, {\"date\": \"2026-11-10\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 12, \"shortage\": 0}, {\"date\": \"2026-11-11\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 32, \"shortage\": 8}, {\"date\": \"2026-11-12\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 58, \"shortage\": 34}, {\"date\": \"2026-11-13\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 73, \"shortage\": 49}, {\"date\": \"2026-11-14\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 87, \"shortage\": 63}, {\"date\": \"2026-11-15\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 119, \"shortage\": 95}, {\"date\": \"2026-11-16\", \"c01_available_wh01\": 24, \"c01_cumulative_needed\": 119, \"shortage\": 95}, {\"date\": \"2026-11-17\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 129, \"shortage\": 0}, {\"date\": \"2026-11-18\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 154, \"shortage\": 0}, {\"date\": \"2026-11-19\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 154, \"shortage\": 0}, {\"date\": \"2026-11-20\", \"c01_available_wh01\": 169, \"c01_cumulative_needed\": 163, \"shortage\": 0}, {\"date\": \"2026-11-21\", \"c01_"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q3",
+    "run": 3,
+    "question": "With HYBRID, are all priority-1 orders on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nWith HYBRID, not all priority-1 orders are on time. 5 out of 6 priority-1 orders are on time.\n\n## Evidence\n* on_time_count: 5 (get_priority_view)\n* total_count: 6 (get_priority_view)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q4",
+    "run": 3,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe user is looking for a cheaper way than HYBRID to keep 11 orders on time.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| HYBRID | 11 | n/a | 1306 |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n\n## Recommendation\nTo minimize extra cost while keeping 11 orders on time, the recommended option is to transfer available stock and buy 40 units of component C01 from supplier S02.\n\n## Trade-offs and risks\nThis option has 5 priority-1 orders on time and 1 late order. The customer impact is minimal, with only 1 customer having a late order, resulting in 2 total late days.\n\n## Next step\nTell me which option you'd like to proceed with and I'll create a proposal for you.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "cost"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 0, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 416, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 1250, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 1306, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}], \"best\": \"WAIT\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 1216, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 1306, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\": 1396, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1396, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 50}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 50, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 55 x OF02\", \"score\": 14"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q5",
+    "run": 3,
+    "question": "What if the delay becomes 8 days?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nOnly disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\n\n## Current D01 situation\nThe current disruption D01 has a delay of 6 days. The ranked scenarios for the current disruption D01 are:\n- HYBRID (Transfer and buy) - 11 on-time orders, $1306 extra cost\n- ALT_BUY (Buy from alternate supplier) - 9 on-time orders, $1250 extra cost\n- TRANSFER (Transfer available stock) - 8 on-time orders, $416 extra cost\n- WAIT (Wait for primary PO) - 5 on-time orders, $0 extra cost",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"po_id\": \"PO01\", \"reported_date\": \"2026-11-09\", \"original_receipt_date\": \"2026-11-11\", \"revised_receipt_date\": \"2026-11-17\", \"delay_days\": 6, \"reason\": \"Supplier equipment outage\", \"component_id\": \"C01\", \"qty\": 145, \"scope_note\": \"Only disruption D01 with its recorded delay of 6 days is modelled. Hypothetical delays or new disruptions are not supported yet and cannot be simulated.\"}"
+      },
+      {
+        "name": "compare_scenarios",
+        "args": {},
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 9, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"HYBRID\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q6",
+    "run": 3,
+    "question": "Approve HYBRID now.",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Proposal confirmation\nA proposal has been created for the HYBRID scenario and is pending approval in the UI. The proposal ID is 6c8cb5b9-7216-47e0-a9b5-f43242ff4cd2. According to the proposal metrics, this scenario results in 11 on-time orders and a total extra cost of $1306. Nothing has been executed yet, and the proposal is waiting for approval.\n\n**Proposal 6c8cb5b9-7216-47e0-a9b5-f43242ff4cd2 is pending approval in the UI. Nothing has been executed.** (on-time orders: 11 of 12, extra cost: 1306 USD)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "scenario_id": "HYBRID",
+          "reason": "Approving HYBRID scenario"
+        },
+        "result": "{\"proposal_id\": \"6c8cb5b9-7216-47e0-a9b5-f43242ff4cd2\", \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"disruption_id\": \"D01\", \"metrics\": {\"on_time_orders\": 11, \"late_orders\": 1, \"total_orders\": 12, \"on_time_units\": 113, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"purchase_cost\": 890, \"transfer_cost\": 416, \"total_extra_cost\": 1306, \"end_c01\": {\"WH01\": 83, \"WH02\": 7, \"WH03\": 8}}, \"reason\": \"Approving HYBRID scenario\", \"status\": \"pending_approval\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q7",
+    "run": 3,
+    "question": "Our budget is 1,000 dollars. Which option should we choose?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe current disruption D01 has a budget of $1000.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| TRANSFER | 8 | n/a | 416 |\n| WAIT | 5 | 2 | 0 |\n| HYBRID | n/a | 5 | n/a |\n| ALT_BUY | n/a | 4 | n/a |\n| Transfers + buy 65 x OF02 | 12 | 6 | 1666 |\n\n## Recommendation\nTo maximise on-time orders within the $1000 budget, the recommended option is TRANSFER, as it has the highest number of on-time orders among the options that fit within the budget.\n\n## Trade-offs and risks\nChoosing the TRANSFER option means that 4 orders will be late. The option with the highest on-time orders, Transfers + buy 65 x OF02, exceeds the budget.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "1000",
+          "objective": "on_time_orders"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": 1000, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 8, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 5, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"TRANSFER\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02"
+        },
+        "result": "{\"objective\": \"on_time_orders\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 65 x OF02\", \"score\": 12, \"on_time_orders\": 12, \"on_time_units\": 125, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"total_extra_cost\": 1666, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 65}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 65, \"option_type\": \"explored\", \"late_orders\": 0, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 11, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\""
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "65"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-15\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 6, \"late_count\": 0, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 4, \"late_count\": 2, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 3}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "ALT_BUY"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-14\", \"days_late\": 1, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 4, \"late_count\": 2, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 1}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "WAIT"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 6, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 4, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 3, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 2, \"late_count\": 4, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 6}, \"CU04\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 4}, \"CU06\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 3}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q8",
+    "run": 3,
+    "question": "Among the four named scenarios, which one minimises the total days late across all orders?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe user wants to know which of the four named scenarios minimises the total days late across all orders.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD | Total days late |\n| --- | --- | --- | --- | --- |\n| WAIT | 5 | n/a | 0 | 27 |\n| TRANSFER | 8 | n/a | 416 | 12 |\n| ALT_BUY | 9 | n/a | 1250 | 5 |\n| HYBRID | 11 | n/a | 1306 | 2 |\n\n## Recommendation\nTo minimise the total days late across all orders, the HYBRID scenario is recommended, with a total of 2 days late.\n\n## Trade-offs and risks\nThe HYBRID scenario has the highest extra cost of $1306, but it also has the highest number of on-time orders (11) and the lowest total days late (2). The other scenarios have more days late, with WAIT having the most (27).\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you explore the next steps. If you want to proceed with the HYBRID scenario, you can ask me to propose it.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "objective": "total_late_days"
+        },
+        "result": "{\"objective\": \"total_late_days\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": \"HYBRID\", \"label\": \"Transfer and buy\", \"score\": 2, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": \"ALT_BUY\", \"label\": \"Buy from alternate supplier\", \"score\": 5, \"on_time_orders\": 9, \"on_time_units\": 95, \"total_order_days_late\": 5, \"max_order_days_late\": 2, \"total_extra_cost\": 1250, \"late_orders\": 3, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": \"TRANSFER\", \"label\": \"Transfer available stock\", \"score\": 12, \"on_time_orders\": 8, \"on_time_units\": 82, \"total_order_days_late\": 12, \"max_order_days_late\": 5, \"total_extra_cost\": 416, \"late_orders\": 4, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": \"WAIT\", \"label\": \"Wait for primary PO\", \"score\": 27, \"on_time_orders\": 5, \"on_time_units\": 49, \"total_order_days_late\": 27, \"max_order_days_late\": 6, \"total_extra_cost\": 0, \"late_orders\": 7, \"total_orders\": 12}], \"best\": \"HYBRID\", \"baseline\": {\"on_time_orders\": 12, \"late_orders\": 0, \"total_orders\": 12, \"on_time_units\": 125, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 0, \"max_order_days_late\": 0, \"purchase_cost\": 0, \"transfer_cost\": 0, \"total_extra_cost\": 0, \"end_c01\": {\"WH01\": 6, \"WH02\": 25, \"WH03\": 22}, \"label\": \"Undisrupted reference\", \"scenario_id\": \"NORMAL\"}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q9",
+    "run": 3,
+    "question": "Why is SO08 late under HYBRID?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nSO08 is 2 days late under HYBRID. On 2026-11-15, its latest on-time start date, it lacked 18 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19, which is 2 days after its due date of 2026-11-17. The cause of the delay is a component shortage, meaning the order itself lacked the components in shortfall on the check date.\n\n## Evidence\n* Due date: 2026-11-17\n* Latest start date: 2026-11-15\n* Start date: 2026-11-17\n* Delivery date: 2026-11-19\n* Days late: 2\n* Cause: component_shortage\n* Shortfall quantities: 18 x C01",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "order_id": "SO08",
+          "scenario_id": "HYBRID"
+        },
+        "result": "{\"option\": \"HYBRID\", \"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"product_id\": \"P02\", \"qty\": 12, \"priority_rank\": 1, \"due_date\": \"2026-11-17\", \"latest_start_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"components_needed\": {\"C01\": 24, \"C03\": 12, \"C04\": 12, \"C05\": 12}, \"cause\": {\"type\": \"component_shortage\", \"check_date\": \"2026-11-15\", \"waiting_order_id\": \"SO08\", \"shortfall\": {\"C01\": 18}}, \"summary\": \"SO08 is 2 days late under HYBRID. On 2026-11-15, its latest on-time start date, it lacked 18 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-17).\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q10",
+    "run": 3,
+    "question": "If we do nothing, why is SO03 late?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nSO03 is 5 days late under WAIT. On 2026-11-12, its latest on-time start date, it was waiting in the production queue behind SO02, which lacked 8 x C01. It starts on 2026-11-17 and is delivered on 2026-11-18 (due 2026-11-13). \"queue_blocked\" means the order waited behind waiting_order_id in the production queue.\n\n## Evidence\n* Due date: 2026-11-13\n* Latest start date: 2026-11-12\n* Start date: 2026-11-17\n* Delivery date: 2026-11-18\n* Days late: 5\n* Waiting order: SO02\n* Shortfall quantities: 8 x C01",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "order_id": "SO03"
+        },
+        "result": "{\"option\": \"WAIT\", \"order_id\": \"SO03\", \"customer_id\": \"CU03\", \"product_id\": \"P03\", \"qty\": 8, \"priority_rank\": 2, \"due_date\": \"2026-11-13\", \"latest_start_date\": \"2026-11-12\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-18\", \"days_late\": 5, \"components_needed\": {\"C01\": 8, \"C03\": 16, \"C04\": 16, \"C05\": 8}, \"cause\": {\"type\": \"queue_blocked\", \"check_date\": \"2026-11-12\", \"waiting_order_id\": \"SO02\", \"shortfall\": {\"C01\": 8}}, \"summary\": \"SO03 is 5 days late under WAIT. On 2026-11-12, its latest on-time start date, it was waiting in the production queue behind SO02, which lacked 8 x C01. It starts on 2026-11-17 and is delivered on 2026-11-18 (due 2026-11-13).\"}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q11",
+    "run": 3,
+    "question": "For the cheapest option that keeps 11 orders on time, how many priority-1 orders are on time?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Situation\nThe user is looking for the cheapest option that keeps 11 orders on time and wants to know how many priority-1 orders are on time.\n\n## Options compared\n| Option | On-time orders (of 12) | Priority-1 on time (of 6) | Extra cost USD |\n| --- | --- | --- | --- |\n| Transfers + buy 40 x OF02 | 11 | 5 | 1216 |\n\n## Recommendation\nTo achieve the cheapest option that keeps 11 orders on time, the recommended option is Transfers + buy 40 x OF02.\n\n## Trade-offs and risks\nThis option has 5 priority-1 orders on time out of 6. The extra cost for this option is $1216.\n\n## Next step\nTell me which option you'd like to proceed with and I'll help you with the next steps.",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "result": "{\"disruption_id\": \"D01\", \"component_id\": \"C01\", \"offers\": [{\"offer_id\": \"OF01\", \"supplier_id\": \"S01\", \"component_id\": \"C01\", \"lead_days\": 7, \"unit_cost_usd\": 10, \"fixed_fee_usd\": 0, \"min_qty\": 5, \"multiple_qty\": 5, \"max_qty\": 250, \"is_disrupted_supplier\": true}, {\"offer_id\": \"OF02\", \"supplier_id\": \"S02\", \"component_id\": \"C01\", \"lead_days\": 3, \"unit_cost_usd\": 18, \"fixed_fee_usd\": 80, \"min_qty\": 20, \"multiple_qty\": 5, \"max_qty\": 65, \"is_disrupted_supplier\": false}]}"
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "min_on_time_orders": "11",
+          "include_transfers": "true",
+          "objective": "cost"
+        },
+        "result": "{\"objective\": \"cost\", \"budget\": null, \"ranked\": [{\"rank\": 1, \"scenario_id\": null, \"label\": \"Transfers + buy 40 x OF02\", \"score\": 1216, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1216, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 40, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 2, \"scenario_id\": null, \"label\": \"Transfers + buy 45 x OF02\", \"score\": 1306, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1306, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 45}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 45, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 3, \"scenario_id\": null, \"label\": \"Transfers + buy 50 x OF02\", \"score\": 1396, \"on_time_orders\": 11, \"on_time_units\": 113, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"total_extra_cost\": 1396, \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 50}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"purchase_qty\": 50, \"option_type\": \"explored\", \"late_orders\": 1, \"total_orders\": 12}, {\"rank\": 4, \"scenario_id\": null, \"label\": \"Transfers + buy 55 x OF02\", \"score\": 14"
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "offer_id": "OF02",
+          "qty": "40",
+          "include_transfers": "true"
+        },
+        "result": "{\"priority_1_orders\": [{\"order_id\": \"SO01\", \"customer_id\": \"CU01\", \"due_date\": \"2026-11-11\", \"start_date\": \"2026-11-09\", \"delivery_date\": \"2026-11-10\", \"days_late\": 0, \"qty\": 12}, {\"order_id\": \"SO02\", \"customer_id\": \"CU02\", \"due_date\": \"2026-11-13\", \"start_date\": \"2026-11-11\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 10}, {\"order_id\": \"SO04\", \"customer_id\": \"CU04\", \"due_date\": \"2026-11-14\", \"start_date\": \"2026-11-12\", \"delivery_date\": \"2026-11-13\", \"days_late\": 0, \"qty\": 15}, {\"order_id\": \"SO06\", \"customer_id\": \"CU06\", \"due_date\": \"2026-11-15\", \"start_date\": \"2026-11-13\", \"delivery_date\": \"2026-11-14\", \"days_late\": 0, \"qty\": 14}, {\"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"due_date\": \"2026-11-17\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"qty\": 12}, {\"order_id\": \"SO11\", \"customer_id\": \"CU03\", \"due_date\": \"2026-11-20\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 0, \"qty\": 7}], \"on_time_count\": 5, \"late_count\": 1, \"total_count\": 6, \"customer_impact\": {\"CU01\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU02\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU04\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU06\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}, \"CU08\": {\"orders\": 1, \"late_orders\": 1, \"total_late_days\": 2}, \"CU03\": {\"orders\": 1, \"late_orders\": 0, \"total_late_days\": 0}}}"
+      }
+    ],
+    "earlier_tools": [],
+    "error": null
+  },
+  {
+    "id": "Q12",
+    "run": 3,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time? / Propose that option.",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Proposal confirmation\nA proposal has been created and is pending approval in the UI, with proposal ID \"f3eda304-3515-423d-adfc-c4b924e658e2\". The proposal includes actions to purchase 40 units of component C01 from supplier S02 and transfer available stock. The proposed option has 11 on-time orders and an extra cost of $1216. Nothing has been executed yet, and the proposal must be approved in the UI before any actions are taken.\n\n**Proposal f3eda304-3515-423d-adfc-c4b924e658e2 is pending approval in the UI. Nothing has been executed.** (on-time orders: 11 of 12, extra cost: 1216 USD)",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40",
+          "reason": "Cheaper way to keep 11 orders on time"
+        },
+        "result": "{\"proposal_id\": \"f3eda304-3515-423d-adfc-c4b924e658e2\", \"actions\": [{\"type\": \"purchase\", \"offer_id\": \"OF02\", \"warehouse_id\": \"WH01\", \"action_date\": \"2026-11-09\", \"qty\": 40}, {\"type\": \"transfer\", \"lane_id\": \"LN01\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 18}, {\"type\": \"transfer\", \"lane_id\": \"LN02\", \"component_id\": \"C01\", \"action_date\": \"2026-11-09\", \"qty\": 14}], \"disruption_id\": \"D01\", \"metrics\": {\"on_time_orders\": 11, \"late_orders\": 1, \"total_orders\": 12, \"on_time_units\": 113, \"orders_completed_by_horizon\": 12, \"total_order_days_late\": 2, \"max_order_days_late\": 2, \"purchase_cost\": 800, \"transfer_cost\": 416, \"total_extra_cost\": 1216, \"end_c01\": {\"WH01\": 78, \"WH02\": 7, \"WH03\": 8}}, \"reason\": \"Cheaper way to keep 11 orders on time\", \"status\": \"pending_approval\"}"
+      }
+    ],
+    "earlier_tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "cost"
+        }
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        }
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        }
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        }
+      }
+    ],
+    "error": null
+  },
+  {
+    "id": "Q13",
+    "run": 3,
+    "question": "Is there a cheaper way than HYBRID to keep 11 orders on time? / With that option, why is SO08 still late?",
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "passed": true,
+    "reason": "ok",
+    "answer": "## Answer\nSO08 is 2 days late under Transfers + buy 40 x OF02. On 2026-11-15, its latest on-time start date, it lacked 23 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-17).\n\n## Evidence\n* Due date: 2026-11-17\n* Latest start date: 2026-11-15\n* Start date: 2026-11-17\n* Delivery date: 2026-11-19\n* Days late: 2\n* Cause: component_shortage\n* Shortfall quantities: 23 x C01",
+    "ungrounded": [],
+    "tool_errors": [],
+    "table_mismatches": [],
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "order_id": "SO08",
+          "qty": "40",
+          "scenario_id": "null"
+        },
+        "result": "{\"option\": \"Transfers + buy 40 x OF02\", \"order_id\": \"SO08\", \"customer_id\": \"CU08\", \"product_id\": \"P02\", \"qty\": 12, \"priority_rank\": 1, \"due_date\": \"2026-11-17\", \"latest_start_date\": \"2026-11-15\", \"start_date\": \"2026-11-17\", \"delivery_date\": \"2026-11-19\", \"days_late\": 2, \"components_needed\": {\"C01\": 24, \"C03\": 12, \"C04\": 12, \"C05\": 12}, \"cause\": {\"type\": \"component_shortage\", \"check_date\": \"2026-11-15\", \"waiting_order_id\": \"SO08\", \"shortfall\": {\"C01\": 23}}, \"summary\": \"SO08 is 2 days late under Transfers + buy 40 x OF02. On 2026-11-15, its latest on-time start date, it lacked 23 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-17).\"}"
+      }
+    ],
+    "earlier_tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "null",
+          "objective": "cost"
+        }
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        }
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "include_transfers": "true",
+          "min_on_time_orders": "11",
+          "objective": "cost",
+          "offer_id": "OF02"
+        }
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "40"
+        }
+      }
+    ],
+    "error": null
+  }
+]

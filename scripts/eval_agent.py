@@ -490,7 +490,7 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
             return False, "answer tells user to contact someone"
         if "6" not in answer_norm and "six" not in answer_norm:
             return False, "answer does not mention the 6-day D01 delay"
-        if not any(p in answer_norm for p in ("not supported", "hypothetical", "only d01")):
+        if not any(p in answer_norm for p in ("not supported", "cannot be simulated", "only d01")):
             return False, "answer does not say hypothetical delays are not supported"
 
     # Q6 special: proposal status AND answer mentions pending/approval
@@ -573,6 +573,8 @@ def eval_model(model_id: str, run_index: int = 1) -> list[dict]:
     llm = WatsonxLLM(model_id=model_id)
     rows = []
     for q in GOLDEN_QUESTIONS:
+        if _ONLY and q["id"] not in _ONLY:
+            continue
         result = _run_question(q, llm)
         passed, reason = _check_question(q, result)
         ungrounded = check_grounding(result)
@@ -629,20 +631,33 @@ def _print_table(rows: list[dict], full: bool = False) -> None:
             print(f"     Answer:\n{r['answer']}\n")
 
 
+_ONLY: set[str] = set()   # question ids selected with --only (empty = all)
+
+
 def _parse_args(argv: list[str]) -> tuple[list[str], int, bool]:
-    """Return (models, runs, full).  Usage: [model_id ...] [--runs N] [--full]."""
+    """Return (models, runs, full).
+
+    Usage: [model_id ...] [--runs N] [--only Q5,Q13] [--full].
+    --only sets the module-level _ONLY filter used by eval_model.
+    """
     full = "--full" in argv
     runs = 1
     models = []
+    _ONLY.clear()
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a == "--runs" and i + 1 < len(argv):
-            runs = int(argv[i + 1])
+        if a in ("--runs", "--only") and i + 1 < len(argv):
+            if a == "--runs":
+                runs = int(argv[i + 1])
+            else:
+                _ONLY.update(x.strip().upper() for x in argv[i + 1].split(","))
             i += 2
             continue
         if a.startswith("--runs="):
             runs = int(a.split("=", 1)[1])
+        elif a.startswith("--only="):
+            _ONLY.update(x.strip().upper() for x in a.split("=", 1)[1].split(","))
         elif not a.startswith("--"):
             models.append(a)
         i += 1
