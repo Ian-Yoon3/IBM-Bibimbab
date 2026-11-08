@@ -1662,5 +1662,86 @@ class TestDeterministicViews(unittest.TestCase):
         self.assertFalse(is_unsupported("The delay is 6 days, what should we do?"))
 
 
+
+class TestQuestionSweepHeuristics(unittest.TestCase):
+    """Code-side reading of realistic manager questions (final check sweep).
+
+    These run without a model: they test what the code infers when the
+    model forgets to pass arguments, and which answer layout applies.
+    """
+
+    def test_budget_phrasings(self):
+        from agent.render import parse_budget
+        cases = {
+            "Our budget is 500 dollars. What should we do?": 500,
+            "We can spend up to $800. Which option?": 800,
+            "What's the best option if we have $1,200 to spend?": 1200,
+            "Budget: 1500 USD. Recommend a plan.": 1500,
+            "We have a budget of $2k. What now?": 2000,
+            "Is it worth paying $1,306 for HYBRID?": None,   # a price, not a budget
+            "How bad is this disruption?": None,
+        }
+        for q, want in cases.items():
+            self.assertEqual(parse_budget(q.lower()), want, q)
+
+    def test_targets_and_objectives(self):
+        from agent.render import request_settings
+        cases = {
+            "What is the cheapest way to keep 10 orders on time?": ("cost", 10),
+            "How can we keep all 12 orders on time?": ("on_time_orders", 12),
+            "Can we keep every order on time and what would it cost?": ("on_time_orders", 12),
+            "Which option minimizes total days late?": ("total_late_days", None),
+            "Which option has the shortest maximum delay?": ("max_delay", None),
+            "Is there a cheaper way than HYBRID to keep 11 orders on time?": ("cost", 11),
+        }
+        for q, (obj, target) in cases.items():
+            s = request_settings(q, [])
+            self.assertEqual((s["objective"], s["min_on_time"]), (obj, target), q)
+
+    def test_tool_arguments_win_over_wording(self):
+        from agent.render import request_settings
+        s = request_settings("Which option?", [
+            {"name": "compare_scenarios", "args": {"budget": "750", "objective": "cost"}}])
+        self.assertEqual((s["budget"], s["objective"]), (750, "cost"))
+
+    def test_unsupported_detection(self):
+        from agent.render import is_unsupported
+        yes = ["What if the delay becomes 10 days?",
+               "What if the supplier is 3 days late instead?",
+               "Suppose the shipment slips by two weeks.",
+               "The supplier says it will arrive 2 days earlier. What changes?",
+               "What if the transfer takes 2 days longer?",
+               "What happens with disruption D02?"]
+        no = ["Why is SO08 2 days late?",
+              "Which orders are more than 3 days late if we wait?",
+              "If the delay is 6 days, what should we do?",
+              "Under TRANSFER, SO05 is 5 days late. Why?",
+              "Our budget is 500 dollars. What should we do?"]
+        for q in yes:
+            self.assertTrue(is_unsupported(q), q)
+        for q in no:
+            self.assertFalse(is_unsupported(q), q)
+
+    def test_action_intent(self):
+        from agent.tool_specs import has_action_intent
+        yes = ["Propose TRANSFER.", "Let's go with TRANSFER.", "Please approve HYBRID.",
+               "Go ahead with the cheaper option.", "Submit that plan for approval.",
+               "OK, do that.", "Do it.", "Can you prepare a proposal for HYBRID?",
+               "Proceed with OF02 x40 + transfers."]
+        no = ["I'd like to approve nothing yet, just compare options.",
+              "Don't propose anything, just show me the numbers.",
+              "We are not ready to approve.", "What should we do?",
+              "Which customers are hurt the most if we wait?"]
+        for q in yes:
+            self.assertTrue(has_action_intent(q), q)
+        for q in no:
+            self.assertFalse(has_action_intent(q), q)
+
+    def test_sweep_script_lists_conversations(self):
+        from scripts.question_sweep import SWEEP
+        self.assertGreaterEqual(len(SWEEP), 15)
+        self.assertTrue(all(isinstance(c, list) and c for c in SWEEP))
+
+
 if __name__ == "__main__":
     unittest.main()

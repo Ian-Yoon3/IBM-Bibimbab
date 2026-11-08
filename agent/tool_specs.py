@@ -24,6 +24,8 @@ Note on propose_action:
     engine.
 """
 
+import re
+
 import engine.tools as _tools
 
 # ── valid enum values (loaded lazily so tests don't need a .env) ──────────────
@@ -391,9 +393,29 @@ TOOL_SPECS_NO_PROPOSE: list[dict] = [s for s in TOOL_SPECS if s["function"]["nam
 
 # Keywords that signal explicit action intent
 _ACTION_KEYWORDS = frozenset([
-    "approve", "propose", "implement", "submit", "go ahead",
-    "execute", "do it",
+    "approve", "propose", "proposal", "implement", "submit", "go ahead",
+    "execute", "do it", "do that", "go with", "proceed with", "go for it",
 ])
+
+# "approve nothing yet", "don't propose anything", "not ready to approve"
+_NEGATED_ACTION = re.compile(
+    r"\b(?:don't|do not|not|never|no need to)\W+(?:\w+\W+){0,2}?"
+    r"(?:approve|propose|submit|execute|implement)"
+    r"|\b(?:approve|propose|submit|execute|implement)\W+(?:nothing|anything)\b",
+    re.I,
+)
+
+
+def has_action_intent(user_message: str) -> bool:
+    """True when the user explicitly asks to act on an option.
+
+    Keyword heuristic with a simple negation check.  A false positive only
+    offers the proposal tool; the model still decides whether to call it.
+    """
+    msg = user_message.lower()
+    if _NEGATED_ACTION.search(msg):
+        return False
+    return any(kw in msg for kw in _ACTION_KEYWORDS)
 
 # ── dispatch table ────────────────────────────────────────────────────────────
 
@@ -425,9 +447,7 @@ def tool_specs_for(user_message: str) -> list[dict]:
     -------
     List of tool spec dicts.
     """
-    msg_lower = user_message.lower()
-    has_action_intent = any(kw in msg_lower for kw in _ACTION_KEYWORDS)
-    if has_action_intent:
+    if has_action_intent(user_message):
         return TOOL_SPECS
     return TOOL_SPECS_NO_PROPOSE
 

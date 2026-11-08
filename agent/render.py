@@ -206,21 +206,51 @@ def request_settings(user_message: str, tool_trace: list[dict]) -> dict:
             min_on = m if m is not None else min_on
     msg = user_message.lower()
     if budget is None:
-        m = re.search(r"\$\s?([\d,]+)|([\d,]+)\s*(?:dollars|usd)", msg)
-        if m and "budget" in msg:
-            budget = _to_int(m.group(1) or m.group(2))
+        budget = parse_budget(msg)
     if min_on is None:
-        m = re.search(r"keep\s+(\d+)\s+orders", msg)
-        if m:
-            min_on = int(m.group(1))
+        min_on = parse_min_on_time(msg)
     if objective is None:
-        if "late days" in msg or "days late" in msg:
-            objective = "total_late_days"
-        elif "cheap" in msg or "lowest cost" in msg:
-            objective = "cost"
-        else:
-            objective = "on_time_orders"
+        objective = parse_objective(msg)
     return {"budget": budget, "objective": objective, "min_on_time": min_on}
+
+
+_BUDGET_WORDS = re.compile(
+    r"\b(budget|spend|afford|up to|at most|no more than|limit|cap|maximum of|we have)\b")
+_MONEY = re.compile(r"\$\s?(\d[\d,]*(?:\.\d+)?)\s*(k)?\b|(\d[\d,]*(?:\.\d+)?)\s*(k)?\s*(?:dollars|usd)\b")
+
+
+def parse_budget(msg: str):
+    """'$800', '1,200 dollars', '$2k' next to a budget word -> int, else None.
+
+    A price without a budget word ("is it worth paying $1,306?") is not a budget.
+    """
+    if not _BUDGET_WORDS.search(msg):
+        return None
+    m = _MONEY.search(msg)
+    if not m:
+        return None
+    num, k = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
+    value = float(num.replace(",", ""))
+    return int(value * 1000) if k else int(value)
+
+
+def parse_min_on_time(msg: str):
+    m = re.search(r"keep\s+(?:at least\s+)?(\d+)\s+(?:of the\s+\d+\s+)?orders", msg)
+    if m:
+        return int(m.group(1))
+    if re.search(r"\b(all|every)\s+(?:\d+\s+)?orders?\b.*\bon.time|\bevery order\b", msg):
+        return len(_t.get_catalog()["orders"])
+    return None
+
+
+def parse_objective(msg: str) -> str:
+    if re.search(r"max(imum)? delay|longest delay|worst delay", msg):
+        return "max_delay"
+    if "late days" in msg or "days late" in msg:
+        return "total_late_days"
+    if re.search(r"cheap|lowest cost|least money|minimi[sz]e (the )?cost", msg):
+        return "cost"
+    return "on_time_orders"
 
 
 # ── view: recommendation ──────────────────────────────────────────────────────
@@ -402,15 +432,36 @@ def proposal_view(proposal: dict, code: str) -> dict:
 
 # ── view: unsupported ─────────────────────────────────────────────────────────
 
+_WORD_NUM = {"one": 1, "a": 1, "an": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+             "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+_HYPOTHETICAL = re.compile(
+    r"\b(what if|suppose|assum|instead|imagine|if the|if it|if we get|earlier|sooner|later than)")
+_DELAY_TERMS = re.compile(
+    r"\b(delay|late|slip|arriv|shipment|deliver|supplier|po01|longer|takes|lead time)")
+
+
+def _durations_in_days(msg: str) -> list[int]:
+    out = []
+    for n, unit in re.findall(r"\b(\d+|one|a|an|two|three|four|five|six|seven|eight|nine|ten)"
+                              r"\s*-?\s*(days?|weeks?)\b", msg):
+        v = int(n) if n.isdigit() else _WORD_NUM[n]
+        out.append(v * 7 if unit.startswith("week") else v)
+    return out
+
+
 def is_unsupported(user_message: str, disruption_id="D01") -> bool:
-    """True when the user asks about a delay length or disruption that is not modelled."""
+    """True when the user asks about a delay length or disruption that is not modelled.
+
+    A different duration counts only next to delay words and either a
+    hypothetical marker ("what if", "suppose", "instead") or the word
+    "delay", so "Why is SO08 2 days late?" stays a normal question.
+    """
     msg = user_message.lower()
     recorded = _t.get_disruption(disruption_id)["delay_days"]
-    if "delay" in msg:
-        for n in re.findall(r"\b(\d+)\s*-?\s*days?\b", msg):
-            if int(n) != recorded:
-                return True
-    known = {d.lower() for d in [disruption_id]}
+    if _DELAY_TERMS.search(msg) and (_HYPOTHETICAL.search(msg) or "delay" in msg):
+        if any(d != recorded for d in _durations_in_days(msg)):
+            return True
+    known = {disruption_id.lower()}
     return any(d not in known for d in re.findall(r"\bd\d{2}\b", msg))
 
 
