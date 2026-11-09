@@ -8,9 +8,11 @@ Rules for the four of us. `README.md` is for judges and outside readers. This fi
 |---|---|---|---|
 | Engine | `engine/`, `data/`, `tests/expected/` | Ian (built by Junseo) | Ask before changing |
 | Agent | `agent/`, `scripts/` | Ian | Ask before changing |
-| UI | `app.py`, `ui/` (if needed), `.streamlit/` | UI owner (TBD) | Free to change on the `ui` branch |
+| UI | `app.py`, `ui/` (if needed), `.streamlit/`, `streamlit` line in `requirements.txt` | UI owner (TBD) | Free to change on the `ui` branch |
 | Team docs | `CONTRIBUTING.md`, `docs/` | Anyone | Keep `docs/ui-contract.md` in sync with the agent |
 | Bob records | `bob_sessions/<your name>/` | Each member | Only your own folder |
+
+UI owner, start with `docs/ui-handoff-prompt.md`. Paste it into the AI tool you use.
 
 If the UI needs something from the engine or the agent, open an issue or ask Ian. Do not patch `engine/` or `agent/` from the `ui` branch. The tests guard those folders, and a quiet fix there can break the demo numbers.
 

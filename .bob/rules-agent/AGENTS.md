@@ -18,3 +18,4 @@
 - **(reference/verify.py only)** `events` dict keys are `date` objects, not strings — comparisons must use `date` arithmetic
 - **(reference/verify.py only)** `in_transit` counter tracks `(lane_id, component_id)` and must reach zero by horizon end; assertion at line 180 will fail otherwise
 - **(reference/verify.py only)** `write()` uses `header.split()` (space-separated string) to produce column names — add columns by extending that string, not a list
+- **UI work:** follow `docs/ui-contract.md` and the "UI work" section of the root `AGENTS.md`; never edit `engine/`, `agent/`, `data/` or `tests/expected/` from the UI; import only `run_agent`, `record_decision`, `list_decisions`; build with `ui_fixtures/agent_results.json` before using real watsonx.ai calls

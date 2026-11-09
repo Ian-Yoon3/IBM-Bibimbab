@@ -99,6 +99,21 @@ python reference/verify.py
 - Assertions are used for all data-integrity checks (no `raise` statements)
 - `ROOT` is resolved relative to `__file__`, not `cwd`
 
+## UI work (`app.py`, `ui/`, `.streamlit/`)
+
+Read `docs/ui-contract.md` before writing any UI code. It is the only interface between the UI and the agent.
+
+- The UI may import only `agent.loop.run_agent`, `agent.decisions.record_decision` and `agent.decisions.list_decisions`. Nothing else from `agent/` or `engine/`.
+- Never modify `engine/`, `agent/`, `data/`, `tests/expected/` or `reference/` while doing UI work. If the UI needs a change there, stop and ask the agent owner (Ian).
+- Never compute, round differently or change a number in the UI. Show values from `view`, `proposal` or `answer` as they are.
+- Show approve and reject buttons only when `result["proposal"]` is not `None`. Only the UI calls `record_decision`. The agent never approves.
+- Build and test with `ui_fixtures/agent_results.json` first. Use the real `run_agent` only when `WX_API_KEY` is set, and keep a switch back to fixtures. Each real call uses watsonx.ai credits.
+- Read `result.get("view")`, never `result["view"]`. The error result has no view.
+- On Streamlit Community Cloud, copy `st.secrets` into `os.environ` at startup, inside `try/except`, because `agent/llm.py` reads environment variables and a local run may have no secrets file.
+- `streamlit` may be added to `requirements.txt`. Do not add other packages without asking.
+- Never write an API key into code, a commit, a log or a prompt.
+- All existing tests must still pass: `python -m unittest discover -s tests`.
+
 ## Code style (`engine/` and `agent/`)
 
 - Data and input errors raise `ValueError` with a clear message — no `assert` for validation logic
