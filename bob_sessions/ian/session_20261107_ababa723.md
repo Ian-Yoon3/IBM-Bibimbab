@@ -4,11 +4,30 @@
 - Last activity: 2026-11-07 21:01
 - Cost reported by Bob for the whole task: 62.09
 - Exported from Bob's local task database (`~/.bob/db/bob.db`). The system prompt and editor context are omitted. Local paths are shortened to repository-relative paths.
-- Tool results are omitted except command output (first 25 lines).
+- Tool results are omitted. Command output is kept (first 25 lines) where Bob stored it. Where Bob stored only a placeholder, the export shows `[observation omitted: N lines]`.
 
+
+## Prompt index
+
+| # | Time | What was asked |
+|---|---|---|
+| [1](#prompt-1) | 18:38 | watsonx.ai connection check with one dummy tool |
+| [2](#prompt-2) | 18:45 | Model list and tool-call test, Granite vs Llama |
+| [3](#prompt-3) | 18:49 | Housekeeping: agent/ package, requirements, full test run |
+| [4](#prompt-4) | 18:59 | Two doc fixes in AGENTS.md and Bob rules |
+| [5](#prompt-5) | 19:08 | Agent layer design, plan only |
+| [6](#prompt-6) | 19:13 | Build steps 1 to 6 of the approved plan |
+| [7](#prompt-7) | 19:47 | Review fixes, then build step 7 (scripts/chat.py) |
+| [8](#prompt-8) | 20:08 | Real-model test findings and answer quality upgrade |
+| [9](#prompt-9) | 20:16 | Review fixes |
+| [10](#prompt-10) | 20:22 | Eval run 1 (5/12): harness bug fixes |
+| [11](#prompt-11) | 20:35 | Eval audit of results 202643: type coercion, disrupted-supplier guard |
+| [12](#prompt-12) | 20:48 | Eval run 3 audit: tool-offer guard, grounding check |
+| [13](#prompt-13) | 20:57 | Audit of commit 5fb8012, eval run 4 fixes |
 
 ---
 
+<a id="prompt-1"></a>
 ## Prompt 1 · 2026-11-07 18:38
 
 ```text
@@ -65,7 +84,7 @@ The `.gitignore` write was blocked by Bob's own safety rules (it matches an igno
 
 </details>
 
-- `write_file` scripts\check_wx.py (90 lines)
+- `write_file` scripts/check_wx.py (90 lines)
 
 - `execute_command` `pip install ibm-watsonx-ai python-dotenv --quiet`
 
@@ -123,9 +142,9 @@ Step 1 is complete. Here's what was created:
 
 | File | Purpose |
 |---|---|
-| [`.gitignore`](.gitignore) | Ignores `.env`, `__pycache__/`, `*.pyc` |
-| [`.env.example`](.env.example) | Template with empty `WX_API_KEY`, `WX_PROJECT_ID`, `WX_URL` keys |
-| [`scripts/check_wx.py`](scripts/check_wx.py) | Lists chat models or runs tool-call probe |
+| [`.gitignore`](../../.gitignore) | Ignores `.env`, `__pycache__/`, `*.pyc` |
+| [`.env.example`](../../.env.example) | Template with empty `WX_API_KEY`, `WX_PROJECT_ID`, `WX_URL` keys |
+| [`scripts/check_wx.py`](../../scripts/check_wx.py) | Lists chat models or runs tool-call probe |
 
 **`ibm-watsonx-ai`** and **`python-dotenv`** are installed.
 
@@ -143,6 +162,7 @@ When you're done, say **"env ready"** and I'll move on to Step 2.
 
 ---
 
+<a id="prompt-2"></a>
 ## Prompt 2 · 2026-11-07 18:45
 
 ```text
@@ -200,7 +220,7 @@ Both models work perfectly. Here are the results:
 
 ---
 
-## Tool-call test results
+#### Tool-call test results
 
 | model_id | Tool call made | Tool name | Arguments |
 |---|---|---|---|
@@ -216,6 +236,7 @@ Both models correctly identified the `budget` argument from the natural-language
 
 ---
 
+<a id="prompt-3"></a>
 ## Prompt 3 · 2026-11-07 18:49
 
 ```text
@@ -268,11 +289,11 @@ Let me first explore what exists in the repo:
 
 - `read_file` AGENTS.md
 
-- `read_file` .bob\rules-agent\AGENTS.md
+- `read_file` .bob/rules-agent/AGENTS.md
 
-- `read_file` .bob\rules-ask\AGENTS.md
+- `read_file` .bob/rules-ask/AGENTS.md
 
-- `read_file` .bob\rules-plan\AGENTS.md
+- `read_file` .bob/rules-plan/AGENTS.md
 
 **Bob:**
 
@@ -364,11 +385,11 @@ Good — `Agent/Project.py` and `Agent/watson_ai.py` are tracked. Now I have eve
 
 **Bob:**
 
-Now remove `_get_iam_token` from [`scripts/check_wx.py`](scripts/check_wx.py):
+Now remove `_get_iam_token` from [`scripts/check_wx.py`](../../scripts/check_wx.py):
 
-- `read_file` scripts\check_wx.py
+- `read_file` scripts/check_wx.py
 
-- `apply_diff` scripts\check_wx.py
+- `apply_diff` scripts/check_wx.py
 
 **Bob:**
 
@@ -380,11 +401,11 @@ Now update all four AGENTS.md files. Let me do the root one and all three .bob r
 
 Now update the three `.bob` rules files:
 
-- `write_file` .bob\rules-agent\AGENTS.md (16 lines)
+- `write_file` .bob/rules-agent/AGENTS.md (16 lines)
 
-- `write_file` .bob\rules-ask\AGENTS.md (9 lines)
+- `write_file` .bob/rules-ask/AGENTS.md (9 lines)
 
-- `write_file` .bob\rules-plan\AGENTS.md (12 lines)
+- `write_file` .bob/rules-plan/AGENTS.md (12 lines)
 
 - `update_todo_list`
 
@@ -454,7 +475,7 @@ All done. **76/76 tests green.** Here's the staged diff summary:
 
 ---
 
-## Staged diff — `feature/agent`
+#### Staged diff — `feature/agent`
 
 | File | Change |
 |---|---|
@@ -475,6 +496,7 @@ All done. **76/76 tests green.** Here's the staged diff summary:
 
 ---
 
+<a id="prompt-4"></a>
 ## Prompt 4 · 2026-11-07 18:59
 
 ```text
@@ -503,9 +525,9 @@ Show the diff. No code changes, so no need to rerun tests.
 
 **Bob:**
 
-Now update [`.bob/rules-agent/AGENTS.md`](.bob/rules-agent/AGENTS.md):
+Now update [`.bob/rules-agent/AGENTS.md`](../../.bob/rules-agent/AGENTS.md):
 
-- `apply_diff` .bob\rules-agent\AGENTS.md
+- `apply_diff` .bob/rules-agent/AGENTS.md
 
 **Bob:**
 
@@ -527,19 +549,20 @@ Clean. Here's the summary of both changes:
 
 ---
 
-### [`AGENTS.md`](AGENTS.md)
+##### [`AGENTS.md`](../../AGENTS.md)
 - **Renamed** `## Code style (`engine/`)` → `## Code style (`reference/verify.py`)`
 - **Added** new section `## Code style (`engine/` and `agent/`)` with three rules:
   - `ValueError` (not `assert`) for data/input errors
   - `engine/loader.py` as the sole CSV reader
   - Public functions return JSON-serialisable dicts
 
-### [`.bob/rules-agent/AGENTS.md`](.bob/rules-agent/AGENTS.md)
+##### [`.bob/rules-agent/AGENTS.md`](../../.bob/rules-agent/AGENTS.md)
 - **Prefixed** all 7 `reference/verify.py` internals bullets with `**(reference/verify.py only)**` — `load()`, `number()`/`day()`, `floor` dict, `simulate()` lists, `events` keys, `in_transit` counter, `write()` header
 
 
 ---
 
+<a id="prompt-5"></a>
 ## Prompt 5 · 2026-11-07 19:08
 
 ```text
@@ -612,16 +635,16 @@ the 3 gaps, build order, and how each step is tested. Then stop.
 Let me read the necessary files before designing.
 
 - `read_file` AGENTS.md
-- `read_file` engine\tools.py
+- `read_file` engine/tools.py
 - `read_file` README.md
 
 **Bob:**
 
 Now let me also look at the existing analysis functions to understand `priority_view` and `explore_purchase_qty` return shapes, and what `get_offers_for_component` might look like:
 
-- `read_file` engine\analysis.py
-- `read_file` engine\candidates.py
-- `read_file` engine\loader.py
+- `read_file` engine/analysis.py
+- `read_file` engine/candidates.py
+- `read_file` engine/loader.py
 
 **Bob:**
 
@@ -629,11 +652,11 @@ I now have a complete picture of the engine. Here is the full design plan:
 
 ---
 
-## Agent Layer Design Plan
+#### Agent Layer Design Plan
 
-### Gap Analysis (fixes first, since they constrain the design)
+##### Gap Analysis (fixes first, since they constrain the design)
 
-#### Gap 1 — `get_priority_view` only accepts a raw action list
+###### Gap 1 — `get_priority_view` only accepts a raw action list
 
 **Problem:** The LLM knows scenario names (e.g. `"HYBRID"`) but `get_priority_view` requires a raw `actions` list and a `disruption_id`. The LLM cannot reasonably construct raw action dicts.
 
@@ -653,7 +676,7 @@ def get_priority_view(
 
 ---
 
-#### Gap 2 — `explore_purchase_qty` returns labels (`buy_40`) but no proposable actions
+###### Gap 2 — `explore_purchase_qty` returns labels (`buy_40`) but no proposable actions
 
 **Problem:** The LLM finds the best quantity via `explore_purchase_qty` but cannot call `propose_action` with it — `propose_action` accepts a scenario_id string or a raw action list, but the LLM doesn't know how to construct a `{"type":"purchase","offer_id":"OF02","qty":40,...}` dict.
 
@@ -668,7 +691,7 @@ kpi["actions"] = actions   # the list already built for simulate()
 
 ---
 
-#### Gap 3 — LLM cannot discover valid `offer_id`s for the disrupted component
+###### Gap 3 — LLM cannot discover valid `offer_id`s for the disrupted component
 
 **Problem:** `explore_purchase_qty` requires an `offer_id` (e.g. `"OF02"`), but the LLM has no way to learn which offer IDs exist for the disrupted component unless told.
 
@@ -696,9 +719,9 @@ Returns:
 
 ---
 
-### File List and Function Signatures
+##### File List and Function Signatures
 
-#### `engine/tools.py` — additive changes only
+###### `engine/tools.py` — additive changes only
 
 ```python
 # Modified (additive only — existing signature extended)
@@ -721,7 +744,7 @@ def get_offers(disruption_id: str, data_dir=None) -> dict:
 
 ---
 
-#### `agent/llm.py`
+###### `agent/llm.py`
 
 ```python
 def build_model() -> ModelInference:
@@ -749,7 +772,7 @@ def chat(
 
 ---
 
-#### `agent/tool_specs.py`
+###### `agent/tool_specs.py`
 
 ```python
 TOOL_SPECS: list[dict]
@@ -778,7 +801,7 @@ Argument validation rules (enforced before dispatching, returning `{"error":...}
 
 ---
 
-#### `agent/prompts.py`
+###### `agent/prompts.py`
 
 ```python
 SYSTEM_PROMPT: str
@@ -800,7 +823,7 @@ def build_messages(user_message: str, history: list[dict] | None) -> list[dict]:
 
 ---
 
-#### `agent/loop.py`
+###### `agent/loop.py`
 
 ```python
 def run_agent(
@@ -835,7 +858,7 @@ def run_agent(
 
 ---
 
-#### `agent/fake_llm.py`
+###### `agent/fake_llm.py`
 
 ```python
 class ScriptedLLM:
@@ -854,7 +877,7 @@ class ScriptedLLM:
 
 ---
 
-#### `scripts/chat.py`
+###### `scripts/chat.py`
 
 ```python
 def main() -> None:
@@ -869,7 +892,7 @@ def main() -> None:
 
 ---
 
-#### `scripts/eval_agent.py`
+###### `scripts/eval_agent.py`
 
 ```python
 GOLDEN_QUESTIONS: list[dict]
@@ -901,7 +924,7 @@ Golden questions:
 
 ---
 
-#### `tests/test_agent.py` — 8 tests, fake LLM, zero network
+###### `tests/test_agent.py` — 8 tests, fake LLM, zero network
 
 | Test | What it verifies |
 |---|---|
@@ -916,7 +939,7 @@ Golden questions:
 
 ---
 
-### Build Order
+##### Build Order
 
 | Step | Work | Validation |
 |---|---|---|
@@ -934,6 +957,7 @@ Each step is independently testable before the next begins. Steps 1–6 produce 
 
 ---
 
+<a id="prompt-6"></a>
 ## Prompt 6 · 2026-11-07 19:13
 
 ```text
@@ -978,50 +1002,50 @@ with both shapes and the unknown-tool-returns-error case).
 
 Let me look at the existing tests to understand their patterns before writing anything:
 
-- `read_file` tests\test_tools.py
-- `read_file` engine\simulate.py
+- `read_file` tests/test_tools.py
+- `read_file` engine/simulate.py
 
-- `read_file` engine\simulate.py
+- `read_file` engine/simulate.py
 
-- `read_file` engine\simulate.py
+- `read_file` engine/simulate.py
 
-- `read_file` engine\simulate.py
+- `read_file` engine/simulate.py
 
 **Bob:**
 
 Now I have everything I need. Let me implement all build steps in order.
 
-- `apply_diff` engine\tools.py
+- `apply_diff` engine/tools.py
 
 **Bob:**
 
 Now add the `actions` key to each option in `explore_purchase_qty`, and add `get_offers`:
 
-- `apply_diff` engine\tools.py
+- `apply_diff` engine/tools.py
 
 **Bob:**
 
 Now add `get_offers` right before `propose_action`:
 
-- `read_file` engine\tools.py
+- `read_file` engine/tools.py
 
-- `apply_diff` engine\tools.py
+- `apply_diff` engine/tools.py
 
 **Bob:**
 
 Now add the new engine tests to `tests/test_tools.py`:
 
-- `apply_diff` tests\test_tools.py
+- `apply_diff` tests/test_tools.py
 
-- `apply_diff` tests\test_tools.py
+- `apply_diff` tests/test_tools.py
 
 **Bob:**
 
 Now add the `explore` actions key test and the `get_offers` test class. First let me check current line count:
 
-- `read_file` tests\test_tools.py
+- `read_file` tests/test_tools.py
 
-- `apply_diff` tests\test_tools.py
+- `apply_diff` tests/test_tools.py
 
 **Bob:**
 
@@ -1051,13 +1075,13 @@ Now let's verify engine tests still pass before moving on:
 
 The `actions` key is being stripped by `rank_options`. Let me check that function:
 
-- `read_file` engine\compare.py
+- `read_file` engine/compare.py
 
 **Bob:**
 
 `rank_options` builds new dicts explicitly so `actions` is dropped. I need to pass `actions` through. The cleanest fix: add `actions` to the output dict in `rank_options` when the input option has it, without changing the existing KPI fields or breaking any test:
 
-- `apply_diff` engine\compare.py
+- `apply_diff` engine/compare.py
 
 - `execute_command` `python -m unittest discover -s tests -v 2>&1 | Select-Object -Last 10`
 
@@ -1075,35 +1099,35 @@ All 87 pass (76 original + 11 new). Now build steps 2–6: the agent modules.
 
 - `update_todo_list`
 
-- `write_file` agent\llm.py (121 lines)
+- `write_file` agent/llm.py (121 lines)
 
 - `update_todo_list`
 
-- `write_file` agent\fake_llm.py (68 lines)
+- `write_file` agent/fake_llm.py (68 lines)
 
 - `update_todo_list`
 
-- `write_file` agent\prompts.py (59 lines)
+- `write_file` agent/prompts.py (59 lines)
 
 - `update_todo_list`
 
-- `write_file` agent\tool_specs.py (295 lines)
+- `write_file` agent/tool_specs.py (295 lines)
 
 - `update_todo_list`
 
-- `write_file` agent\loop.py (134 lines)
+- `write_file` agent/loop.py (134 lines)
 
 **Bob:**
 
 Now write `tests/test_agent.py`, then write the eval criteria comments into a plan file:
 
-- `write_file` tests\test_agent.py (247 lines)
+- `write_file` tests/test_agent.py (247 lines)
 
 **Bob:**
 
 Now write the eval plan file with the criteria as comments:
 
-- `write_file` scripts\eval_agent.py (157 lines)
+- `write_file` scripts/eval_agent.py (157 lines)
 
 **Bob:**
 
@@ -1113,7 +1137,7 @@ Now update AGENTS.md and the `.bob` rules files:
 
 - `apply_diff` AGENTS.md
 
-- `apply_diff` .bob\rules-agent\AGENTS.md
+- `apply_diff` .bob/rules-agent/AGENTS.md
 
 **Bob:**
 
@@ -1136,13 +1160,13 @@ Two failures to fix:
 1. **Double-encoded strings** — when `json.loads` produces another string (not a dict), we need to decode again.
 2. **`purchase_qty` not preserved** through `rank_options` — `ranked` entries use `"scenario_id"` set to `"buy_45"` (the label), but `purchase_qty` is stripped. Need to pass it through like `actions`.
 
-- `apply_diff` agent\llm.py
+- `apply_diff` agent/llm.py
 
 **Bob:**
 
 Now fix `purchase_qty` not surviving `rank_options`. The issue is `_dispatch_propose_action` looks for `r.get("purchase_qty") == qty` but `purchase_qty` is stripped. Pass it through the same way as `actions`:
 
-- `apply_diff` engine\compare.py
+- `apply_diff` engine/compare.py
 
 - `execute_command` `python -m unittest discover -s tests -v 2>&1 | Select-Object -Last 15`
 
@@ -1200,9 +1224,9 @@ All done. **116/116 tests green** (76 original + 40 new). Here's the full summar
 
 ---
 
-## Build steps 1–6 complete
+#### Build steps 1–6 complete
 
-### Test results
+##### Test results
 ```
 Ran 116 tests in 0.059s
 OK
@@ -1211,30 +1235,31 @@ OK
 
 ---
 
-### Files changed (12 files, +1430 lines)
+##### Files changed (12 files, +1430 lines)
 
 | File | What changed |
 |---|---|
-| [`engine/tools.py`](engine/tools.py) | `get_priority_view` gains `scenario_id=` param; `explore_purchase_qty` adds `"actions"` key per ranked option; new `get_offers()` function |
-| [`engine/compare.py`](engine/compare.py) | `rank_options` passes through `"actions"` and `"purchase_qty"` extra keys from input options |
-| [`tests/test_tools.py`](tests/test_tools.py) | +17 new tests: `TestGetOffers` (6), `TestGetPriorityView` scenario_id path (3), `TestExplorePurchaseQty` actions key (2), `TestGetPriorityView` others |
-| [`agent/llm.py`](agent/llm.py) | `normalize_tool_calls()` pure function (Granite double-encode handled); `WatsonxLLM` class |
-| [`agent/fake_llm.py`](agent/fake_llm.py) | `ScriptedLLM` replaying pre-scripted turns |
-| [`agent/prompts.py`](agent/prompts.py) | `SYSTEM_PROMPT` + `build_messages()` |
-| [`agent/tool_specs.py`](agent/tool_specs.py) | `TOOL_SPECS` (7 tools), `DISPATCH`, `call_tool()`, `_dispatch_propose_action()` |
-| [`agent/loop.py`](agent/loop.py) | `run_agent()` — tool-calling loop, correct message ordering, graceful max_steps stop |
-| [`tests/test_agent.py`](tests/test_agent.py) | 23 tests: `normalize_tool_calls` (5), `call_tool` (10), `TOOL_SPECS` (5), `run_agent` (8) |
-| [`scripts/eval_agent.py`](scripts/eval_agent.py) | Golden Q1–Q6 eval harness with criteria as comments |
-| [`AGENTS.md`](AGENTS.md) | 7-tool list, `get_offers`, `scenario_id=`, `propose_action` LLM shape |
-| [`.bob/rules-agent/AGENTS.md`](.bob/rules-agent/AGENTS.md) | Updated all agent coding rules |
+| [`engine/tools.py`](../../engine/tools.py) | `get_priority_view` gains `scenario_id=` param; `explore_purchase_qty` adds `"actions"` key per ranked option; new `get_offers()` function |
+| [`engine/compare.py`](../../engine/compare.py) | `rank_options` passes through `"actions"` and `"purchase_qty"` extra keys from input options |
+| [`tests/test_tools.py`](../../tests/test_tools.py) | +17 new tests: `TestGetOffers` (6), `TestGetPriorityView` scenario_id path (3), `TestExplorePurchaseQty` actions key (2), `TestGetPriorityView` others |
+| [`agent/llm.py`](../../agent/llm.py) | `normalize_tool_calls()` pure function (Granite double-encode handled); `WatsonxLLM` class |
+| [`agent/fake_llm.py`](../../agent/fake_llm.py) | `ScriptedLLM` replaying pre-scripted turns |
+| [`agent/prompts.py`](../../agent/prompts.py) | `SYSTEM_PROMPT` + `build_messages()` |
+| [`agent/tool_specs.py`](../../agent/tool_specs.py) | `TOOL_SPECS` (7 tools), `DISPATCH`, `call_tool()`, `_dispatch_propose_action()` |
+| [`agent/loop.py`](../../agent/loop.py) | `run_agent()` — tool-calling loop, correct message ordering, graceful max_steps stop |
+| [`tests/test_agent.py`](../../tests/test_agent.py) | 23 tests: `normalize_tool_calls` (5), `call_tool` (10), `TOOL_SPECS` (5), `run_agent` (8) |
+| [`scripts/eval_agent.py`](../../scripts/eval_agent.py) | Golden Q1–Q6 eval harness with criteria as comments |
+| [`AGENTS.md`](../../AGENTS.md) | 7-tool list, `get_offers`, `scenario_id=`, `propose_action` LLM shape |
+| [`.bob/rules-agent/AGENTS.md`](../../.bob/rules-agent/AGENTS.md) | Updated all agent coding rules |
 
-### Two bugs found and fixed during implementation
+##### Two bugs found and fixed during implementation
 1. **`rank_options` stripped extra keys** — `actions` and `purchase_qty` were not preserved; fixed by passing them through for any key in `("actions", "purchase_qty")`.
 2. **Granite double-encoding** — `normalize_tool_calls` now handles the case where `json.loads(string)` returns another string (decoded again).
 
 
 ---
 
+<a id="prompt-7"></a>
 ## Prompt 7 · 2026-11-07 19:47
 
 ```text
@@ -1269,15 +1294,15 @@ tests and show the output.
 
 Let me read the current state of the files before making changes.
 
-- `read_file` agent\loop.py
-- `read_file` agent\llm.py
+- `read_file` agent/loop.py
+- `read_file` agent/llm.py
 
 **Bob:**
 
 Now look up the correct watsonx.ai SDK chat parameter names:
 
 - `search_ibm_docs` {"library_name": "bob", "query": "ibm_watsonx_ai ModelInference chat max_tokens parameters"}
-- `read_file` engine\tools.py
+- `read_file` engine/tools.py
 
 **Bob:**
 
@@ -1317,29 +1342,29 @@ The IBM docs don't resolve the exact param name. Let me check the installed SDK 
 
 Now implement all fixes at once. Starting with `loop.py` (fixes 1 and 2 together):
 
-- `write_file` agent\loop.py (121 lines)
+- `write_file` agent/loop.py (121 lines)
 
 **Bob:**
 
 Now fix `normalize_tool_calls` (fix 3) and `WatsonxLLM.__init__` (fix 4):
 
-- `apply_diff` agent\llm.py
+- `apply_diff` agent/llm.py
 
 **Bob:**
 
 Now fix `WatsonxLLM.__init__` to use `TextChatParameters` with `max_tokens` and `temperature` (fix 4):
 
-- `apply_diff` agent\llm.py
+- `apply_diff` agent/llm.py
 
 **Bob:**
 
 Now `call_tool` needs to handle `args=None` (the parse error case). Update `tool_specs.py`:
 
-- `read_file` agent\tool_specs.py
+- `read_file` agent/tool_specs.py
 
-- `read_file` agent\tool_specs.py
+- `read_file` agent/tool_specs.py
 
-- `apply_diff` agent\tool_specs.py
+- `apply_diff` agent/tool_specs.py
 
 **Bob:**
 
@@ -1347,23 +1372,23 @@ Now the loop also needs to handle `_parse_error` — pass `tc["args"]` which is 
 
 Now fix `get_offers` (fix 5) — add `is_disrupted_supplier`:
 
-- `apply_diff` engine\tools.py
+- `apply_diff` engine/tools.py
 
 **Bob:**
 
 Now write `scripts/chat.py` (build step 7):
 
-- `write_file` scripts\chat.py (68 lines)
+- `write_file` scripts/chat.py (68 lines)
 
 **Bob:**
 
 Now update the tests. Read the current test file to find the exact lines to update:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
 **Bob:**
 
@@ -1374,33 +1399,33 @@ Now I'll add the new tests for fixes 1, 3, and 5. I need to:
 
 Also update the existing `test_history_grows_across_turns` to verify the real structure:
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 **Bob:**
 
 Now add `call_tool(name, None)` test and the history structure tests. Find the right line:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 **Bob:**
 
 Now update the history test to verify the real message structure, and add a dedicated history-structure test. Find the right section:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 **Bob:**
 
 Now add the `is_disrupted_supplier` test for `get_offers` in `tests/test_tools.py`:
 
-- `read_file` tests\test_tools.py
+- `read_file` tests/test_tools.py
 
-- `apply_diff` tests\test_tools.py
+- `apply_diff` tests/test_tools.py
 
 **Bob:**
 
@@ -1438,28 +1463,28 @@ Now run all the tests:
 
 ---
 
-## Changes
+#### Changes
 
-### Fix 1 — `loop.py` history (real message structure)
-[`agent/loop.py`](agent/loop.py) — replaced `_build_history()` with a `turn_messages` list that accumulates the **actual** message dicts used in the conversation as they are appended. History now contains: `user → assistant(tool_calls) → tool(tool_call_id) → … → assistant(answer)`. No fabricated `"[tool call: ...]"` strings, no `role:"tool"` messages without `tool_call_id`.
+##### Fix 1 — `loop.py` history (real message structure)
+[`agent/loop.py`](../../agent/loop.py) — replaced `_build_history()` with a `turn_messages` list that accumulates the **actual** message dicts used in the conversation as they are appended. History now contains: `user → assistant(tool_calls) → tool(tool_call_id) → … → assistant(answer)`. No fabricated `"[tool call: ...]"` strings, no `role:"tool"` messages without `tool_call_id`.
 
-### Fix 2 — assistant tool_calls message format
+##### Fix 2 — assistant tool_calls message format
 Same file — the assistant message now carries `"content": ""` and serialises `arguments` as `json.dumps(args)` (a JSON string), as the watsonx chat API expects.
 
-### Fix 3 — unparseable args propagated, not silently dropped
-[`agent/llm.py`](agent/llm.py) — `normalize_tool_calls` now sets `"args": None` and `"_parse_error": "could not parse arguments for <name>, please retry with valid JSON"` instead of silently substituting `{}`.  
-[`agent/tool_specs.py`](agent/tool_specs.py) — `call_tool` checks `args is None` first and returns the error dict to the LLM.
+##### Fix 3 — unparseable args propagated, not silently dropped
+[`agent/llm.py`](../../agent/llm.py) — `normalize_tool_calls` now sets `"args": None` and `"_parse_error": "could not parse arguments for <name>, please retry with valid JSON"` instead of silently substituting `{}`.  
+[`agent/tool_specs.py`](../../agent/tool_specs.py) — `call_tool` checks `args is None` first and returns the error dict to the LLM.
 
-### Fix 4 — correct SDK parameters
-[`agent/llm.py`](agent/llm.py) — replaced `params={"max_new_tokens": ..., "temperature": 0}` on `ModelInference.__init__` with `TextChatParameters(max_tokens=..., temperature=0)` passed per-call as `params=self._chat_params` to `model.chat()`. **`max_tokens` and `temperature` are the confirmed correct field names** (verified via `inspect.signature(TextChatParameters.__init__)`).
+##### Fix 4 — correct SDK parameters
+[`agent/llm.py`](../../agent/llm.py) — replaced `params={"max_new_tokens": ..., "temperature": 0}` on `ModelInference.__init__` with `TextChatParameters(max_tokens=..., temperature=0)` passed per-call as `params=self._chat_params` to `model.chat()`. **`max_tokens` and `temperature` are the confirmed correct field names** (verified via `inspect.signature(TextChatParameters.__init__)`).
 
-### Fix 5 — `get_offers` adds `is_disrupted_supplier`
-[`engine/tools.py`](engine/tools.py) — each offer in the returned list now carries `"is_disrupted_supplier": bool`. The flag is `True` for the offer behind the disrupted PO (i.e. the one whose supplier caused the delay), `False` for all alternatives.
+##### Fix 5 — `get_offers` adds `is_disrupted_supplier`
+[`engine/tools.py`](../../engine/tools.py) — each offer in the returned list now carries `"is_disrupted_supplier": bool`. The flag is `True` for the offer behind the disrupted PO (i.e. the one whose supplier caused the delay), `False` for all alternatives.
 
-### Build step 7 — `scripts/chat.py`
-[`scripts/chat.py`](scripts/chat.py) — terminal REPL: prints model ID, shows each tool call with its args inline as it happens, accumulates history across turns, handles `quit`/`exit`/Ctrl-C gracefully.
+##### Build step 7 — `scripts/chat.py`
+[`scripts/chat.py`](../../scripts/chat.py) — terminal REPL: prints model ID, shows each tool call with its args inline as it happens, accumulates history across turns, handles `quit`/`exit`/Ctrl-C gracefully.
 
-### New tests (+11)
+##### New tests (+11)
 | Test | What it covers |
 |---|---|
 | `test_unparseable_string_args_sets_parse_error` | Fix 3 — bad JSON string → `_parse_error` set, `args=None` |
@@ -1477,6 +1502,7 @@ Same file — the assistant message now carries `"content": ""` and serialises `
 
 ---
 
+<a id="prompt-8"></a>
 ## Prompt 8 · 2026-11-07 20:08
 
 ```text
@@ -1565,12 +1591,12 @@ Show the final test output.
 
 Let me read the current state of all affected files before making changes.
 
-- `read_file` agent\loop.py
-- `read_file` agent\prompts.py
-- `read_file` agent\llm.py
+- `read_file` agent/loop.py
+- `read_file` agent/prompts.py
+- `read_file` agent/llm.py
 
-- `read_file` tests\test_agent.py
-- `read_file` scripts\eval_agent.py
+- `read_file` tests/test_agent.py
+- `read_file` scripts/eval_agent.py
 
 **Bob:**
 
@@ -1599,19 +1625,19 @@ Fine — I'll proceed without the todo update and work through the steps.
 
 **Step 1+2: `loop.py` (dup guard + two-phase loop) and `llm.py` (optional tools)**
 
-- `write_file` agent\loop.py (147 lines)
+- `write_file` agent/loop.py (147 lines)
 
 **Bob:**
 
 Expected — `build_compose_message` doesn't exist in `prompts.py` yet. Now update `WatsonxLLM.chat` to omit tools/tool_choice when tools list is empty:
 
-- `apply_diff` agent\llm.py
+- `apply_diff` agent/llm.py
 
 **Bob:**
 
 Now **Step 3** — rewrite `prompts.py` with the evidence playbook and compose instruction:
 
-- `write_file` agent\prompts.py (128 lines)
+- `write_file` agent/prompts.py (128 lines)
 
 **Bob:**
 
@@ -1631,7 +1657,7 @@ Now run tests after steps 1+2+3 to see what needs to be fixed in the test file:
 
 As expected — every `ScriptedLLM` in `TestRunAgent` needs one extra compose turn at the end. I'll rewrite all of them now. The compose turn always returns `{"content": "<compose answer>"}` with no tool calls, and receives `tools=[]`. The `ScriptedLLM` ignores both `messages` and `tools` so adding one more entry is all that's needed.
 
-- `write_file` tests\test_agent.py (331 lines)
+- `write_file` tests/test_agent.py (331 lines)
 
 **Bob:**
 
@@ -1651,25 +1677,25 @@ Now run the full suite to check:
 
 134/134 green. Now **Step 4** — suppress only `disclaimer_warning` in `chat.py`:
 
-- `apply_diff` scripts\chat.py
+- `apply_diff` scripts/chat.py
 
 **Bob:**
 
 Now **Step 5** — update `eval_agent.py` with format checks and updated Q5 criteria:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 Now update the `GOLDEN_QUESTIONS` list and `_check_question` function in `eval_agent.py`:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 Now update `_check_question` to implement the new checks:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
@@ -1705,33 +1731,33 @@ All 134 tests pass. Here's the complete summary:
 
 ---
 
-## Changes and test output
+#### Changes and test output
 
 **134/134 tests green** (127 prior + 7 new).
 
-### What changed
+##### What changed
 
-#### Step 1 — Duplicate-call guard ([`agent/loop.py`](agent/loop.py))
+###### Step 1 — Duplicate-call guard ([`agent/loop.py`](../../agent/loop.py))
 A `seen_calls: set[tuple]` tracks `(tool_name, sorted-args-JSON)` within a turn. Second call with identical args returns `{"note": "already called with these args; use the earlier result"}` and skips the engine entirely.
 
-#### Step 2 — Two-phase loop ([`agent/loop.py`](agent/loop.py) + [`agent/llm.py`](agent/llm.py))
+###### Step 2 — Two-phase loop ([`agent/loop.py`](../../agent/loop.py) + [`agent/llm.py`](../../agent/llm.py))
 - **Gather phase** runs the tool-calling loop (`max_steps=10`). When the model produces text, it's kept in messages as context but not used as the answer.
 - **Compose phase** always runs after gather: one final `llm.chat(compose_msgs, [])` call with no tools. Its content is the final answer. Canned fallback only when content is empty.
 - `WatsonxLLM.chat` now omits `tools` and `tool_choice_option` from the API call entirely when `tools=[]`.
 
-#### Step 3 — Evidence playbook + compose instruction ([`agent/prompts.py`](agent/prompts.py))
+###### Step 3 — Evidence playbook + compose instruction ([`agent/prompts.py`](../../agent/prompts.py))
 - `SYSTEM_PROMPT` gains a per-question-type **evidence playbook** and removes "contact your planning team".
 - New `build_compose_message(user_message)` returns the compose-phase user message with structured output instructions (5 headings for recommendations, Answer+Evidence for factual, unsupported-question handling, proposal confirmation format).
 
-#### Step 4 — Suppress disclaimer warning only ([`scripts/chat.py`](scripts/chat.py))
+###### Step 4 — Suppress disclaimer warning only ([`scripts/chat.py`](../../scripts/chat.py))
 Suppresses `WatsonxAPIWarning` (disclaimer) using `warnings.filterwarnings` + a try/import for the specific class. All other warnings remain visible.
 
-#### Step 5 — Format checks + Q5 contact check ([`scripts/eval_agent.py`](scripts/eval_agent.py))
+###### Step 5 — Format checks + Q5 contact check ([`scripts/eval_agent.py`](../../scripts/eval_agent.py))
 - Q1 and Q4: require all 5 recommendation headings in answer.
 - Q2: requires "Evidence" heading in answer.
 - Q5: additionally fails if answer says "contact" or doesn't mention "D01".
 
-### New tests (7)
+##### New tests (7)
 | Test | What it covers |
 |---|---|
 | `test_canned_fallback_when_compose_empty` | Fallback when compose returns `""` |
@@ -1746,6 +1772,7 @@ Suppresses `WatsonxAPIWarning` (disclaimer) using `warnings.filterwarnings` + a 
 
 ---
 
+<a id="prompt-9"></a>
 ## Prompt 9 · 2026-11-07 20:16
 
 ```text
@@ -1772,38 +1799,38 @@ Add a test that the compose instruction contains the "n/a" rule.
 Run all tests and show the output.
 ```
 
-- `read_file` agent\prompts.py
-- `read_file` scripts\chat.py
+- `read_file` agent/prompts.py
+- `read_file` scripts/chat.py
 
 **Bob:**
 
 All four changes are clear and self-contained. Implementing them all now:
 
-- `apply_diff` agent\prompts.py
+- `apply_diff` agent/prompts.py
 
 **Bob:**
 
 Now add the "n/a" rule at the top of `_COMPOSE_INSTRUCTION`:
 
-- `apply_diff` agent\prompts.py
+- `apply_diff` agent/prompts.py
 
 **Bob:**
 
 Now fix `chat.py` — narrow the filter to only `WatsonxAPIWarning` messages containing "Non-IBM Product":
 
-- `apply_diff` scripts\chat.py
+- `apply_diff` scripts/chat.py
 
 **Bob:**
 
 Now add the test for the "n/a" rule in the compose instruction. It belongs in a new `TestPrompts` class in `test_agent.py`:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 - `execute_command` `python -m unittest discover -s tests -v 2>&1 | Select-Object -Last 10`
 
@@ -1831,21 +1858,21 @@ OK
 
 ---
 
-### Changes
+##### Changes
 
-#### 1 — n/a rule in compose instruction ([`agent/prompts.py`](agent/prompts.py))
+###### 1 — n/a rule in compose instruction ([`agent/prompts.py`](../../agent/prompts.py))
 Added a `CRITICAL RULE — n/a policy` block at the top of `_COMPOSE_INSTRUCTION`: for every table cell or number not present in tool results, write "n/a"; never fill from reasoning, memory, or estimation.
 
-#### 2 — All four scenarios in recommendation playbook ([`agent/prompts.py`](agent/prompts.py))
+###### 2 — All four scenarios in recommendation playbook ([`agent/prompts.py`](../../agent/prompts.py))
 Changed `"get_priority_view for each of the top-2 ranked scenarios"` → `"get_priority_view for ALL four named scenarios: WAIT, TRANSFER, ALT_BUY, HYBRID"`. The compose n/a rule covers explored-option rows where priority-1 data isn't available.
 
-#### 3 — Unsupported questions now call `compare_scenarios` ([`agent/prompts.py`](agent/prompts.py))
+###### 3 — Unsupported questions now call `compare_scenarios` ([`agent/prompts.py`](../../agent/prompts.py))
 Updated both `SYSTEM_PROMPT` rule 2 and the unsupported-question playbook entry: gather `get_disruption` once **and** `compare_scenarios` once so the answer can cite real on-time counts for all options. Explicitly stops before `explore_purchase_qty` and `get_priority_view`.
 
-#### 4 — Narrow warning filter ([`scripts/chat.py`](scripts/chat.py))
+###### 4 — Narrow warning filter ([`scripts/chat.py`](../../scripts/chat.py))
 Replaced the category-wide `WatsonxAPIWarning` filter and the `UserWarning "disclaimer"` filter with a single targeted filter: `WatsonxAPIWarning` where `message` matches `".*Non-IBM Product.*"`. All other watsonx warnings remain visible.
 
-### New tests (5, in `TestPrompts`)
+##### New tests (5, in `TestPrompts`)
 
 | Test | What it verifies |
 |---|---|
@@ -1858,6 +1885,7 @@ Replaced the category-wide `WatsonxAPIWarning` filter and the `UserWarning "disc
 
 ---
 
+<a id="prompt-10"></a>
 ## Prompt 10 · 2026-11-07 20:22
 
 ```text
@@ -1890,33 +1918,33 @@ Add tests for the normalisation function (Unicode hyphen, "$1,216",
 "5 out of 6"). Run all tests and show the output.
 ```
 
-- `read_file` scripts\eval_agent.py
+- `read_file` scripts/eval_agent.py
 
 **Bob:**
 
 Now I have everything I need. Let me implement all changes together.
 
-- `write_file` scripts\eval_agent.py (222 lines)
+- `write_file` scripts/eval_agent.py (222 lines)
 
 **Bob:**
 
 Now fix `agent/prompts.py` — change the "approve" playbook so propose_action is only called on explicit approval requests, and update the Next step wording for recommendation questions:
 
-- `apply_diff` agent\prompts.py
+- `apply_diff` agent/prompts.py
 
 **Bob:**
 
 Also update the compose instruction's "Next step" guidance to match:
 
-- `apply_diff` agent\prompts.py
+- `apply_diff` agent/prompts.py
 
 **Bob:**
 
 Now add the `normalise` tests to `test_agent.py`. First find a good insertion point — after `TestPrompts`, before `if __name__ == "__main__"`:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 **Bob:**
 
@@ -1993,9 +2021,9 @@ test_comma_not_stripped_in_text (test_agent.TestNormalise.test_comma_not_strippe
 
 ---
 
-## Changes
+#### Changes
 
-### Harness fixes ([`scripts/eval_agent.py`](scripts/eval_agent.py))
+##### Harness fixes ([`scripts/eval_agent.py`](../../scripts/eval_agent.py))
 
 **1 — Normalisation** — `_normalise` renamed to `normalise` (exported for testing) with four steps: lowercase → Unicode dashes/hyphens (U+2010–U+2015, U+2212) → ASCII `-` → non-breaking spaces → regular space → strip `$` → strip `,` between digits.
 
@@ -2007,11 +2035,11 @@ test_comma_not_stripped_in_text (test_agent.TestNormalise.test_comma_not_strippe
 
 **5 — `--full` flag + JSON save** — `main()` parses `--full` to print every answer in full; results are always saved to `eval_results/<timestamp>.json` with question, model, pass/fail, reason, full answer, tools+args.
 
-### Agent fix ([`agent/prompts.py`](agent/prompts.py))
+##### Agent fix ([`agent/prompts.py`](../../agent/prompts.py))
 
 **6 — propose_action guard** — Added an explicit rule to the playbook: `Only use propose_action when the user EXPLICITLY asks to act, approve, implement, or submit. Do NOT call propose_action for recommendation questions.` The compose instruction's `## Next step` example now says to invite the user to ask for a proposal rather than calling `propose_action` immediately.
 
-### New tests — `TestNormalise` (11 tests)
+##### New tests — `TestNormalise` (11 tests)
 
 | Test | Covers |
 |---|---|
@@ -2030,6 +2058,7 @@ test_comma_not_stripped_in_text (test_agent.TestNormalise.test_comma_not_strippe
 
 ---
 
+<a id="prompt-11"></a>
 ## Prompt 11 · 2026-11-07 20:35
 
 ```text
@@ -2082,16 +2111,16 @@ present with it. All existing tests must stay green. Show the output.
 
 Let me read all the affected files before making any changes.
 
-- `read_file` agent\tool_specs.py
-- `read_file` engine\tools.py
-- `read_file` agent\loop.py
+- `read_file` agent/tool_specs.py
+- `read_file` engine/tools.py
+- `read_file` agent/loop.py
 
 **Bob:**
 
 Now let me read the engine's `explore_purchase_qty` full signature and `eval_agent.py`:
 
-- `read_file` engine\tools.py
-- `read_file` scripts\eval_agent.py
+- `read_file` engine/tools.py
+- `read_file` scripts/eval_agent.py
 
 **Bob:**
 
@@ -2099,64 +2128,64 @@ Now I have a complete picture. Let me implement all 5 changes in order.
 
 **Fix 1+2+3: engine/tools.py** — `explore_purchase_qty` gets `min_on_time_orders`; **Fix 1: tool_specs.py** — type coercion + disrupted-offer guard; **Fix 4: loop.py** — conditional `propose_action`; **Fix 5: eval_agent.py**.
 
-- `apply_diff` engine\tools.py
+- `apply_diff` engine/tools.py
 
 **Bob:**
 
 Now apply the `min_on_time_orders` filter in the body of `explore_purchase_qty`, right before the `return rank_options(...)` call:
 
-- `apply_diff` engine\tools.py
+- `apply_diff` engine/tools.py
 
 **Bob:**
 
 Now rewrite `agent/tool_specs.py` with: type coercion helpers, disrupted-offer guard, `min_on_time_orders` in spec and validation, and coercion applied to all integer/boolean fields:
 
-- `write_file` agent\tool_specs.py (377 lines)
+- `write_file` agent/tool_specs.py (377 lines)
 
 **Bob:**
 
 Now update `loop.py` to use `tool_specs_for(user_message)` instead of the constant `TOOL_SPECS`:
 
-- `apply_diff` agent\loop.py
+- `apply_diff` agent/loop.py
 
 **Bob:**
 
 The `TOOL_SPECS` import is unused now (the loop uses `tool_specs_for`). Remove it:
 
-- `apply_diff` agent\loop.py
+- `apply_diff` agent/loop.py
 
 **Bob:**
 
 Now update `eval_agent.py` — fresh history per question, save args+result (truncated), any-error fail, Q1/Q3/Q4 updated checks:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 Now update `_check_question` to add any-error fail, Q1 extra checks, Q4 extra_facts, and update `eval_model` for fresh history + args+result saving:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 Now update `eval_model` — fresh history per question and save args+result (truncated to 2000 chars):
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 Also fix `_print_table` which now accesses `t["name"]` on dicts that also have `"result"`:
 The `_print_table` already uses `t["name"]` from the tools list — that's still correct since `tools_with_results` still has `"name"`. Good. Now also update the playbook in `prompts.py` for Q4 hint:
 
-- `apply_diff` agent\prompts.py
+- `apply_diff` agent/prompts.py
 
 **Bob:**
 
 Now add all required tests. Let me find the end of the test file:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 **Bob:**
 
@@ -2190,21 +2219,21 @@ OK
 
 ---
 
-## Changes
+#### Changes
 
-### Fix 1 — Type coercion ([`agent/tool_specs.py`](agent/tool_specs.py))
+##### Fix 1 — Type coercion ([`agent/tool_specs.py`](../../agent/tool_specs.py))
 Added `_coerce_int`, `_coerce_bool`, and `_coerce_fields` helpers. Applied before validation for: `budget` (compare_scenarios), `budget`/`min_on_time_orders`/`include_transfers` (explore_purchase_qty), `qty`/`include_transfers` (propose_action). Booleans accept `bool` or `"true"`/`"false"` (case-insensitive); integers accept `int` or numeric strings. Anything else returns `{"error": ...}`. Args are copied before mutation.
 
-### Fix 2 — `min_on_time_orders` ([`engine/tools.py`](engine/tools.py), [`agent/tool_specs.py`](agent/tool_specs.py), [`agent/prompts.py`](agent/prompts.py))
+##### Fix 2 — `min_on_time_orders` ([`engine/tools.py`](../../engine/tools.py), [`agent/tool_specs.py`](../../agent/tool_specs.py), [`agent/prompts.py`](../../agent/prompts.py))
 Added `min_on_time_orders: int | None = None` to `explore_purchase_qty`. Options with fewer on-time orders than the threshold are filtered out **before** `rank_options`. Exposed in the LLM spec with usage guidance. Playbook updated. **Test confirms**: `OF02 + include_transfers=True + min_on_time_orders=11 + objective="cost"` → rank-1 is `qty=40`, `cost=1216`.
 
-### Fix 3 — Disrupted-supplier guard ([`agent/tool_specs.py`](agent/tool_specs.py))
+##### Fix 3 — Disrupted-supplier guard ([`agent/tool_specs.py`](../../agent/tool_specs.py))
 `_disrupted_offer_id(offer_id)` checks `get_offers("D01")` for `is_disrupted_supplier=True`. Applied in `call_tool` for both `explore_purchase_qty` and the `offer_id` path of `propose_action`. Returns `{"error": "<id> is the disrupted supplier's offer; choose an alternative from get_offers"}`.
 
-### Fix 4 — `propose_action` conditional inclusion ([`agent/tool_specs.py`](agent/tool_specs.py), [`agent/loop.py`](agent/loop.py))
+##### Fix 4 — `propose_action` conditional inclusion ([`agent/tool_specs.py`](../../agent/tool_specs.py), [`agent/loop.py`](../../agent/loop.py))
 `tool_specs_for(user_message)` returns `TOOL_SPECS_NO_PROPOSE` unless the message contains any of: `approve`, `propose`, `implement`, `submit`, `go ahead`, `execute`, `do it`. `loop.py` calls this once per turn to build `gather_tools`.
 
-### Fix 5 — eval harness ([`scripts/eval_agent.py`](scripts/eval_agent.py))
+##### Fix 5 — eval harness ([`scripts/eval_agent.py`](../../scripts/eval_agent.py))
 - `eval_model` now runs each question with `history=None` (fresh conversation)
 - Tools saved with `args` + `result` (truncated to 2000 chars)
 - Any tool result with `"error"` key → automatic fail
@@ -2212,7 +2241,7 @@ Added `min_on_time_orders: int | None = None` to `explore_purchase_qty`. Options
 - Q3: added `"5 of the 6"` pattern
 - Q4: `extra_facts=["40"]` — answer must contain both `1216` and `40`
 
-### New tests (22)
+##### New tests (22)
 `TestCoercion` (10): numeric string, bool, bad values for budget/include_transfers/qty  
 `TestMinOnTimeOrders` (3): qty=40/cost=1216, exclusion of low-on-time options, string coercion  
 `TestDisruptedOfferGuard` (3): explore error, propose error, OF02 passes  
@@ -2221,6 +2250,7 @@ Added `min_on_time_orders: int | None = None` to `explore_purchase_qty`. Options
 
 ---
 
+<a id="prompt-12"></a>
 ## Prompt 12 · 2026-11-07 20:48
 
 ```text
@@ -2272,14 +2302,14 @@ flags an invented number and passes a grounded answer, normalisation of
 
 Let me read the current state of all affected files first.
 
-- `read_file` agent\loop.py
-- `read_file` agent\prompts.py
+- `read_file` agent/loop.py
+- `read_file` agent/prompts.py
 
-- `read_file` engine\tools.py
-- `read_file` agent\tool_specs.py
+- `read_file` engine/tools.py
+- `read_file` agent/tool_specs.py
 
-- `read_file` agent\tool_specs.py
-- `read_file` scripts\eval_agent.py
+- `read_file` agent/tool_specs.py
+- `read_file` scripts/eval_agent.py
 
 **Bob:**
 
@@ -2303,51 +2333,51 @@ Fine — proceeding directly to implementation.
 
 **Fix 1 — `loop.py`: pass offered names; `tool_specs.py`: enforce guard at call time**
 
-- `apply_diff` agent\loop.py
+- `apply_diff` agent/loop.py
 
 **Bob:**
 
 Now update `call_tool` signature and add the guard at the very top:
 
-- `apply_diff` agent\tool_specs.py
+- `apply_diff` agent/tool_specs.py
 
 **Bob:**
 
 **Fix 2 — Remove `<...>` placeholders from `prompts.py`:**
 
-- `apply_diff` agent\prompts.py
+- `apply_diff` agent/prompts.py
 
 **Bob:**
 
 **Fix 4 — Add no-arithmetic rule to `_COMPOSE_INSTRUCTION`:**
 
-- `apply_diff` agent\prompts.py
+- `apply_diff` agent/prompts.py
 
 **Bob:**
 
 **Fix 3 — Descriptive labels, `scenario_id=None`, `option_type="explored"` in `engine/tools.py`; update `_dispatch_propose_action` error message:**
 
-- `apply_diff` engine\tools.py
+- `apply_diff` engine/tools.py
 
 **Bob:**
 
 Now update `_dispatch_propose_action` error message for unknown (explore-like) scenario_id:
 
-- `apply_diff` agent\tool_specs.py
+- `apply_diff` agent/tool_specs.py
 
 **Bob:**
 
 **Fix 5a+5b — `eval_agent.py`: normalise thin/narrow spaces + split IDs, add grounding check:**
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 Now add grounding check call inside `_check_question` and wire result into saved JSON. Find the return at the end of `_check_question`:
 
-- `read_file` scripts\eval_agent.py
+- `read_file` scripts/eval_agent.py
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
@@ -2419,33 +2449,33 @@ Actually the simplest correct approach: replace thin/narrow spaces with `""` (em
 
 The cleanest: directly replace thin/narrow spaces between digits with nothing, keep U+00A0 → space, then don't have the broad `(?<=\d) (?=\d)` regex at all. The split-ID rule can stand on its own.
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 Now fix the three `test_tools.py` label tests and the `test_duplicate_guard` test in `test_agent.py`:
 
-- `read_file` tests\test_tools.py
+- `read_file` tests/test_tools.py
 
-- `read_file` tests\test_tools.py
+- `read_file` tests/test_tools.py
 
-- `apply_diff` tests\test_tools.py
+- `apply_diff` tests/test_tools.py
 
 **Bob:**
 
 Now fix `test_duplicate_guard_engine_called_once` to pass `offered_names`:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 **Bob:**
 
 Now add the required new tests at the end of the test file. Find current last line:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 - `execute_command` `python -m unittest discover -s tests 2>&1 | Select-Object -Last 8`
 
@@ -2489,19 +2519,19 @@ Two issues:
 
 Fix 1: add `option_type` to the pass-through in `compare.py`. Fix 2: tighten `_TOKEN_RE` to use `\b` properly:
 
-- `read_file` engine\compare.py
+- `read_file` engine/compare.py
 
 **Bob:**
 
 The `scenario_id` field is being set to `identity = opt.get("scenario_id", opt["label"])`. When the option has `scenario_id=None` (from explore), this becomes `None`; then `identity = None`, and `entry["scenario_id"] = None`. That's actually correct — but `rank_options` sets `identity = opt.get("scenario_id", opt["label"])` and when `scenario_id=None` (explicit), `opt.get("scenario_id", opt["label"])` returns `None` (since key exists). Then `entry["scenario_id"] = None`. Good. But `option_type` is not in the pass-through list:
 
-- `apply_diff` engine\compare.py
+- `apply_diff` engine/compare.py
 
 **Bob:**
 
 Now fix the `_TOKEN_RE` — the ID pattern should only match well-known ID prefixes at a word boundary, not arbitrary letter+digit combos that can absorb the preceding word:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 - `execute_command` `python -m unittest discover -s tests 2>&1 | Select-Object -Last 8`
 
@@ -2525,7 +2555,7 @@ FAILED (failures=1)
 
 The string `"The extra cost is 9999 USD."` — after `normalise` it's `"the extra cost is9999 usd."`. The split-ID rule `(?<=[a-z]) (?=\d{2})` is joining `"is "` + `"9999"` into `"is9999"`. The regex `(?<=[a-z]) (?=\d{2})` was meant for `"SO 02"` but is too broad — `"is 9999"` also matches (`s` before space, `99` is 2 digits). I need to only join known ID-style patterns (2-4 capital letters then 2 digits), not any letter+space+digits. Since normalise lowercases first, I need to limit the lookbehind to exactly 2-4 letters at a word start, not just any trailing letter:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 - `execute_command` `python -m unittest discover -s tests 2>&1 | Select-Object -Last 8`
 
@@ -2550,7 +2580,7 @@ No longer call execute_command with these arguments — it has failed 3 times. T
 
 The problem is that `"extra cost is 9999"` — after lowercasing — still has `"is "` immediately before `"9999"`. `"is"` is 2 letters at a word boundary, then space, then `"9999"` is 4 digits. So it still matches. The real constraint for an ID is that it's followed by exactly 2 digits, not 4+. `SO02`, `D01`, `PO01` = 2 digits. Change `\d{2,}` to `\d{2,3}` in the lookahead:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 - `execute_command` `python -m pytest tests/ -q --tb=line 2>&1 | tail -15`
 
@@ -2674,30 +2704,30 @@ OK
 
 ---
 
-## Changes
+#### Changes
 
-### Fix 1 — Tool-offer guard enforced at call time
-**[`agent/loop.py`](agent/loop.py)** — computes `offered_names` set from `gather_tools` per step, passes it to `call_tool`.  
-**[`agent/tool_specs.py`](agent/tool_specs.py)** — `call_tool(name, args, offered_names=None)` gains the new parameter. When `offered_names` is provided and `name` is not in it, returns `{"error": "'<name>' is not available in this turn; the user has not asked to act"}` before touching the engine. The heuristic gate now has a hard backstop.
+##### Fix 1 — Tool-offer guard enforced at call time
+**[`agent/loop.py`](../../agent/loop.py)** — computes `offered_names` set from `gather_tools` per step, passes it to `call_tool`.  
+**[`agent/tool_specs.py`](../../agent/tool_specs.py)** — `call_tool(name, args, offered_names=None)` gains the new parameter. When `offered_names` is provided and `name` is not in it, returns `{"error": "'<name>' is not available in this turn; the user has not asked to act"}` before touching the engine. The heuristic gate now has a hard backstop.
 
-### Fix 2 — No angle-bracket placeholders ([`agent/prompts.py`](agent/prompts.py))
+##### Fix 2 — No angle-bracket placeholders ([`agent/prompts.py`](../../agent/prompts.py))
 Replaced `<non-disrupted offer from step 3>` with `"read the offer_id from the offer whose is_disrupted_supplier is false"`. Replaced `<target if user gave one>` with plain English. Replaced `"scenario X"` with `"scenario_id=WAIT|TRANSFER|ALT_BUY|HYBRID"`.
 
-### Fix 3 — Descriptive explore labels + `scenario_id=None` + `option_type`
-**[`engine/tools.py`](engine/tools.py)** — labels become `"Transfers + buy 40 x OF02"` / `"Buy 40 x OF02"`, `option_type="explored"`, `scenario_id=None`.  
-**[`engine/compare.py`](engine/compare.py)** — `option_type` added to the extra-key pass-through list.  
-**[`agent/tool_specs.py`](agent/tool_specs.py)** — `_dispatch_propose_action` error for unknown scenario_id now says: `"Explored options (from explore_purchase_qty) must be proposed with offer_id, qty and include_transfers — not a scenario_id."`
+##### Fix 3 — Descriptive explore labels + `scenario_id=None` + `option_type`
+**[`engine/tools.py`](../../engine/tools.py)** — labels become `"Transfers + buy 40 x OF02"` / `"Buy 40 x OF02"`, `option_type="explored"`, `scenario_id=None`.  
+**[`engine/compare.py`](../../engine/compare.py)** — `option_type` added to the extra-key pass-through list.  
+**[`agent/tool_specs.py`](../../agent/tool_specs.py)** — `_dispatch_propose_action` error for unknown scenario_id now says: `"Explored options (from explore_purchase_qty) must be proposed with offer_id, qty and include_transfers — not a scenario_id."`
 
-### Fix 4 — No-arithmetic rule in compose instruction ([`agent/prompts.py`](agent/prompts.py))
+##### Fix 4 — No-arithmetic rule in compose instruction ([`agent/prompts.py`](../../agent/prompts.py))
 Added `CRITICAL RULE — no arithmetic`: do not compute differences, headroom, or percentages; if the number is not verbatim in a tool result, write `n/a`.
 
-### Fix 5a — Normalisation improvements ([`scripts/eval_agent.py`](scripts/eval_agent.py))
+##### Fix 5a — Normalisation improvements ([`scripts/eval_agent.py`](../../scripts/eval_agent.py))
 Thin/narrow spaces (U+2009, U+202F) between digits are removed directly. Non-breaking U+00A0 → regular space. Split IDs with 2–4 letters + space + 2–3 digits are rejoined (`"SO 02"` → `"so02"`); the `2–3 digit` constraint prevents `"is 9999"` from collapsing.
 
-### Fix 5b — Grounding check ([`scripts/eval_agent.py`](scripts/eval_agent.py))
+##### Fix 5b — Grounding check ([`scripts/eval_agent.py`](../../scripts/eval_agent.py))
 `check_grounding(result)` extracts numbers, dates, and IDs from the answer and checks each against a corpus of tool results + question text. Tokens `"12"` and `"6"` are always exempt. `_check_question` now fails if `ungrounded` is non-empty. `eval_model` saves `ungrounded` tokens to each row in the JSON output.
 
-### New tests (+17)
+##### New tests (+17)
 `TestToolOfferGuard` (4): blocked, allowed, no-guard, run_agent integration  
 `TestNoPlaceholders` (2): system prompt and compose instruction free of `<...>`  
 `TestGroundingCheck` (7): grounded number, invented number flagged, 12/6 exempt, thin/narrow space normalisation, SO02 split  
@@ -2707,6 +2737,7 @@ Existing tests updated: `test_qty_65`, `test_qty_45`, `test_all_valid_quantities
 
 ---
 
+<a id="prompt-13"></a>
 ## Prompt 13 · 2026-11-07 20:57
 
 ```text
@@ -2744,41 +2775,41 @@ explore best is not null. Run all tests and show the output.
 
 Let me read all affected files before making changes.
 
-- `read_file` engine\compare.py
-- `read_file` scripts\eval_agent.py
+- `read_file` engine/compare.py
+- `read_file` scripts/eval_agent.py
 
 **Bob:**
 
 Now read the analysis functions to add `late_order_count` and `late_count`:
 
-- `read_file` engine\analysis.py
-- `read_file` engine\analysis.py
+- `read_file` engine/analysis.py
+- `read_file` engine/analysis.py
 
-- `read_file` engine\analysis.py
+- `read_file` engine/analysis.py
 
 **Bob:**
 
 I have everything I need. Now implementing all 4 fixes:
 
-- `apply_diff` engine\compare.py
+- `apply_diff` engine/compare.py
 
 **Bob:**
 
 **Fix 2 — Normalise: split IDs only for known prefixes; Fix 3 — strip UUIDs before token extraction:**
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 **Fix 3 — Strip UUIDs before token extraction:**
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 **Fix 4 — Add `late_order_count` to `disruption_impact` and `late_count` to `priority_view`:**
 
-- `apply_diff` engine\analysis.py
+- `apply_diff` engine/analysis.py
 
 **Bob:**
 
@@ -2804,7 +2835,7 @@ AssertionError: '5 of6' != '5 of 6'
 
 The `_ID_PREFIXES` regex still matches `"of"` before `"6"`. `"of"` is in the prefix list as a prefix for `OF02` (`of` → `of` lowercase), but `"5 out of 6"` has the word `"of"` before the digit `6`. I need to remove `"of"` from the prefix list since it's ambiguous — `OF02` is `of02` after lowercasing, and `"of 02"` with a lone `"of"` before digits should be joined, but `"of 6"` is ambiguous. The simplest fix: only join when the number part is 2+ digits (identifiers are never single digits):
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 - `execute_command` `python -m unittest discover -s tests 2>&1 | Select-String "(Ran|FAIL|ERROR):" | Select-Object -Last 4`
 
@@ -2836,17 +2867,17 @@ Ran 189 tests in 0.094s
 
 All 189 pass. Now add the new tests. Find the end of `TestNormalise` and the test for `so02`:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 **Bob:**
 
 Now add tests for: UUID not flagged, explore `best` not null, `late_order_count`, `late_count`. Find the end of `TestGroundingCheck`:
 
-- `read_file` tests\test_agent.py
+- `read_file` tests/test_agent.py
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 - `execute_command` `python -m unittest discover -s tests 2>&1 | findstr /R "Ran FAIL ERROR"`
 
@@ -2870,13 +2901,13 @@ FAILED (failures=1)
 
 The data has `SO01`–`SO12`, `PO01`, `WH01`–`WH03`, `LN01`/`LN02`, `OF01`/`OF02`, `D01`, `C01`, `CU01`–`CU06`. None of them are ever written with a space in the output. The split-ID rule is only needed when an LLM response formats them as `"SO 02"`. Since `OF 02` vs `of 12` (a regular phrase) differ only in whether the text is an ID or not, the safest approach is to only join prefixes that are never standalone words: `SO`, `CU`, `WH`, `LN`, `PO` (never words); but `D`, `C`, `S`, `OF` can be standalone words. Remove `of`, `d`, `c`, `s` from the prefix list:
 
-- `apply_diff` scripts\eval_agent.py
+- `apply_diff` scripts/eval_agent.py
 
 **Bob:**
 
 Now the test `test_of_02_joined` will fail because `"of"` is no longer in the prefix list. Update that test to use `PO 02` instead (since `OF` is ambiguous), and update the normalise docstring:
 
-- `apply_diff` tests\test_agent.py
+- `apply_diff` tests/test_agent.py
 
 **Bob:**
 
@@ -2917,28 +2948,28 @@ OK
 
 ---
 
-## Changes
+#### Changes
 
-### Fix 1 — `best` is never null for explored options ([`engine/compare.py`](engine/compare.py))
+##### Fix 1 — `best` is never null for explored options ([`engine/compare.py`](../../engine/compare.py))
 When `best_opt["scenario_id"]` is `None` (explored options), `"best"` is now a dict:
 ```json
 {"label": "Transfers + buy 40 x OF02", "offer_id": "OF02", "qty": 40, "include_transfers": true}
 ```
 For named scenarios it remains a string (e.g. `"HYBRID"`). Two helpers added: `_offer_id_from_label` (regex extracts `OF02` from the label) and `_has_transfers` (checks for "transfers" in the label).
 
-### Fix 2 — Split-ID normalisation restricted to safe prefixes ([`scripts/eval_agent.py`](scripts/eval_agent.py))
+##### Fix 2 — Split-ID normalisation restricted to safe prefixes ([`scripts/eval_agent.py`](../../scripts/eval_agent.py))
 `_ID_PREFIXES` now only contains `so|cu|wh|ln|po` — prefixes that are never standalone English words. `of`, `d`, `c`, `s` are excluded. `"of 12"` and `"the 11"` no longer get joined. `\d{2,}` lookahead ensures single digits are never joined either.
 
-### Fix 3 — UUIDs stripped before token extraction ([`scripts/eval_agent.py`](scripts/eval_agent.py))
+##### Fix 3 — UUIDs stripped before token extraction ([`scripts/eval_agent.py`](../../scripts/eval_agent.py))
 `_UUID_RE` matches standard 8-4-4-4-12 hex UUIDs. `_strip_uuids()` removes them from text before `_extract_tokens` runs, applied to both the answer and the corpus. UUID fragments like `"4130"`, `"3722"` are no longer flagged.
 
-### Fix 4 — Engine count fields added ([`engine/analysis.py`](engine/analysis.py))
+##### Fix 4 — Engine count fields added ([`engine/analysis.py`](../../engine/analysis.py))
 - `disruption_impact` now returns `"late_order_count": len(late_orders)` 
 - `priority_view` now returns `"late_count": total_count - on_time_count`
 
 Both are additive — no existing keys changed.
 
-### New tests (+18)
+##### New tests (+18)
 
 **`TestNormalise`** (5): `of 12` stays separate, `the 11` stays separate, `SO 02` → `so02`, `PO 01` → `po01`, `WH 01` → `wh01`
 

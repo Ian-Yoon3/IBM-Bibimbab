@@ -179,17 +179,31 @@ IBM-Bibimbab/
 │   ├── prompts.py        System prompt, evidence playbook, answer formats
 │   ├── loop.py           run_agent(): gather phase, answer phase, guards
 │   ├── render.py         Fixed answer layouts built from engine data
+│   ├── decisions.py      Human approve/reject log, called only by the UI
 │   └── fake_llm.py       Scripted LLM for offline tests
-├── scripts/              chat.py, eval_agent.py, question_sweep.py, check_wx.py
+├── scripts/              chat.py, eval_agent.py, question_sweep.py, check_wx.py, make_ui_fixtures.py
 ├── tests/                Engine and agent tests (no network)
 ├── eval_results/         Saved evaluation transcripts
 ├── docs/decisions/       Architecture decision records
 ├── reference/            Original reference implementation and data dictionary
 ├── demo.py               Engine-only walkthrough of the tools
-├── docs/ui-contract.md    What the UI receives from run_agent() and how to approve
+├── docs/ui-contract.md   What the UI receives from run_agent() and how to approve
 ├── ui_fixtures/          Real agent results for UI work without an API key
 └── bob_sessions/         IBM Bob session records per team member
 ```
 
-For developers using IBM Bob, `AGENTS.md` and `.bob/` hold the project rules Bob reads before every task.
 Team members: see `CONTRIBUTING.md` for branches, ownership and key rules, and `docs/ui-contract.md` for the UI.
+
+## How IBM Bob was used
+
+`AGENTS.md` and `.bob/` hold the project rules Bob reads before every task.
+Each team member's Bob sessions are exported to `bob_sessions/<name>/`.
+Each record lists the sessions, the tools Bob called, and the lines Bob wrote per file.
+Each session file starts with a prompt index.
+
+| Team member | Scope | Record |
+|---|---|---|
+| Junseo (Dennis) Choi | Calculation engine: `engine/`, engine tests, `demo.py`, `AGENTS.md` and `.bob/` rules | [bob_sessions/dennis](bob_sessions/dennis/README.md) |
+| Sunghyuk (Ian) Yoon | Agent layer: watsonx.ai connection, `agent/`, engine tool additions, evaluation harness | [bob_sessions/ian](bob_sessions/ian/README.md) |
+
+Work done outside Bob is stated in each record.
