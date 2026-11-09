@@ -2,6 +2,8 @@
 
 Rules for the four of us. `README.md` is for judges and outside readers. This file is for the team.
 
+Using an AI tool? Paste `docs/team-ai-prompt.md` into it before you start.
+
 ## Who changes what
 
 | Area | Folder | Owner | Others |
@@ -19,21 +21,23 @@ If the UI needs something from the engine or the agent, open an issue or ask Ian
 ## Branches
 
 ```
-main   always green, Ian merges into it
-ui     UI owner pushes here directly
-feature/<topic>   Ian's agent and engine work, merged into main when green
+main              protected, changes only through a pull request
+ui                UI work, the UI owner pushes here directly
+feature/<topic>   any other work, one branch per topic, created from main
 ```
 
-1. `ui` is created from `main`. Before starting a work session on `ui`, bring in the latest `main`.
+1. Before each work session, bring your branch up to date with `main`.
    ```bash
-   git checkout ui
+   git checkout <your branch>
    git pull
    git merge origin/main
    ```
-2. Push to `ui` as often as you like.
-3. When the UI is ready, Ian merges `ui` into `main`.
+   For a new topic, create the branch first with `git checkout -b feature/<topic>` from `main`.
+2. Push to your branch as often as you like.
+3. When a piece of work is finished, open a pull request into `main` and add `Ian-Yoon3` as reviewer. Later pushes to the same branch update the open pull request.
+4. Ian reviews the changed files, runs the app, and merges with "Create a merge commit". This keeps every commit and its author in `main`, so contributions count.
 
-Nobody pushes to `main` except through a merge that Ian checks.
+`main` is protected. A direct push to `main` is rejected. Make sure the email in `git config user.email` is added to your GitHub account (Settings, Emails), or your commits will not show as your contributions.
 
 ## Before every push
 
