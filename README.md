@@ -14,6 +14,43 @@ Built with **IBM Bob** (development) and **IBM watsonx.ai** (LLM runtime).
 
 NovaTech, a fictional electronics manufacturer, learns on 2026-11-09 that purchase order PO01 (145 units of component C01) will arrive on 11-17 instead of 11-11. C01 goes into all three products, so 7 of 12 customer orders would be late if nothing is done. Recovery options include moving stock from two buffer warehouses and buying from an alternative supplier. The manager needs to know which option to choose under a budget, which customers are affected, and why specific orders stay late. All data is synthetic. See `reference/README.md` for the full scenario (Korean).
 
+## Full design and demo scope
+
+The full design starts from a delay notice that a manager types in plain words.
+The demo starts after the notice has been parsed and judged.
+
+```
+ [Manager]  Delay notice in free text                             not in demo
+                │
+ [Agent]    Parse notice → event JSON                             not in demo
+                │
+ [Engine]   Response needed? ── no ──► [Agent] report "wait"      not in demo
+                │ yes
+ ───────── demo starts here: data/ holds the parsed event ─────────
+                │
+ [Engine]   Run calculation: shortages, at-risk orders,  ◄───┐
+            options, evaluation, ranking                     │
+                │                                            │ what-if
+ [Agent]    Explain results and trade-offs in plain words    │ recalculate
+                │                                            │
+ [Manager]  Approve / reject, or ask what-if ────────────────┘
+```
+
+Two steps of the full design are not built in the demo.
+The agent does not read a free-text notice.
+The system does not decide whether a response is needed.
+
+`data/` holds what those two steps would produce.
+`disruptions.csv` and `purchase_orders.csv` contain the parsed event.
+The other files hold the master data around it.
+The data is synthetic.
+It was written by hand so that the scenario is complete and every result can be checked.
+`reference/verify.py` recomputes the scenarios independently of `engine/`.
+
+The demo also fixes the revised receipt date at one value (11-17).
+A real notice rarely gives one certain date.
+Handling an uncertain receipt date is planned as future work.
+
 ## How it works
 
 ```
@@ -159,6 +196,16 @@ The default model was chosen with this evaluation. See `docs/decisions/0001-defa
 - The evaluation checks tables, facts and number grounding, but not every sentence of prose. Wording is reviewed by hand.
 - The model's short reasoning sometimes states a difference it computed itself (for example "$834 less than ALT_BUY"). The ones seen in the sweep were correct, but they are not engine numbers.
 - `ibm/granite-4-h-small` can be selected but is not recommended. It wrote numbers that no tool returned in several runs (see the ADR).
+
+## Model assumptions
+
+These simplifications hold in every result the engine returns.
+
+1. **No daily production capacity.** An order starts on the first day all its components are available. Several orders can start on the same day. Long delays are therefore shown shorter than they would be with a capacity limit.
+2. **Fixed production queue.** Orders start in order of due date, then priority, then order ID. If the next order cannot start, later orders wait even when their own components are available.
+3. **Only PO01 is uncertain.** Lead times of the alternative supplier and the transfer lanes are fixed. Options that rely on them can look safer than they are.
+4. **All recovery actions are decided and executed on 11-09.** No option waits for more information before acting.
+5. **Simulation window 11-09 to 11-21.** Receipts and order starts are simulated inside this window. A receipt date after 11-21 is rejected.
 
 ## Repository layout
 
