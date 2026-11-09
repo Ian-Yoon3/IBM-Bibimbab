@@ -6,11 +6,12 @@ from pathlib import Path
 from sys import argv
 
 ROOT = Path(__file__).resolve().parent
+DATA = ROOT.parent / "data"
 DAY0 = date(2026, 11, 9)
 HORIZON = DAY0 + timedelta(days=12)
 
 def load(name, *keys):
-    with (ROOT / "data" / f"{name}.csv").open(encoding="utf-8", newline="") as file:
+    with (DATA / f"{name}.csv").open(encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
     result = {}
     for row in rows:
@@ -204,6 +205,7 @@ for scenario_id, scenario_row in scenarios.items():
     simulate(scenario_id, scenario_row)
 
 def write(name, header, rows):
+    (ROOT / "validation").mkdir(exist_ok=True)
     with (ROOT / "validation" / f"{name}.csv").open("w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file, lineterminator="\n")
         writer.writerow(header.split())

@@ -12,11 +12,11 @@ Supply chain recovery simulation for a fictional manufacturer (NovaTech). The si
 ## Commands
 
 ```bash
-# Run the full test suite (76 tests must stay green)
+# Run the full test suite (every test must stay green)
 python -m unittest discover -s tests -v
 
-# Regenerate reference/validation/*.csv (reference implementation only)
-cd reference && python3 verify.py --write
+# Re-check the CSVs with the reference implementation (reads data/, writes reference/validation/ with --write)
+python reference/verify.py
 ```
 
 ## Repository layout
@@ -37,7 +37,7 @@ cd reference && python3 verify.py --write
 ## Agent design
 
 - **Platform:** watsonx.ai chat with tool calling via `ibm_watsonx_ai.foundation_models.ModelInference`.
-- **Model:** read from env `WX_MODEL_ID`; default `ibm/granite-4-h-small`. Always set `max_tokens` explicitly.
+- **Model:** read from env `WX_MODEL_ID`; default `meta-llama/llama-3-3-70b-instruct` (see ADR 0001). Always set `max_tokens` explicitly.
 - **Tool-call arguments** may arrive as a JSON string or as a parsed object — normalise to a dict before calling the engine.
 - **Tools exposed to the LLM (8 total):**
   `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`,

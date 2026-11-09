@@ -4,7 +4,7 @@
 - **Engine API boundary:** `engine/tools.py` is the only module agents and scripts may call; never import `engine/loader.py`, `engine/simulate.py`, etc. directly from `agent/` or `scripts/`
 - **stdlib boundary:** `engine/` is stdlib-only (`csv`, `collections`, `datetime`, `pathlib`, `sys`); third-party packages (`ibm-watsonx-ai`, `python-dotenv`) are only allowed in `agent/` and `scripts/`
 - **Tool-call argument normalisation:** `ibm_watsonx_ai` may return `tool_calls[].function.arguments` as a JSON-encoded string or as a parsed dict — use `normalize_tool_calls()` from `agent/llm.py`; handles both Granite (string) and Llama (dict) shapes
-- **Model config:** read `WX_MODEL_ID` from env (default `ibm/granite-4-h-small`); always pass an explicit `max_tokens` to `ModelInference` — the SDK default (1024) emits a warning and may truncate responses
+- **Model config:** read `WX_MODEL_ID` from env (default `meta-llama/llama-3-3-70b-instruct`, see ADR 0001); always pass an explicit `max_tokens` to `ModelInference` — the SDK default (1024) emits a warning and may truncate responses
 - **Agent tests are network-free:** use `ScriptedLLM` from `agent/fake_llm.py` — never make real watsonx.ai calls in `tests/`
 - **D01 only:** validate disruption IDs against `db["disruptions"]`, not a hardcoded string; the agent must not invent delay dates or outcomes for unknown IDs
 - **8 LLM tools:** `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`, `get_priority_view`, `get_order_detail`, `explore_purchase_qty`, `propose_action`; `run_scenario` is NOT in `TOOL_SPECS`

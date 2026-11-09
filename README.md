@@ -34,7 +34,7 @@ Design rules, enforced in code:
 1. **The engine computes, the LLM explains.** Every number in an answer must come from a tool result. Counts, differences and explanations that matter (late orders, shortfalls, scope limits) are produced by the engine as fields or sentences, so the model copies them instead of calculating.
 2. **Two phases per turn.** A gather phase lets the model call tools (at most 10 steps, duplicate calls are blocked). Then the answer is built.
 3. **Fixed answer layouts, built by code.** For recommendations, comparisons, option descriptions, order explanations, proposals and unsupported questions, `agent/render.py` lays out the engine data the same way every time: a situation sentence, an options table with the same rows and columns, a ★ on the option that best meets the user's budget and objective, and a next step the user can say back (for example *"Propose TRANSFER"*). The ★ follows the user's own words (budget, target, objective), not the model's choice. The model writes only the 2 or 3 sentences of reasoning and the trade-offs. Other questions (impact, priority customers, general questions) get a free-text answer. Each result also carries a structured `view` that a UI can render directly.
-4. **Proposals only on request.** `propose_action` is offered, named in the prompt, and callable only when the user asks to act (approve, propose, implement, submit). When a proposal is created, the answer lists the option, its metrics and each action in plain language, with status `pending_approval`.
+4. **Proposals only on request, approval only by a human.** `propose_action` is offered, named in the prompt, and callable only when the user asks to act (approve, propose, implement, submit). When a proposal is created, the answer lists the option, its metrics and each action in plain language, with status `pending_approval`. Only the UI can turn a proposal into approved or rejected, through `agent/decisions.record_decision()`, which the model cannot call.
 5. **Safe failure.** Unsupported questions (new delays, unknown disruptions) get a scope note from the engine instead of invented numbers. If watsonx.ai cannot be reached, the agent retries twice and then returns a message that contains no numbers. If only the reasoning step fails, the engine-built table and recommendation are still shown.
 6. **Defensive argument handling.** String numbers and booleans (`"500"`, `"true"`) are coerced, `"null"` is treated as missing, unknown IDs and the disrupted supplier's offer are rejected with a message the model can act on.
 
@@ -186,7 +186,10 @@ IBM-Bibimbab/
 ├── docs/decisions/       Architecture decision records
 ├── reference/            Original reference implementation and data dictionary
 ├── demo.py               Engine-only walkthrough of the tools
-└── bob_sessions/ian      Add Bob session record for the agent layer (Ian)
+├── docs/ui-contract.md    What the UI receives from run_agent() and how to approve
+├── ui_fixtures/          Real agent results for UI work without an API key
+└── bob_sessions/         IBM Bob session records per team member
 ```
 
 For developers using IBM Bob, `AGENTS.md` and `.bob/` hold the project rules Bob reads before every task.
+Team members: see `CONTRIBUTING.md` for branches, ownership and key rules, and `docs/ui-contract.md` for the UI.

@@ -108,7 +108,7 @@ class WatsonxLLM:
     ----------
     model_id:
         watsonx.ai model ID.  Defaults to env ``WX_MODEL_ID`` or
-        ``ibm/granite-4-h-small``.
+        ``meta-llama/llama-3-3-70b-instruct`` (ADR 0001).
     max_tokens:
         Maximum tokens in the response.  Defaults to 2048.
     """
@@ -131,7 +131,7 @@ class WatsonxLLM:
 
         resolved_model = (
             model_id
-            or os.environ.get("WX_MODEL_ID", "ibm/granite-4-h-small")
+            or os.environ.get("WX_MODEL_ID", "meta-llama/llama-3-3-70b-instruct")
         )
 
         # Import here so the module can be imported without ibm_watsonx_ai
