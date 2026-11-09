@@ -1,7 +1,7 @@
 # Extension plan: uncertain receipt date
 
 Status: planned. Nothing here is implemented yet.
-This file lives on `feature/uncertain-receipt` and is merged into `main` together with stage 1.
+This file lives on `feature/extension-trial-ian` and is merged into `main` together with stage 1.
 It is updated as each stage is finished.
 
 ## Why
