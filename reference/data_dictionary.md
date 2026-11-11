@@ -165,3 +165,24 @@
 | `component_id` | FK components | 이전 부품 |
 | `action_date` | date | 출고 가정일 |
 | `qty` | int | 이전 EA |
+
+## worlds.csv (선택, 1단계 11행)
+
+기본 키 `world_id`. `world_overrides.csv`와 함께 있거나 함께 없어야 한다. 두 파일이 없으면 엔진은 `disruptions.revised_receipt_date` 하나를 가중치 1로 쓴다. 근거는 `docs/decisions/0002-receipt-date-weights.md`.
+
+| 필드 | 형식 | 정의 |
+|---|---|---|
+| `world_id` | ID | 세계 키. 가능한 상황 하나 |
+| `weight` | int | 1 이상 정수. 엔진이 전체 합으로 나눠 확률로 쓴다. 1단계 합계 1000은 정한 배율이며 표본 수가 아니다 |
+
+## world_overrides.csv (선택, 1단계 11행)
+
+기본 키 `world_id + target_type + target_id + field`. 세계마다 덮어쓸 기본 데이터 값. 적지 않은 값은 기본 데이터를 그대로 쓴다. 세계마다 최소 한 행이 있어야 한다.
+
+| 필드 | 형식 | 정의 |
+|---|---|---|
+| `world_id` | FK worlds | 덮어쓰기가 속한 세계 |
+| `target_type` | text | 덮어쓸 대상 종류. 1단계는 `purchase_order`만 허용 |
+| `target_id` | ID | 대상 키. `purchase_order`이면 `disruptions.po_id`에 있는 PO |
+| `field` | text | 덮어쓸 필드. 1단계는 `receipt_date`만 허용 |
+| `value` | 종류별 | `receipt_date`는 date. 해당 PO의 `planned_receipt_date` 이상, 시뮬레이션 마지막 날 이하 |
