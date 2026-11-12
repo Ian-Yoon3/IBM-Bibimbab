@@ -63,7 +63,7 @@ The exact word lists live in `agent/render.py` and its tests. Every question in 
 |---|---|---|
 | "N days late", "a delay of N days", "the delay becomes N days" | Original planned date of PO01 (11-11) | 3 days late is 11-14 |
 | "N days earlier", "N days sooner" | Announced date (11-17) | 2 days earlier is 11-15 |
-| "N more days", "N days later", "slips another N days" | Announced date (11-17) | 2 more days is 11-19 |
+| "N more days", "N days later", "N days longer", "slips another N days" | Announced date (11-17) | 2 more days is 11-19 |
 | An explicit date ("11-19", "Nov 19") | Itself | 11-19 |
 | Weeks | 7 days each | 2 weeks late is 11-25 |
 
@@ -74,15 +74,17 @@ If the wording gives more than one date, the general mode is used without a high
 The view always starts with these lines, written by code:
 
 ```
-Read as: PO01 arrives on 11-14.
-"N days late" counts from the original planned date (11-11). "N days earlier" or "N days later" counts from the announced date (11-17).
+Read as: PO01 arrives on Nov 14.
+"N days late" counts from the original planned date (Nov 11). "N days earlier" or "N days later" counts from the announced date (Nov 17).
 ```
+
+Dates in the view are written as "Nov 14", the same form the existing views use.
 
 The second line is left out when the user gave an explicit date.
 
 ### 4. Still unsupported
 
-- A resolved date after the last simulated day. The answer gives the reading, the rule line and "11-25 is after the last simulated day (11-21). Dates after the window are planned for stage 2."
+- A resolved date after the last simulated day. The answer gives the reading, the rule line and "Nov 25 is after the last simulated day (Nov 21). Dates after the window are planned for stage 2."
 - A resolved date before the original planned date.
 - Disruption IDs other than D01.
 - Changes to anything other than the receipt date of PO01, such as transfer or supplier lead times (stage 3).

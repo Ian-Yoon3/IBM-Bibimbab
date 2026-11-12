@@ -817,7 +817,7 @@ def resolve_receipt_date(user_message: str,
 
     # Determine direction
     _EARLIER_RE = re.compile(r"\b(earlier|sooner|early)\b")
-    _MORE_RE = re.compile(r"\b(more|later|another|further|extra)\b")
+    _MORE_RE = re.compile(r"\b(more|later|another|further|extra|longer)\b")
 
     from datetime import timedelta
 
@@ -844,6 +844,7 @@ def resolve_receipt_date(user_message: str,
 def reading_lines(resolution: dict) -> "list[str]":
     """Return the reading header lines for a resolved receipt date.
 
+    Dates are formatted with the _day() helper (e.g. "Nov 14").
     Returns [] for status "other_variable" or "ambiguous".
     """
     status = resolution.get("status")
@@ -856,32 +857,29 @@ def reading_lines(resolution: dict) -> "list[str]":
     announced = date.fromisoformat(resolution["announced"])
     last = date.fromisoformat(resolution["last"])
 
-    def _fmt(d: date) -> str:
-        return f"{d.month:02d}-{d.day:02d}"
-
     lines = [
-        f"Read as: {po_id} arrives on {_fmt(resolved_date)}.",
+        f"Read as: {po_id} arrives on {_day(resolved_date.isoformat())}.",
     ]
 
     if resolution["basis"] != "explicit":
         lines.append(
-            f'"N days late" counts from the original planned date'
-            f" ({_fmt(original)}). "
-            f'"N days earlier" or "N days later" counts from the announced'
-            f" date ({_fmt(announced)})."
+            '"N days late" counts from the original planned date'
+            f" ({_day(original.isoformat())}). "
+            '"N days earlier" or "N days later" counts from the announced'
+            f" date ({_day(announced.isoformat())})."
         )
 
     if status == "after_window":
         lines.append(
-            f"{_fmt(resolved_date)} is after the last simulated day"
-            f" ({_fmt(last)})."
-            f" Dates after the window are planned for stage 2."
+            f"{_day(resolved_date.isoformat())} is after the last simulated day"
+            f" ({_day(last.isoformat())})."
+            " Dates after the window are planned for stage 2."
         )
 
     if status == "before_original":
         lines.append(
-            f"{_fmt(resolved_date)} is before the original planned date"
-            f" ({_fmt(original)})."
+            f"{_day(resolved_date.isoformat())} is before the original planned date"
+            f" ({_day(original.isoformat())})."
         )
 
     return lines
@@ -919,3 +917,361 @@ def is_world_risk_question(user_message: str,
         return True
 
     return False
+
+
+# ── suggested questions (overview) ───────────────────────────────────────────
+
+SUGGESTED_QUESTIONS: list[str] = [
+    "How risky is each option if the arrival date of PO01 is uncertain?",
+    "What is the chance of no late orders with TRANSFER?",
+    "What if PO01 arrives on Nov 19?",
+    "What if the supplier is 3 days late?",
+]
+
+
+# ── world_risk_view ────────────────────────────────────────────────────────────
+
+def _world_risk_option_name(scenario_id: str, cat: dict) -> str:
+    """Return the display name for a world-risk option row."""
+    actions = _t.get_scenario_actions(scenario_id)["actions"]
+    return option_name(actions, cat)
+
+
+def world_risk_view(
+    mode: str,
+    user_message: str = "",
+    explanation=None,
+    disruption_id: str = "D01",
+) -> dict:
+    """Build a world_risk view dict from engine.tools.get_world_risk.
+
+    Parameters
+    ----------
+    mode : str
+        "overview", "general" or "date".
+    user_message : str
+        The user's message (used for budget parsing and date resolution).
+    explanation : str | None
+        LLM-generated paragraph to place in the explanation slot.
+        None -> status "unavailable" in general/date mode.
+    disruption_id : str
+        Disruption to evaluate.
+
+    Returns
+    -------
+    dict with keys: type, mode, situation, reading, focus_date, rows,
+    what_if, steps, explanation, explanation_status, scope_note,
+    suggested_questions, settings, markdown.
+
+    Raises ValueError if mode is "date" and no in-window date can be resolved.
+    """
+    if mode not in ("overview", "general", "date"):
+        raise ValueError(f"world_risk_view: unknown mode {mode!r}")
+
+    wr = _t.get_world_risk(disruption_id)
+    cat = _catalog()
+    cat["_disruptions"] = [disruption_id]
+
+    # ── focus date (date mode only) ───────────────────────────────────────────
+    focus_date = None
+    reading = []
+    if mode == "date":
+        res = resolve_receipt_date(user_message, disruption_id)
+        if res is None or res.get("status") != "in_window":
+            raise ValueError(
+                f"world_risk_view: mode 'date' requires an in-window receipt date; "
+                f"got {res!r}"
+            )
+        focus_date = res["date"]
+        reading = reading_lines(res)
+
+    # ── budget ────────────────────────────────────────────────────────────────
+    budget = parse_budget(user_message) if user_message else None
+
+    # ── what_if index for focus date ─────────────────────────────────────────
+    wi_dates = wr["what_if"]["dates"]
+    focus_idx = wi_dates.index(focus_date) if focus_date and focus_date in wi_dates else None
+
+    # ── rows ──────────────────────────────────────────────────────────────────
+    rows = []
+    for opt in wr["options"]:
+        sid = opt["scenario_id"]
+        late_at_focus = (
+            wr["what_if"]["late_orders"][sid][focus_idx]
+            if focus_idx is not None else None
+        )
+        within_budget = (
+            opt["extra_cost"] <= budget if budget is not None else None
+        )
+        rows.append({
+            "code": sid,
+            "name": _world_risk_option_name(sid, cat),
+            "scenario_id": sid,
+            "extra_cost": opt["extra_cost"],
+            "expected_late_orders": opt["expected_late_orders"],
+            "p90_late_orders": opt["p90_late_orders"],
+            "worst_late_orders": opt["worst_late_orders"],
+            "p_no_late_pct": opt["p_no_late_pct"],
+            "late_at_focus": late_at_focus,
+            "within_budget": within_budget,
+        })
+
+    # ── situation ─────────────────────────────────────────────────────────────
+    sit = situation_text(disruption_id, cat)
+    scope_note = wr["scope_note"]
+    situation = sit
+
+    # ── explanation slot ──────────────────────────────────────────────────────
+    if mode == "overview":
+        exp_status = None
+        exp_text = None
+    elif explanation is None:
+        exp_status = "unavailable"
+        exp_text = ("(The AI explanation is unavailable. "
+                    "The tables above come from the engine.)")
+    else:
+        ok, _reason = check_explanation(explanation, _build_world_risk_md_no_exp(
+            mode, sit, scope_note, reading, rows, wr, budget, focus_date
+        ))
+        if ok:
+            exp_status = "ok"
+            exp_text = explanation
+        else:
+            exp_status = "dropped"
+            exp_text = ("(The AI explanation is not shown because it used a number "
+                        "or an option that is not in the tables.)")
+
+    # ── markdown ──────────────────────────────────────────────────────────────
+    # _build_world_risk_md_no_exp returns sections up to and including Notes and
+    # Next step.  We splice "What this means" between Trade-offs and Notes.
+    body_md = _build_world_risk_md_no_exp(
+        mode, sit, scope_note, reading, rows, wr, budget, focus_date
+    )
+    if mode != "overview" and exp_text:
+        # Insert "## What this means" after Trade-offs, before Notes.
+        notes_marker = "\n\n## Notes\n"
+        if notes_marker in body_md:
+            body_md = body_md.replace(
+                notes_marker,
+                f"\n\n## What this means\n{exp_text}{notes_marker}",
+                1,
+            )
+        else:
+            body_md += f"\n\n## What this means\n{exp_text}"
+    md = body_md
+
+    # ── suggested questions (overview only) ──────────────────────────────────
+    sq = SUGGESTED_QUESTIONS if mode == "overview" else []
+
+    return {
+        "type": "world_risk",
+        "mode": mode,
+        "situation": situation,
+        "reading": reading,
+        "focus_date": focus_date,
+        "rows": rows,
+        "what_if": wr["what_if"],
+        "steps": wr["tradeoff_steps"],
+        "explanation": exp_text if mode != "overview" else None,
+        "explanation_status": exp_status,
+        "scope_note": scope_note,
+        "suggested_questions": sq,
+        "settings": {"budget": budget},
+        "markdown": md,
+    }
+
+
+def _build_world_risk_md_no_exp(
+    mode: str,
+    sit: str,
+    scope_note: str,
+    reading: list,
+    rows: list,
+    wr: dict,
+    budget,
+    focus_date,
+) -> str:
+    """Build the markdown for world_risk_view excluding the explanation section."""
+    parts = []
+
+    # ## Situation (with full scope_note)
+    parts.append(f"## Situation\n{sit}\n{scope_note}")
+
+    # ## Reading (date mode only)
+    if mode == "date" and reading:
+        parts.append("## Reading\n" + "\n".join(reading))
+
+    # ## Time and cost by option
+    focus_date_day = _day(focus_date) if focus_date else None
+    header_cols = [
+        "Option", "Extra cost", "Expected late orders",
+        "90th percentile", "Worst case", "Chance of no late order",
+    ]
+    if focus_date:
+        header_cols.append(f"Late if it arrives {focus_date_day}")
+    if budget is not None:
+        header_cols.append("Within budget")
+
+    header = "| " + " | ".join(header_cols) + " |"
+    sep = "| " + " | ".join(["---"] * len(header_cols)) + " |"
+    table_rows = [header, sep]
+    for r in rows:
+        cells = [
+            f"{r['name']} ({r['code']})",
+            _money(r["extra_cost"]),
+            f"{r['expected_late_orders']:.2f}",
+            str(r["p90_late_orders"]),
+            str(r["worst_late_orders"]),
+            f"{r['p_no_late_pct']:.1f}%",
+        ]
+        if focus_date:
+            cells.append(str(r["late_at_focus"]))
+        if budget is not None:
+            cells.append("Yes" if r["within_budget"] else "No")
+        table_rows.append("| " + " | ".join(cells) + " |")
+    parts.append("## Time and cost by option\n" + "\n".join(table_rows))
+
+    # ## Late orders by receipt date
+    dates = wr["what_if"]["dates"]
+    wi_header = ["Option"] + [_day(d) for d in dates]
+    if focus_date and focus_date in dates:
+        fidx = dates.index(focus_date)
+    else:
+        fidx = None
+
+    # Bold the focus column header
+    if fidx is not None:
+        wi_header[fidx + 1] = f"**{wi_header[fidx + 1]}**"
+
+    wi_hdr = "| " + " | ".join(wi_header) + " |"
+    wi_sep = "| " + " | ".join(["---"] * len(wi_header)) + " |"
+    wi_rows_lines = [wi_hdr, wi_sep]
+    for r in rows:
+        sid = r["scenario_id"]
+        late_vals = wr["what_if"]["late_orders"][sid]
+        cells = [f"{r['name']} ({r['code']})"]
+        for i, v in enumerate(late_vals):
+            cell = str(v)
+            if fidx is not None and i == fidx:
+                cell = f"**{cell}**"
+            cells.append(cell)
+        wi_rows_lines.append("| " + " | ".join(cells) + " |")
+    parts.append("## Late orders by receipt date\n" + "\n".join(wi_rows_lines))
+
+    # ## Trade-offs
+    bullets = []
+    for step in wr["tradeoff_steps"]:
+        frm = step["from"]
+        to = step["to"]
+        cost_chg = step["extra_cost_change"]
+        exp_chg = step["expected_late_change"]
+        p90_chg = step["p90_late_change"]
+        worst_chg = step["worst_late_change"]
+        p_no_chg = step["p_no_late_pct_change"]
+        bullets.append(
+            f"- {frm} to {to}: +{_money(cost_chg)}, "
+            f"expected late orders {exp_chg:+.2f}, "
+            f"90th percentile {p90_chg:+d}, "
+            f"worst case {worst_chg:+d}, "
+            f"chance of no late order {p_no_chg:+.1f} points"
+        )
+    parts.append("## Trade-offs\n" + "\n".join(bullets))
+
+    # ## Notes
+    notes = [
+        "Time and cost are shown side by side and never combined into one score.",
+        "90th percentile: in 9 of 10 weighted cases late orders are at or below this number.",
+        "The weights are an assumption from the data file.",
+    ]
+
+    if mode == "overview":
+        sq_lines = "\n".join(f"- *{q}*" for q in SUGGESTED_QUESTIONS)
+        next_step = f"## Next step\n{sq_lines}"
+    else:
+        next_step = (
+            '## Next step\n'
+            'To act on an option, say *"Propose HYBRID"* or another option code.'
+        )
+
+    # Order: Trade-offs already appended. Now: Notes, Next step.
+    # The "What this means" slot is inserted by world_risk_view between
+    # Trade-offs and Notes so that the final heading order is:
+    # Situation, [Reading,] Time and cost, Late orders, Trade-offs,
+    # What this means, Notes, Next step.
+    parts.append("## Notes\n" + "\n".join(notes))
+    parts.append(next_step)
+
+    return "\n\n".join(parts)
+
+
+# ── check_explanation ─────────────────────────────────────────────────────────
+
+def check_explanation(text: str, view_md_no_exp: str) -> tuple:
+    """Validate an LLM explanation paragraph against the view.
+
+    Parameters
+    ----------
+    text : str
+        The LLM-generated paragraph.
+    view_md_no_exp : str
+        The view markdown WITHOUT the explanation section.
+
+    Returns
+    -------
+    (ok: bool, reason: str)
+      ok is True only when:
+        a) Every digit sequence in text equals some number in view_md_no_exp.
+        b) Every option code in text (WAIT, TRANSFER, ALT_BUY, HYBRID, NORMAL,
+           OF\\d{2}) is in the view markdown.
+        c) At most 4 sentences.
+    """
+    # (c) sentence count — split only on . ! ? followed by whitespace or end
+    sentences = [s.strip() for s in re.split(r"[.!?]+(?=\s|$)", text) if s.strip()]
+    if len(sentences) > 4:
+        return False, f"too many sentences ({len(sentences)})"
+
+    # Normalise view numbers: strip commas, collect all numbers as strings
+    def _extract_numbers(s: str) -> set:
+        # Match digit sequences with optional decimal, strip commas first
+        s_clean = s.replace(",", "")
+        return {m.group() for m in re.finditer(r"\d+(?:\.\d+)?", s_clean)}
+
+    view_numbers = _extract_numbers(view_md_no_exp)
+
+    # Normalise text numbers; accept integer N if view has N.0, and vice-versa.
+    text_clean = text.replace(",", "")
+    for m in re.finditer(r"\d+(?:\.\d+)?", text_clean):
+        num = m.group()
+        if num in view_numbers:
+            continue
+        # Try integer/decimal equivalence: "35" matches "35.0", "35.0" matches "35"
+        if "." in num:
+            base = num.rstrip("0").rstrip(".")
+            if base in view_numbers:
+                continue
+        else:
+            if (num + ".0") in view_numbers:
+                continue
+        return False, f"number {num!r} not in view"
+
+    # (b) option codes
+    valid_codes = set(re.findall(r"\b(WAIT|TRANSFER|ALT_BUY|HYBRID|NORMAL|OF\d{2})\b",
+                                 view_md_no_exp))
+    for code in re.findall(r"\b(WAIT|TRANSFER|ALT_BUY|HYBRID|NORMAL|OF\d{2})\b", text):
+        if code not in valid_codes:
+            return False, f"option code {code!r} not in view rows"
+
+    return True, "ok"
+
+
+# ── parse_world_risk_answer ───────────────────────────────────────────────────
+
+def parse_world_risk_answer(text: str) -> str:
+    """Strip the 'Answer:' label from a world-risk LLM response.
+
+    'Answer: <paragraph>' -> '<paragraph>'
+    """
+    stripped = text.strip()
+    if stripped.startswith("Answer:"):
+        return stripped[len("Answer:"):].strip()
+    return stripped

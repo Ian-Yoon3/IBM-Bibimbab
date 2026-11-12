@@ -92,9 +92,18 @@ class TestResolveReceiptDate(unittest.TestCase):
                "What if it arrives 10 days earlier?",
                "2026-11-07", "announced", "before_original")
 
+    # ── "longer" counts from announced ────────────────────────────────────────
+
+    def test_longer_counts_from_announced(self):
+        """'2 days longer than announced' -> announced + 2 = 2026-11-19, basis announced."""
+        _check(self,
+               "The delay is 2 days longer than announced.",
+               "2026-11-19", "announced", "in_window")
+
     # ── other_variable ────────────────────────────────────────────────────────
 
     def test_other_variable_transfer(self):
+        """'transfer takes 2 days longer' still hits other_variable (not announced+N)."""
         r = resolve_receipt_date("What if the transfer takes 2 days longer?")
         self.assertIsNotNone(r)
         self.assertEqual(r.get("status"), "other_variable",
@@ -137,10 +146,10 @@ class TestReadingLines(unittest.TestCase):
         lines = reading_lines(r)
         self.assertEqual(len(lines), 2,
                          msg=f"Expected 2 lines, got {len(lines)}: {lines!r}")
-        self.assertEqual(lines[0], "Read as: PO01 arrives on 11-14.")
-        # Second line contains both counting rules
-        self.assertIn("11-11", lines[1])
-        self.assertIn("11-17", lines[1])
+        self.assertEqual(lines[0], "Read as: PO01 arrives on Nov 14.")
+        # Second line contains both counting rules using _day format
+        self.assertIn("Nov 11", lines[1])
+        self.assertIn("Nov 17", lines[1])
 
     def test_reading_lines_explicit_one_line(self):
         """Explicit date: only the read-as line (no counting rule)."""
@@ -148,7 +157,7 @@ class TestReadingLines(unittest.TestCase):
         lines = reading_lines(r)
         self.assertEqual(len(lines), 1,
                          msg=f"Expected 1 line, got {len(lines)}: {lines!r}")
-        self.assertEqual(lines[0], "Read as: PO01 arrives on 11-19.")
+        self.assertEqual(lines[0], "Read as: PO01 arrives on Nov 19.")
 
     def test_reading_lines_two_weeks_three_lines(self):
         """Two weeks: three lines — read-as, counting rule, and after-window note."""
@@ -156,10 +165,10 @@ class TestReadingLines(unittest.TestCase):
         lines = reading_lines(r)
         self.assertEqual(len(lines), 3,
                          msg=f"Expected 3 lines, got {len(lines)}: {lines!r}")
-        self.assertEqual(lines[0], "Read as: PO01 arrives on 11-25.")
-        # Third line mentions 11-25 and 11-21 (last simulated day)
-        self.assertIn("11-25", lines[2])
-        self.assertIn("11-21", lines[2])
+        self.assertEqual(lines[0], "Read as: PO01 arrives on Nov 25.")
+        # Third line mentions Nov 25 and Nov 21 (last simulated day)
+        self.assertIn("Nov 25", lines[2])
+        self.assertIn("Nov 21", lines[2])
 
     def test_reading_lines_empty_for_other_variable(self):
         r = {"status": "other_variable"}

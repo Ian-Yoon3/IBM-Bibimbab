@@ -317,3 +317,71 @@ def build_messages(
     system_msg = {"role": "system", "content": build_system_prompt(allow_propose)}
     user_msg   = {"role": "user",   "content": user_message}
     return [system_msg] + (history or []) + [user_msg]
+
+
+# ── World-risk compose message ────────────────────────────────────────────────
+
+def build_world_risk_message(user_message: str, view: dict) -> dict:
+    """Return the compose-phase user message for a world_risk view.
+
+    Includes the user message, reading lines, the time-and-cost table, the
+    late-orders-by-date table, the trade-off bullets, and the writing rules.
+
+    Parameters
+    ----------
+    user_message : str
+        The original user question.
+    view : dict
+        A world_risk_view() result dict.
+
+    Returns
+    -------
+    A single {"role": "user", "content": ...} dict.
+    """
+    md = view["markdown"]
+
+    # Extract sections relevant to the LLM (reading, two tables, trade-offs)
+    def _section(heading: str) -> str:
+        marker = f"## {heading}"
+        start = md.find(marker)
+        if start == -1:
+            return ""
+        end = md.find("\n## ", start + 1)
+        return md[start:end].strip() if end != -1 else md[start:].strip()
+
+    reading_sec = _section("Reading")
+    table_sec = _section("Time and cost by option")
+    wi_sec = _section("Late orders by receipt date")
+    tradeoff_sec = _section("Trade-offs")
+
+    sections = []
+    if reading_sec:
+        sections.append(reading_sec)
+    if table_sec:
+        sections.append(table_sec)
+    if wi_sec:
+        sections.append(wi_sec)
+    if tradeoff_sec:
+        sections.append(tradeoff_sec)
+
+    rules = (
+        "Rules:\n"
+        "- Answer the user's question in at most 4 plain sentences.\n"
+        "- Use only numbers that appear above.\n"
+        "- Do not compute differences, sums, ratios or averages.\n"
+        "- Never combine time and cost into one score.\n"
+        "- Do not pick a single best option unless the user gave a criterion; "
+        "then use only the marks in the table.\n"
+        "- You may point out where measures disagree.\n"
+        "- Mention only option codes that are rows of the table.\n"
+        "- No headings, tables, lists or next steps.\n"
+        "- Do not guess about the supplier.\n\n"
+        'Output form: "Answer: <paragraph>"'
+    )
+
+    content = (
+        f"User question: {user_message}\n\n"
+        + "\n\n".join(sections)
+        + f"\n\n{rules}"
+    )
+    return {"role": "user", "content": content}
