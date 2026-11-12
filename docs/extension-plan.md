@@ -117,9 +117,11 @@ New module `engine/worlds.py`.
 ### Tool, view and contract
 
 - One public function in `engine/tools.py`. It is not added to the LLM tool list. `tests/test_agent.py` checks that exactly 8 tools are exposed, and weights never come from the LLM.
-- A new `view` in `agent/render.py`, chosen by code from the question text after the proposal and unsupported checks. Existing views stay unchanged.
-- `docs/ui-contract.md` gets the new view. UI changes are agreed with the UI owner first.
-- A fixture for the new view needs a real watsonx.ai run (Ian only). It also needs the new view type in `EXPECTED_TYPES` of `tests/test_ui_fixtures.py`, in a separate commit.
+- Answers follow ADR 0003 (`docs/decisions/0003-uncertain-date-in-agent-answers.md`). New view `world_risk` with three modes (overview, general, date). Tables by code, one checked LLM paragraph.
+- `agent.overview.get_overview()` gives the first screen without a watsonx.ai call. The UI may call it.
+- Questions that resolve to a receipt date inside the window are answered, not declined. The reading and the counting rule are printed with the answer. This changes the unsupported view on purpose.
+- Work is split into three Bob steps, so that every commit passes all tests. V1 adds the date reading and the routing test as new functions, with no change in behaviour. V2 adds the view, the overview, the LLM paragraph and the number check, not yet wired in. V3 wires everything in, makes the deliberate changes of ADR 0003, updates the existing tests, the evaluation questions and `docs/ui-contract.md`. Ian runs a real watsonx.ai sweep and regenerates the fixtures before V3 is committed, because the fixture test replays saved real runs.
+- The UI owner receives the contract as a handover. The UI layout is the UI owner's work.
 
 ### Checks
 
@@ -158,7 +160,6 @@ Each item removes one model assumption listed in the README.
 
 ## Open decisions
 
-- Stage 1. How the new view looks in the UI. To be agreed with the UI owner.
 - Stage 3. Information model for conditional options. Does the manager only learn that PO01 has not arrived, or does the manager receive an updated date?
 
 ## References
