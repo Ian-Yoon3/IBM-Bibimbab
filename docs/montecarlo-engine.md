@@ -36,9 +36,11 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-12 | "More realistic" means limited history. Few records per source, synthetic but plausible. | Section 6 |
 | 2026-11-12 | No neural acceleration in stage 2. | Section 5 |
 | 2026-11-12 | Plain Monte Carlo, common random numbers and Latin hypercube sampling. Every summary number gets a standard error. | Section 5 |
-| 2026-11-12 | Scale is split off as optional stage 2-1. | Section 7 |
+| 2026-11-12 | Scale is split off as optional stage 2-1. | Section 8 |
 | 2026-11-12 | Two shared causes (option B). Gateway congestion moves PO01 and OF02. Regional transport disruption moves LN01 and LN02. | Section 4.2 |
 | 2026-11-12 | Shared causes are modelled as common shocks with a shared severity, not as a copula. | Sections 4.3 and 4.5 |
+| 2026-11-12 | Shared causes are recorded in the history as episodes. Two history files under `data/history/`. | Section 6.1 |
+| 2026-11-12 | History is generated as a calendar process that is richer than the estimator. One demo history is committed. The method is checked over many generated histories. | Sections 6.3 and 6.4 |
 
 ## 3. Structure
 
@@ -47,7 +49,8 @@ Solid boxes are decided. Dashed boxes are open and name the question that settle
 ```mermaid
 flowchart LR
     subgraph IN["Inputs"]
-        H["History records<br/>few rows per source<br/>(Q2)"]
+        G["History generator<br/>calendar process<br/>true parameters<br/>(values after Q3, Q4)"]
+        H["History records<br/>data/history/<br/>shipments + episodes"]
         B["Base data<br/>data/*.csv<br/>unchanged"]
     end
 
@@ -69,14 +72,14 @@ flowchart LR
         V["world_risk view<br/>+ standard errors"]
     end
 
-    H --> EST --> PAR --> SMP --> COL
+    G --> H --> EST --> PAR --> SMP --> COL
     COL --> W
     COL --> META
     B --> LD
     W --> LD --> WM --> V
 
     classDef open stroke-dasharray: 5 5
-    class H,EST,PAR open
+    class G,EST,PAR open
 ```
 
 Two separate functions are kept on purpose.
@@ -115,6 +118,8 @@ A storm that triggers both is left as future work.
 1. S01 and S02 bring C01 in through the same import gateway.
 2. One congestion episode covers the whole window, so OF02 (shipped 11-09) and PO01 (shipped after the repair) see the same backlog.
 3. The announced date 11-17 reflects the equipment repair only. Gateway congestion comes on top of it.
+4. Congestion and transport disruptions are recorded when they happen. Import shipments carry customs clearance times and carriers report delay reason codes, so this is not an artificial assumption.
+5. A revised date announced after the repair is kept about as well as S01's ordinary promised dates. The own delay $E_R$ is estimated from S01's promise errors.
 
 ### 4.3 Equations
 
@@ -150,7 +155,7 @@ With LHS each input gets its own stratified column.
 
 **Covariance.** For two variables exposed to the same cause $k$,
 
-$$\operatorname{Cov} = \operatorname{Var}(S_k C_k) = p_k\,\mathbb{E}[C_k^2] - p_k^2\,\mathbb{E}[C_k]^2 .$$
+$$\mathrm{Cov} = \mathrm{Var}(S_k C_k) = p_k \mathbb{E}[C_k^2] - p_k^2 \mathbb{E}[C_k]^2 .$$
 
 Variables exposed to different causes have covariance zero.
 Step 5 checks the sampled covariance against this value.
@@ -238,26 +243,85 @@ With OF02 uncertain, ALT_BUY and TRANSFER come close in expected late orders (3.
 - **No neural acceleration.** One simulation takes about 0.1 ms and samples collapse into a few hundred distinct worlds, so there is nothing to accelerate. Neural Importance Sampling (Müller et al. 2019) was considered and rejected. Recorded in ADR 0004.
 - **Dependencies.** Python standard library only unless decided otherwise.
 
-## 6. Open questions
+## 6. History records (decided)
+
+### 6.1 Files
+
+The history lives in `data/history/`.
+The loader of the main engine never reads it.
+Keeping it under the data folder lets a separate data set (stage 2-1) carry its own history.
+
+| File | Columns |
+|---|---|
+| `shipments.csv` | `shipment_id, source_id, ship_date, promised_date, receipt_date, episode_id` |
+| `episodes.csv` | `episode_id, cause_id, start_date, end_date, delay_days` |
+
+- `source_id` is one of OF01, OF02, LN01, LN02.
+- `cause_id` is K1 (gateway congestion) or K2 (regional transport disruption).
+- `episode_id` is empty for a shipment that met no episode.
+- The own delay of a shipment is its lateness minus the delay of its episode. In days, `receipt_date - promised_date - delay_days`, with `delay_days` taken as 0 when there is no episode.
+
+Episodes are recorded rather than hidden.
+With hidden episodes every delay would have to be split into its own part and its shared part by a mixture model fitted with the EM algorithm (Dempster, Laird and Rubin 1977).
+Tens of records are too few for that to be stable.
+Recorded episodes let $p_k$ and $C_k$ be counted directly (assumption 4 in section 4.2).
+
+### 6.2 Size
+
+Twelve months before DAY0, 2025-11-09 to 2026-11-08.
+
+| Source | Records | Reason |
+|---|---|---|
+| OF01 (S01 regular orders) | 12 | One order a month |
+| OF02 (S02 alternative supply) | 6 | Used rarely. The thinnest source on purpose |
+| LN01 | 15 | Transfers between warehouses are more frequent |
+| LN02 | 10 | |
+| K1 gateway congestion | 3 to 4 episodes | |
+| K2 regional transport disruption | 4 to 5 episodes | Winter weather and similar |
+
+The real limit is the episode count, not the shipment count.
+Shipments inside one episode share its delay, so they are not independent observations of $C_k$.
+The severity distribution of each cause rests on three to five numbers.
+
+### 6.3 Generator
+
+- **Calendar process.** Episodes of each cause start at random times on the twelve-month calendar, last a random number of days and carry a severity in days. Shipments are placed on the calendar by their schedule. A shipment in transit during an episode of a cause it is exposed to receives that episode's delay. Shipments of S01 and S02 in the same weeks therefore share the same congestion, as in reality.
+- **Richer than the estimator, on purpose.** The generator has episode start times, durations and severities. The estimator in section 4.3 only knows whether a cause is active in the window ($S_k$) and how many days it adds ($C_k$). Real systems are always richer than the model used on them, so the mismatch is the honest test.
+- **True parameters live only in the generator.** They define the synthetic world and are stated as such in the README. Real records would replace the generator, not the engine. Their values are set after Q3 and Q4. Where a verified public statistic gives a plausible scale it is used, otherwise the values are stated as chosen.
+- **Fixed seed.** The demo history is committed, so nobody needs to rerun the generator to see the demo.
+- **Upper challenge.** The generator also uses different distribution families from the estimator, and coverage (section 6.4) is checked again.
+
+### 6.4 Checking the method over many histories
+
+One history is one draw of luck.
+A good result on one seed says little about the method.
+
+The method is therefore checked over many generated histories, as in a standard simulation study (Morris, White and Crowther 2019).
+For each history the engine estimates the parameters, runs the Monte Carlo and reports each summary number with its interval.
+The true value of each number comes from the true process with a large sample.
+Coverage is the share of histories whose interval contains the true value.
+A 95% interval that covers the truth far less often than 95% of the time means the uncertainty is understated.
+The number of histories is set in Q5. One evaluation of a world takes about 0.1 ms, so a few hundred histories are affordable.
+
+## 7. Open questions
 
 | # | Question | What it settles |
 |---|---|---|
-| Q2 | History records | Files, columns (including the recorded congestion state), rows per source, how the synthetic history is generated. The true parameters live only in the generator. The engine sees only the history. |
-| Q3 | Estimation from few records | Distribution family for $E$, $C$ and $p$. Parametric fit, Bayesian with a prior from the announced date, or pooling across sources. How parameter uncertainty enters the samples. Candidate reference Gelman et al. 2013, to be checked before use. |
+| Q3 | Estimation from few records | Distribution family for $E$, $C$ and $p$. The severity $C$ rests on 3 to 5 recorded episodes per cause. Parametric fit, Bayesian with a prior from the announced date, or pooling across sources. How parameter uncertainty enters the samples. Candidate reference Gelman et al. 2013, to be checked before use. |
 | Q4 | How late dates can get | Upper tail of $R$ and the lead times, the weekend and holiday rule, and with them the new end of the window. |
 | Q5 | Sample count and error target | Default $N$, the standard error target for each reported number, and the LHS comparison grid. |
 
-## 7. How stage 2 proceeds
+## 8. How stage 2 proceeds
 
 ### Steps
 
 | # | Step | Notes |
 |---|---|---|
-| 1 | Model design | This document. Q2 to Q5 remain. |
+| 1 | Model design | This document. Q1 and Q2 decided. Q3 to Q5 remain. |
 | 2 | Format change | Wide single CSV, loader rewrite, ADR 0004. Stage 1 results must come out identical in the new format. |
 | 3 | Window separation | One place defines the window, up to the end from Q4. Today it lives in `loader.py` (`HORIZON_DAYS`, worlds block), `evaluate.py` (`HORIZON_ISO`) and `simulate.py` (window check). Remove the dead line `DAY0.replace(day=DAY0.day + HORIZON_DAYS)`, which fails past November 30. |
 | 4 | Monte Carlo engine | Samples, grouping, weights, one file. Location of the module is decided here. |
-| 5 | Verification | See section 8. |
+| 5 | Verification | See section 9. |
 | 6 | Open the new kinds | `offer.lead_days` and `lane.lead_days`. The what-if table varies one variable at a time with the others at base values. View shows the tail and conditional numbers (section 4.6). |
 | 7 | Cleanup | Delete `scripts/stage1_triangular_worlds.py` and its test, mark ADR 0002 superseded, update docs, real sweeps, fixtures. |
 
@@ -278,19 +342,20 @@ Target is stage 2 done around 11-18. The deadline with the demo video is 11-22.
 - **Experiment.** Same error target, compare run time and error for plain Monte Carlo, LHS and multifidelity Monte Carlo with a surrogate as a control variate (Peherstorfer, Willcox and Gunzburger 2016, 2018). The surrogate only saves exact runs and never sets the reported number.
 - Touches the engine owner's validation, so it is agreed with the team first.
 
-## 8. Verification plan (step 5)
+## 9. Verification plan (step 5)
 
 | Check | Known answer |
 |---|---|
 | Independent case ($p_1 = p_2 = 0$) | Exact convolution of the own-delay distributions. Sampled weights converge to it within a tolerance, fixed seed. |
-| Shared cause creates correlation | Sampled covariance against $p_k\,\mathbb{E}[C_k^2] - p_k^2\,\mathbb{E}[C_k]^2$. Covariance across the two causes is zero. |
+| Shared cause creates correlation | Sampled covariance against $p_k \mathbb{E}[C_k^2] - p_k^2 \mathbb{E}[C_k]^2$. Covariance across the two causes is zero. |
 | Conditional probability | Exact finite sum (section 4.4) against the sampled share. |
-| Estimator recovers the truth | Parameters estimated from generated history against the generator's true parameters, within the stated uncertainty. |
+| Estimator recovers the truth | Parameters estimated from the demo history against the generator's true parameters, within the stated uncertainty. |
+| Interval coverage | Share of many generated histories whose interval contains the true value, against the nominal level (section 6.4). |
 | Stage 1 regression | Stage 1 worlds in the new format give the ADR 0002 table exactly. |
 | Error shrinks with $N$ | Standard error falls roughly as $1/\sqrt{N}$ for plain Monte Carlo. |
 | LHS against plain | Error against $N$ for both, same seed set. |
 
-## 9. References
+## 10. References
 
 Each reference is listed with the reason it is treated as verified.
 
@@ -314,6 +379,10 @@ Each reference is listed with the reason it is treated as verified.
   Review in a leading actuarial journal on why copulas are not unique for discrete data. Widely cited.
 - R. B. Nelsen, *An Introduction to Copulas*, 2nd ed., Springer, 2006. [doi:10.1007/0-387-28678-0](https://doi.org/10.1007/0-387-28678-0)
   Standard textbook on copulas. Cited only to describe the rejected option.
+- A. P. Dempster, N. M. Laird, D. B. Rubin, "Maximum Likelihood from Incomplete Data via the EM Algorithm," *Journal of the Royal Statistical Society, Series B* 39(1), 1–38, 1977. [doi:10.1111/j.2517-6161.1977.tb01600.x](https://doi.org/10.1111/j.2517-6161.1977.tb01600.x)
+  Standard method for estimation with hidden variables. Among the most cited papers in statistics. Cited only to explain why episodes are recorded rather than hidden.
+- T. P. Morris, I. R. White, M. J. Crowther, "Using Simulation Studies to Evaluate Statistical Methods," *Statistics in Medicine* 38(11), 2074–2102, 2019. [doi:10.1002/sim.8086](https://doi.org/10.1002/sim.8086)
+  Tutorial on evaluating a method over many generated data sets, including coverage. Cited thousands of times and used as the standard guide for simulation studies.
 - R. A. Fisher, "Frequency Distribution of the Values of the Correlation Coefficient in Samples from an Indefinitely Large Population," *Biometrika* 10(4), 507–521, 1915. [doi:10.2307/2331838](https://doi.org/10.2307/2331838)
   Origin of the $z$ transformation used for the interval on $\rho$. Taught in every statistics curriculum.
 - D. V. Lindley, *Making Decisions*, 2nd ed., Wiley, 1985.
