@@ -235,7 +235,7 @@ Stage 1 added two more sweeps with the same model:
 | 25 conversations, 28 answers, first world_risk prompt | `eval_results/sweep_20261112_015014.json` | No flagged answer. One paragraph named the late orders on one date "expected late orders". One correct paragraph was dropped because the stated budget was not shown. Both were fixed |
 | Same questions, revised prompt | `eval_results/sweep_20261112_020142.json` | No flagged answer, no dropped paragraph, every number in the world_risk paragraphs carries the right column name. Source of `ui_fixtures/` |
 
-The golden question Q5 ("What if the delay becomes 8 days?") now expects the `world_risk` answer for Nov 19 instead of a refusal. The golden evaluation in the table above was run before stage 1.
+The golden question Q5 ("What if the delay becomes 8 days?") now expects the `world_risk` answer for Nov 19 instead of a refusal. After stage 1 the golden evaluation was run again: `eval_results/20261112_021518.json`, **13 of 13 passed**. Q5 called only `get_disruption`, read the question as Nov 19 and quoted the "Late if it arrives Nov 19" column.
 
 The default model was chosen with this evaluation. See `docs/decisions/0001-default-llm-model.md`.
 
