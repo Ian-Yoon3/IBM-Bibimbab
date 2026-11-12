@@ -1,4 +1,5 @@
-"""Load and validate all 14 CSV data files for the supply chain engine."""
+"""Load and validate all 14 CSV data files for the supply chain engine,
+plus two optional world files (worlds.csv and world_overrides.csv)."""
 import csv
 from collections import defaultdict
 from datetime import date
@@ -9,6 +10,14 @@ _DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 DAY0 = date(2026, 11, 9)
 HORIZON_DAYS = 12
+
+# ---------------------------------------------------------------------------
+# Open kinds: the single place that maps (target_type, field) to a value parser.
+# A kind not listed here raises ValueError - nothing is silently ignored.
+# ---------------------------------------------------------------------------
+_OPEN_KINDS = {
+    ("purchase_order", "receipt_date"): lambda v, f: _date(v, f),
+}
 
 
 def _load_csv(name: str, data_dir: Path) -> list[dict]:
@@ -42,7 +51,7 @@ def _require(row: dict, field: str, table: str) -> str:
 
 
 def load_all(data_dir=None) -> dict:
-    """Load and validate all 14 CSVs.  Returns a single db dict."""
+    """Load and validate all 14 CSVs and optional world files.  Returns a single db dict."""
     dd = Path(data_dir) if data_dir is not None else _DEFAULT_DATA_DIR
 
     # ── products ──────────────────────────────────────────────────────────────
@@ -273,6 +282,145 @@ def load_all(data_dir=None) -> dict:
             "reason": _require(r, "reason", "disruptions"),
         }
 
+    # ── worlds (optional) ─────────────────────────────────────────────────────
+    # Both files must be present together, or both absent.
+    worlds_path = dd / "worlds.csv"
+    overrides_path = dd / "world_overrides.csv"
+    worlds_present = worlds_path.exists()
+    overrides_present = overrides_path.exists()
+
+    if worlds_present != overrides_present:
+        missing = "world_overrides.csv" if worlds_present else "worlds.csv"
+        present = "worlds.csv" if worlds_present else "world_overrides.csv"
+        raise ValueError(
+            f"{present} is present but {missing} is missing; "
+            "both world files must be present together or both absent"
+        )
+
+    if not worlds_present:
+        worlds_db = None
+    else:
+        # --- worlds.csv ---
+        with worlds_path.open(encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            actual_header = reader.fieldnames or []
+            expected_header = ["world_id", "weight"]
+            if list(actual_header) != expected_header:
+                raise ValueError(
+                    f"worlds.csv: header must be exactly {expected_header}, "
+                    f"got {list(actual_header)}"
+                )
+            worlds_order = []   # list of world_id in file order
+            worlds_weight = {}  # world_id -> weight int
+            for row in reader:
+                wid = row.get("world_id", "")
+                if not wid:
+                    raise ValueError("worlds.csv: world_id must not be empty")
+                if wid in worlds_weight:
+                    raise ValueError(
+                        f"worlds.csv: duplicate world_id {wid!r}"
+                    )
+                raw_w = row.get("weight", "")
+                try:
+                    weight = _int(raw_w, "weight")
+                except ValueError as exc:
+                    raise ValueError(f"worlds.csv: world {wid!r}: {exc}") from exc
+                if weight < 1:
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: weight must be >= 1, got {weight}"
+                    )
+                worlds_order.append(wid)
+                worlds_weight[wid] = weight
+
+        if not worlds_order:
+            raise ValueError("worlds.csv: must contain at least one world")
+
+        # --- world_overrides.csv ---
+        # Collect: world_id -> {(target_type, target_id, field): parsed_value}
+        overrides_by_world = {wid: {} for wid in worlds_order}
+
+        # po_ids that appear in disruptions (these are the supported target_ids
+        # for the purchase_order kind)
+        disrupted_po_ids = {d["po_id"] for d in disruptions.values()}
+
+        with overrides_path.open(encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            actual_header = reader.fieldnames or []
+            expected_header = ["world_id", "target_type", "target_id", "field", "value"]
+            if list(actual_header) != expected_header:
+                raise ValueError(
+                    f"world_overrides.csv: header must be exactly {expected_header}, "
+                    f"got {list(actual_header)}"
+                )
+            for row in reader:
+                wid = row.get("world_id", "")
+                if wid not in worlds_weight:
+                    raise ValueError(
+                        f"world_overrides.csv: world_id {wid!r} not found in worlds.csv"
+                    )
+                ttype = row.get("target_type", "")
+                field = row.get("field", "")
+                kind_key = (ttype, field)
+                if kind_key not in _OPEN_KINDS:
+                    raise ValueError(
+                        f"world_overrides.csv: world {wid!r}: "
+                        f"kind ({ttype!r}, {field!r}) is not supported yet"
+                    )
+                tid = row.get("target_id", "")
+                if ttype == "purchase_order":
+                    if tid not in disrupted_po_ids:
+                        raise ValueError(
+                            f"world_overrides.csv: world {wid!r}: "
+                            f"target_id {tid!r} is not a PO named in disruptions"
+                        )
+                override_key = (ttype, tid, field)
+                if override_key in overrides_by_world[wid]:
+                    raise ValueError(
+                        f"world_overrides.csv: world {wid!r}: "
+                        f"({ttype!r}, {tid!r}, {field!r}) appears more than once"
+                    )
+                raw_val = row.get("value", "")
+                try:
+                    parsed = _OPEN_KINDS[kind_key](raw_val, field)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"world_overrides.csv: world {wid!r}: {exc}"
+                    ) from exc
+                # receipt_date window check
+                if kind_key == ("purchase_order", "receipt_date"):
+                    po = purchase_orders[tid]
+                    lo = po["planned_receipt_date"]
+                    hi = DAY0 + __import__("datetime").timedelta(days=HORIZON_DAYS)
+                    if parsed < lo:
+                        raise ValueError(
+                            f"world_overrides.csv: world {wid!r}: "
+                            f"receipt_date {parsed} is before the PO's "
+                            f"planned_receipt_date {lo}"
+                        )
+                    if parsed > hi:
+                        raise ValueError(
+                            f"world_overrides.csv: world {wid!r}: "
+                            f"receipt_date {parsed} is after the simulation window "
+                            f"({hi}); dates after the window need stage 2"
+                        )
+                overrides_by_world[wid][override_key] = parsed
+
+        # Every world must have at least one override
+        for wid in worlds_order:
+            if not overrides_by_world[wid]:
+                raise ValueError(
+                    f"world_overrides.csv: world {wid!r} has no overrides"
+                )
+
+        worlds_db = [
+            {
+                "world_id": wid,
+                "weight": worlds_weight[wid],
+                "overrides": overrides_by_world[wid],
+            }
+            for wid in worlds_order
+        ]
+
     # ── transfer_lanes ────────────────────────────────────────────────────────
     lanes = {}
     for r in _load_csv("transfer_lanes", dd):
@@ -421,6 +569,7 @@ def load_all(data_dir=None) -> dict:
         "scenarios": scenarios,
         "recovery_purchases": recovery_purchases,
         "recovery_transfers": recovery_transfers,
+        "worlds": worlds_db,
         # derived
         "floor": floor,
         "opening": opening,
