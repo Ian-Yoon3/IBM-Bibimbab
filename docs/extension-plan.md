@@ -1,7 +1,7 @@
 # Extension plan: uncertain receipt date
 
-Status: stage 1 in progress on `feature/extension-trial-ian`.
-The data step is done (commit fbacd91). Loader, worlds module, tool, view and docs follow in that order.
+Status: stage 1 is implemented on `feature/extension-trial-ian` (commits fbacd91 to b68dae8, 476 tests pass).
+Stage 2 and stage 3 are planned.
 This file is merged into `main` together with stage 1. It is updated as each step is finished.
 
 ## Why

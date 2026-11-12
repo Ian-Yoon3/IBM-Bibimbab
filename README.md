@@ -47,9 +47,11 @@ The data is synthetic.
 It was written by hand so that the scenario is complete and every result can be checked.
 `reference/verify.py` recomputes the scenarios independently of `engine/`.
 
-The demo also fixes the revised receipt date at one value (11-17).
 A real notice rarely gives one certain date.
-Handling an uncertain receipt date is planned as future work.
+The supplier announced 11-17, but PO01 could arrive on any day from 11-11 to the end of the simulation window (11-21).
+The engine therefore evaluates every option at every possible receipt date and reports the risk of each option.
+How likely each date is comes from a data file, not from the model.
+See [Uncertain receipt date](#uncertain-receipt-date) below.
 
 ## How it works
 
@@ -57,7 +59,7 @@ Handling an uncertain receipt date is planned as future work.
  Manager question ──► agent/ (watsonx.ai LLM, tool calling)
                           │   chooses tools, never computes numbers
                           ▼
-                     engine/tools.py (8 tools, pure Python, deterministic)
+                     engine/tools.py (8 LLM tools + get_world_risk for code, deterministic)
                           │   simulation, comparison, search, explanations
                           ▼
                      answer with an options table + pending proposal
@@ -72,8 +74,9 @@ Design rules, enforced in code:
 2. **Two phases per turn.** A gather phase lets the model call tools (at most 10 steps, duplicate calls are blocked). Then the answer is built.
 3. **Fixed answer layouts, built by code.** For recommendations, comparisons, option descriptions, order explanations, proposals and unsupported questions, `agent/render.py` lays out the engine data the same way every time: a situation sentence, an options table with the same rows and columns, a ★ on the option that best meets the user's budget and objective, and a next step the user can say back (for example *"Propose TRANSFER"*). The ★ follows the user's own words (budget, target, objective), not the model's choice. The model writes only the 2 or 3 sentences of reasoning and the trade-offs. Other questions (impact, priority customers, general questions) get a free-text answer. Each result also carries a structured `view` that a UI can render directly.
 4. **Proposals only on request, approval only by a human.** `propose_action` is offered, named in the prompt, and callable only when the user asks to act (approve, propose, implement, submit). When a proposal is created, the answer lists the option, its metrics and each action in plain language, with status `pending_approval`. Only the UI can turn a proposal into approved or rejected, through `agent/decisions.record_decision()`, which the model cannot call.
-5. **Safe failure.** Unsupported questions (new delays, unknown disruptions) get a scope note from the engine instead of invented numbers. If watsonx.ai cannot be reached, the agent retries twice and then returns a message that contains no numbers. If only the reasoning step fails, the engine-built table and recommendation are still shown.
-6. **Defensive argument handling.** String numbers and booleans (`"500"`, `"true"`) are coerced, `"null"` is treated as missing, unknown IDs and the disrupted supplier's offer are rejected with a message the model can act on.
+5. **Safe failure.** Unsupported questions (receipt dates after the simulated window, unknown disruptions, changes to other inputs) get a scope note from the engine instead of invented numbers. If watsonx.ai cannot be reached, the agent retries twice and then returns a message that contains no numbers. If only the reasoning step fails, the engine-built table and recommendation are still shown.
+6. **Uncertainty without invented numbers.** Questions about risk or about another receipt date ("what if it is 3 days late?") get the `world_risk` answer. Its tables come from the engine. The model writes one short paragraph, and code checks every number and option code in it against the tables. A paragraph that fails the check is not shown. See `docs/decisions/0003-uncertain-date-in-agent-answers.md`.
+7. **Defensive argument handling.** String numbers and booleans (`"500"`, `"true"`) are coerced, `"null"` is treated as missing, unknown IDs and the disrupted supplier's offer are rejected with a message the model can act on.
 
 ## Quick start
 
@@ -106,6 +109,8 @@ Run every command from the repository root. Scripts are run as modules (`python 
 | Golden-question evaluation | `python -m scripts.eval_agent --runs 3` | yes |
 | Realistic question sweep (answers saved for reading) | `python -m scripts.question_sweep` | yes |
 | Evaluate selected questions | `python -m scripts.eval_agent --only Q5,Q13` | yes |
+| First screen with the risk of each option (no LLM) | `python -c "from agent.overview import get_overview; print(get_overview()['markdown'])"` | no |
+| Rewrite the stage 1 receipt-date weights (temporary) | `python -m scripts.stage1_triangular_worlds` | no |
 
 Example chat:
 
@@ -139,9 +144,45 @@ Answer to *"Our budget is 500 dollars. What should we do?"* (the table, the ★,
 >
 > **Next step:** To act on this, say *"Propose TRANSFER"*. Nothing is executed until it is approved in the UI.
 
+Answer to *"What if the supplier is 3 days late instead?"* from the real run in `eval_results/sweep_20261112_020142.json` (everything is built by code except the last paragraph, which the model wrote and code checked):
+
+> **Reading**
+> Read as: PO01 arrives on Nov 14.
+> "N days late" counts from the original planned date (Nov 11). "N days earlier" or "N days later" counts from the announced date (Nov 17).
+>
+> | Option | Extra cost | Expected late orders | 90th percentile | Worst case | Chance of no late order | Late if it arrives Nov 14 |
+> |---|---|---|---|---|---|---|
+> | Wait for the delayed delivery (WAIT) | $0 | 6.53 | 10 | 11 | 1.4% | 4 |
+> | Move stock from North Buffer and East Buffer (TRANSFER) | $416 | 3.73 | 7 | 8 | 5.6% | 1 |
+> | Buy 65 from Beacon Circuits (ALT_BUY) | $1,250 | 2.99 | 6 | 7 | 1.4% | 1 |
+> | Move stock + buy 45 from Beacon Circuits (HYBRID) | $1,306 | 1.36 | 4 | 5 | 35.0% | 0 |
+>
+> The full answer also has the late orders for every receipt date from Nov 11 to Nov 21, the trade-off steps between options, and notes.
+>
+> **What this means:** *If the supplier is 3 days late instead, the number of late orders would be 4 for the WAIT option, according to the "Late if it arrives Nov 14" column. The TRANSFER option would have 1 late order, and the ALT_BUY option would also have 1 late order. The HYBRID option would have 0 late orders, as shown in the same column.*
+
+## Uncertain receipt date
+
+Stage 1 of `docs/extension-plan.md`.
+
+- **Worlds.** Each possible situation is a world: a set of changes to the base data with an integer weight. `data/worlds.csv` holds the weights. `data/world_overrides.csv` holds the changes. In stage 1 each world sets one receipt date of PO01. Without these files the engine uses the announced date with full weight, and every result equals the single-date result.
+- **Weights.** A triangular three-point estimate: earliest 11-11 (original date), most likely 11-17 (announced), latest 11-21 (end of the window). The reasons and references are in `docs/decisions/0002-receipt-date-weights.md`. The file is written by a temporary script. A Monte Carlo engine replaces it in stage 2 without changing the file format.
+- **Exact computation.** The engine simulates every option in every world (`engine/worlds.py`). It does not sample. Arithmetic is exact and rounded once at output.
+- **What is reported per option.** Extra cost, expected late orders, 90th percentile of late orders, worst case and chance of no late order. Time and cost are shown side by side and never combined. A separate table gives the late orders of every option for every receipt date. That table needs no weights.
+- **What the manager sees.** `agent.overview.get_overview()` gives this picture before any question, without an LLM call. Questions about risk or about one date get the same tables, and a date question first states how it was read.
+
+| Option | Extra cost | Expected late orders | 90th percentile | Worst case | Chance of no late order |
+|---|---:|---:|---:|---:|---:|
+| WAIT | $0 | 6.53 | 10 | 11 | 1.4% |
+| TRANSFER | $416 | 3.73 | 7 | 8 | 5.6% |
+| ALT_BUY | $1,250 | 2.99 | 6 | 7 | 1.4% |
+| HYBRID | $1,306 | 1.36 | 4 | 5 | 35.0% |
+
+ALT_BUY has fewer expected late orders than TRANSFER but a lower chance of no late order. The measures disagree, so the engine does not pick a winner.
+
 ## Engine tools (`engine/tools.py`)
 
-These eight tools are offered to the LLM. `run_scenario`, `get_scenario_actions` and `get_catalog` are used by the code (tests, `agent/render.py`) but are not offered to the model.
+These eight tools are offered to the LLM. `run_scenario`, `get_scenario_actions`, `get_catalog` and `get_world_risk` are used by the code (tests, `agent/render.py`) but are not offered to the model. `get_world_risk(disruption_id)` returns the uncertain-receipt-date results described above.
 
 | Tool | What it returns |
 |---|---|
@@ -187,11 +228,24 @@ Latest results with model `meta-llama/llama-3-3-70b-instruct`:
 
 The sweep (`python -m scripts.question_sweep`) found problems that the golden questions did not: the recommended option once followed the model's choice of objective instead of the user's budget, and a few question types had no fitting layout. Both were fixed before the latest runs.
 
+Stage 1 added two more sweeps with the same model:
+
+| Check | File | Result |
+|---|---|---|
+| 25 conversations, 28 answers, first world_risk prompt | `eval_results/sweep_20261112_015014.json` | No flagged answer. One paragraph named the late orders on one date "expected late orders". One correct paragraph was dropped because the stated budget was not shown. Both were fixed |
+| Same questions, revised prompt | `eval_results/sweep_20261112_020142.json` | No flagged answer, no dropped paragraph, every number in the world_risk paragraphs carries the right column name. Source of `ui_fixtures/` |
+
+The golden question Q5 ("What if the delay becomes 8 days?") now expects the `world_risk` answer for Nov 19 instead of a refusal. The golden evaluation in the table above was run before stage 1.
+
 The default model was chosen with this evaluation. See `docs/decisions/0001-default-llm-model.md`.
 
 ## Known limitations
 
-- Only disruption D01 with its recorded 6-day delay is modelled. The agent says so and does not simulate hypothetical delays.
+- Only disruption D01 is modelled. Receipt dates of PO01 from 11-11 to 11-21 are computed. Later dates, other disruptions and changes to other inputs are not, and the agent says so.
+- The receipt-date weights are an assumption (a triangular three-point estimate), not data about the supplier. The latest date is the end of the simulation window, so the right tail is cut and the mean (11-16.3) falls before the announced date.
+- Whether a question gets the `world_risk` answer is decided by its wording. A question phrased in an unexpected way can miss it and get a free-text answer. It does not get wrong numbers.
+- In `world_risk` answers the code checks that every number in the model's paragraph is in the tables. It cannot see a correct number given the wrong name. The model also sometimes quotes more than three numbers, and once suggested an option without a stated criterion (see ADR 0003).
+- `get_impact` (impact with no action) still reports the announced date only.
 - Question types without a fixed layout (impact, priority questions, general questions) are still written freely by the model, so their wording varies.
 - The evaluation checks tables, facts and number grounding, but not every sentence of prose. Wording is reviewed by hand.
 - The model's short reasoning sometimes states a difference it computed itself (for example "$834 less than ALT_BUY"). The ones seen in the sweep were correct, but they are not engine numbers.
@@ -203,15 +257,16 @@ These simplifications hold in every result the engine returns.
 
 1. **No daily production capacity.** An order starts on the first day all its components are available. Several orders can start on the same day. Long delays are therefore shown shorter than they would be with a capacity limit.
 2. **Fixed production queue.** Orders start in order of due date, then priority, then order ID. If the next order cannot start, later orders wait even when their own components are available.
-3. **Only PO01 is uncertain.** Lead times of the alternative supplier and the transfer lanes are fixed. Options that rely on them can look safer than they are.
+3. **Only the receipt date of PO01 is uncertain.** Lead times of the alternative supplier and the transfer lanes are fixed. Options that rely on them can look safer than they are.
 4. **All recovery actions are decided and executed on 11-09.** No option waits for more information before acting.
-5. **Simulation window 11-09 to 11-21.** Receipts and order starts are simulated inside this window. A receipt date after 11-21 is rejected.
+5. **Simulation window 11-09 to 11-21.** Receipts and order starts are simulated inside this window. A receipt date after 11-21 is not supported yet (stage 2).
+6. **Receipt-date weights from a three-point estimate.** See ADR 0002. Extra cost does not depend on the receipt date in the current model.
 
 ## Repository layout
 
 ```
 IBM-Bibimbab/
-├── data/                 14 CSV input files (synthetic)
+├── data/                 14 CSV input files + 2 optional world files (synthetic)
 ├── engine/               Deterministic simulation engine, stdlib only
 │   ├── loader.py         Load and validate the CSVs
 │   ├── simulate.py       Day-by-day simulation of an action list
@@ -219,6 +274,7 @@ IBM-Bibimbab/
 │   ├── candidates.py     Transferable quantities, valid purchase quantities
 │   ├── analysis.py       Impact, priority view, marginal cost
 │   ├── compare.py        Ranking by objective and budget
+│   ├── worlds.py         Every option over weighted receipt-date worlds
 │   └── tools.py          The API used by the agent
 ├── agent/                LLM layer (ibm-watsonx-ai)
 │   ├── llm.py            watsonx.ai client, retries, argument normalisation
@@ -226,12 +282,15 @@ IBM-Bibimbab/
 │   ├── prompts.py        System prompt, evidence playbook, answer formats
 │   ├── loop.py           run_agent(): gather phase, answer phase, guards
 │   ├── render.py         Fixed answer layouts built from engine data
+│   ├── overview.py       First screen without an LLM call
 │   ├── decisions.py      Human approve/reject log, called only by the UI
 │   └── fake_llm.py       Scripted LLM for offline tests
-├── scripts/              chat.py, eval_agent.py, question_sweep.py, check_wx.py, make_ui_fixtures.py
+├── scripts/              chat.py, eval_agent.py, question_sweep.py, check_wx.py, make_ui_fixtures.py,
+│                         stage1_triangular_worlds.py (temporary)
 ├── tests/                Engine and agent tests (no network)
 ├── eval_results/         Saved evaluation transcripts
-├── docs/decisions/       Architecture decision records
+├── docs/decisions/       Architecture decision records (0001 model, 0002 weights, 0003 answers)
+├── docs/extension-plan.md  Stages 1 to 3 of the uncertainty extension
 ├── reference/            Original reference implementation and data dictionary
 ├── demo.py               Engine-only walkthrough of the tools
 ├── docs/ui-contract.md   What the UI receives from run_agent() and how to approve
@@ -251,6 +310,6 @@ Each session file starts with a prompt index.
 | Team member | Scope | Record |
 |---|---|---|
 | Junseo (Dennis) Choi | Calculation engine: `engine/`, engine tests, `demo.py`, `AGENTS.md` and `.bob/` rules | [bob_sessions/dennis](bob_sessions/dennis/README.md) |
-| Sunghyuk (Ian) Yoon | Agent layer: watsonx.ai connection, `agent/`, engine tool additions, evaluation harness | [bob_sessions/ian](bob_sessions/ian/README.md) |
+| Sunghyuk (Ian) Yoon | Agent layer: watsonx.ai connection, `agent/`, engine tool additions, evaluation harness. Stage 1 extension: worlds, loader, `engine/worlds.py`, `get_world_risk`, `world_risk` answers | [bob_sessions/ian](bob_sessions/ian/README.md) |
 
 Work done outside Bob is stated in each record.
