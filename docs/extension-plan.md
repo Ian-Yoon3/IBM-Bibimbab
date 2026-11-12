@@ -105,10 +105,14 @@ New module `engine/worlds.py`.
 
 - Applies a world to a copy of `db`. A `receipt_date` override sets `revised_receipt_date` of the disruption on that PO. `db` itself is never changed.
 - Simulates every disrupted option in every world with the existing `simulate()` and `evaluate()`. The NORMAL baseline gets no worlds.
-- Per option. Extra cost, expected late orders, worst case, chance of no late order. A quantile such as "late orders at or below this number with 90% chance" is under consideration (see open decisions).
+- Options are the four named disrupted scenarios (WAIT, TRANSFER, ALT_BUY, HYBRID). Options found by `explore_purchase_qty` are not covered in stage 1.
+- Per option. Extra cost, expected late orders, worst case, 90th percentile of late orders, chance of no late order.
+- The 90th percentile is the smallest number of late orders whose cumulative probability reaches 90% (inverse distribution function, definition 1 in Hyndman and Fan 1996). The level is a parameter with default 90%. It never comes from the LLM.
+- Why 90%. With the stage 1 data the 90th percentile is the same (10, 7, 6, 4) under equal, triangular and PERT weights, so it does not depend on the assumed shape. The 95th percentile changes with the shape, and the 99th equals the worst case. In stage 2 a lower tail level also needs fewer samples for a stable estimate (Glasserman 2003). CVaR (Artzner et al. 1999) is kept as a stage 2 candidate because a fractional count is harder to explain.
+- Late orders never decrease with a later receipt date in the current model. The 90th percentile of late orders is therefore the late orders at the 90th percentile of the receipt date (11-19 for the stage 1 data).
 - What-if table. Late orders of every option for every date in the simulation window, independent of the worlds.
 - Trade-off steps between options in order of cost. Shown as they are, never merged into one score.
-- Arithmetic is exact (integers or `Fraction`). Rounding happens once, at output. Differences are taken from exact values, then rounded.
+- Arithmetic is exact (integers or `Fraction`). Rounding happens once, at output, half away from zero. Differences are taken from exact values, then rounded.
 
 ### Tool, view and contract
 
@@ -126,6 +130,7 @@ New module `engine/worlds.py`.
 - The stage 1 data gives the triangular table above.
 - Multiplying every weight by the same number changes nothing.
 - Every expected value lies between the best and the worst world of that option.
+- The 90th percentile is 10, 7, 6 and 4 for both the equal and the triangular weights.
 
 ## Stage 2. Worlds from a Monte Carlo engine
 
@@ -153,13 +158,14 @@ Each item removes one model assumption listed in the README.
 
 ## Open decisions
 
-- Stage 1. Whether the worlds module reports a quantile of late orders. Worst case alone is set by the end of the range, because every possible date has a positive weight.
 - Stage 1. How the new view looks in the UI. To be agreed with the UI owner.
 - Stage 3. Information model for conditional options. Does the manager only learn that PO01 has not arrived, or does the manager receive an updated date?
 
 ## References
 
 - Weight rule references (Jaynes 1957, Malcolm et al. 1959, Garthwaite, Kadane and O'Hagan 2005, Law 2015) are in ADR 0002.
+- R. J. Hyndman and Y. Fan, "Sample Quantiles in Statistical Packages," *The American Statistician* 50(4), 361–365, 1996. Standard reference for quantile definitions, followed by statistical software.
+- P. Artzner, F. Delbaen, J.-M. Eber and D. Heath, "Coherent Measures of Risk," *Mathematical Finance* 9(3), 203–228, 1999. Foundational paper on quantile (VaR) and tail-mean risk measures, very widely cited.
 - D. V. Lindley, *Making Decisions*, 2nd ed., Wiley, 1985. Standard textbook of Bayesian decision analysis. Source of Cromwell's rule.
 - P. Glasserman, *Monte Carlo Methods in Financial Engineering*, Springer, 2003. Standard graduate textbook on Monte Carlo methods, widely cited.
 - J. R. Birge and F. Louveaux, *Introduction to Stochastic Programming*, 2nd ed., Springer, 2011. Standard textbook for decisions with recourse under uncertainty, widely cited.
