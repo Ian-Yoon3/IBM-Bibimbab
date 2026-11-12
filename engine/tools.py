@@ -14,6 +14,7 @@ from engine.evaluate import evaluate
 from engine.candidates import transferable_qty, purchase_qty_options
 from engine.analysis import disruption_impact, priority_view, marginal_cost
 from engine.compare import rank_options
+from engine.worlds import evaluate_worlds
 
 # ── db cache ──────────────────────────────────────────────────────────────────
 _DB_CACHE: dict = {}
@@ -576,6 +577,59 @@ def get_catalog(data_dir=None) -> dict:
                        "due_date": v["due_date"].isoformat()}
                    for k, v in db["orders"].items()},
     }
+
+
+def get_world_risk(disruption_id: str, data_dir=None) -> dict:
+    """Evaluate all disrupted scenarios across possible worlds and return
+    a summary of time-cost trade-offs under receipt-date uncertainty.
+
+    Parameters
+    ----------
+    disruption_id:
+        ID of the disruption to analyse (e.g. ``"D01"``).
+    data_dir:
+        Optional path override for the data directory.
+
+    Returns
+    -------
+    dict with keys:
+        disruption_id       – str, echoes the input
+        po_id               – str, PO affected by the disruption
+        announced_receipt_date – ISO date str, the disruption's revised date
+        weights_source      – ``"file"`` when worlds.csv is present,
+                              ``"announced_date"`` otherwise
+        world_count         – int, number of worlds evaluated
+        quantile_level      – float, 0.9 (90th percentile)
+        options             – list of per-scenario dicts with:
+                                scenario_id, label, extra_cost,
+                                expected_late_orders, worst_late_orders,
+                                p90_late_orders, p_no_late_pct
+        what_if             – dict with keys:
+                                dates (list of ISO date strs),
+                                late_orders (scenario_id -> list of int)
+        tradeoff_steps      – list of consecutive option-pair dicts with:
+                                from, to, extra_cost_change,
+                                expected_late_change, worst_late_change,
+                                p90_late_change, p_no_late_pct_change
+        scope_note          – str, note about the weights source and engine role
+
+    Raises ValueError for an unknown disruption_id.
+    """
+    _SCOPE_NOTES = {
+        "file": (
+            "Weights come from data/worlds.csv. Each world is one possible receipt"
+            " date of the delayed PO. Time and cost are shown side by side."
+            " The engine does not pick an option."
+        ),
+        "announced_date": (
+            "No world files. The announced receipt date has full weight."
+            " Time and cost are shown side by side."
+            " The engine does not pick an option."
+        ),
+    }
+    result = evaluate_worlds(disruption_id, _get_db(data_dir))
+    result["scope_note"] = _SCOPE_NOTES[result["weights_source"]]
+    return result
 
 
 def propose_action(
