@@ -43,32 +43,72 @@ SWEEP = [
     ["Our budget is 1,000 dollars. What should we do?",
      "Why is SO06 still late with that?",
      "Go with it."],
+    ["How risky is each option if the arrival date of PO01 is uncertain?"],
+    ["What is the chance of no late orders with TRANSFER?"],
+    ["What if PO01 arrives on Nov 19?"],
+    ["Our budget is $500. How risky is each option?"],
+    ["What if the supplier is 2 weeks late?"],
+    ["What happens with disruption D02?"],
 ]
 
 _DEFAULT_MODEL = "meta-llama/llama-3-3-70b-instruct"
 
 
+class _TextCaptureLLM:
+    """Wraps a real LLM and saves the text of the last chat call per turn."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.last_text: str = ""
+
+    def chat(self, messages, tools):
+        result = self._inner.chat(messages, tools)
+        if not result.get("tool_calls"):
+            self.last_text = result.get("content") or ""
+        return result
+
+
 def run_conversation(turns: list[str], llm) -> list[dict]:
     from agent.loop import run_agent
     from scripts.eval_agent import check_grounding, check_table
+    import engine.tools as _et
 
+    capture = _TextCaptureLLM(llm)
     history, out = None, []
     for text in turns:
-        r = run_agent(text, history=history, llm=llm)
+        capture.last_text = ""
+        r = run_agent(text, history=history, llm=capture)
         history = r["history"]
-        r["question"] = text
+        view_type = (r.get("view") or {}).get("type")
+        # For world_risk answers the LLM explanation is already validated by the
+        # engine; skip check_table (the view has no on-time/priority/cost table).
+        table_mismatches = [] if view_type == "world_risk" else check_table(r["answer"])
+        # Add get_world_risk to the grounding corpus for world_risk views.
+        grounding_extra = {}
+        if view_type == "world_risk":
+            try:
+                grounding_extra["world_risk"] = _et.get_world_risk("D01")
+            except Exception:
+                pass
+        r_with_extra = {**r, "earlier_tools": [],
+                        "tool_trace": r.get("tool_trace", []) + (
+                            [{"name": "get_world_risk", "args": {},
+                              "result": grounding_extra.get("world_risk", {})}]
+                            if grounding_extra else []
+                        )}
         out.append({
             "question": text,
-            "view_type": (r.get("view") or {}).get("type"),
+            "view_type": view_type,
             "tools": [{"name": t["name"], "args": t["args"],
                        "error": (t["result"] or {}).get("error")
                        if isinstance(t["result"], dict) else None}
                       for t in r["tool_trace"]],
             "proposal_created": r["proposal"] is not None,
-            "table_mismatches": check_table(r["answer"]),
-            "ungrounded": check_grounding({**r, "earlier_tools": []}),
+            "table_mismatches": table_mismatches,
+            "ungrounded": check_grounding({**r_with_extra, "question": text}),
             "error": r.get("error"),
             "answer": r["answer"],
+            "llm_text": capture.last_text,
         })
     return out
 

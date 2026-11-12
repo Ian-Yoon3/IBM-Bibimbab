@@ -124,6 +124,25 @@ The wording follows the user's question. The slot is fixed so that code can take
 
 Unchanged. The recommendation, comparison, option, order and proposal views, and the 8 LLM tools.
 
+## Evidence from real runs (Llama 3.3, 2026-11-12)
+
+Two full question sweeps were run with the real model. Both are kept in `eval_results/`.
+
+`sweep_20261112_015014.json`, first prompt.
+- All 28 answers passed the table and grounding checks. View choice was as intended.
+- "What if PO01 arrives on Nov 19?" named the late orders on Nov 19 (10, 7, 6, 4) "expected late orders". The numbers were in the tables, so the number check passed it. This is the limitation of section 6, seen in practice.
+- "Our budget is $500. How risky is each option?" was dropped although it was correct, because "$500" was not shown in the view.
+- Most paragraphs restated the table instead of answering the question.
+
+Changes made after it.
+- The budget column header shows the amount, and numbers the user wrote are allowed.
+- The prompt now explains what each column means, tells the model which column to use for one date, asks for a direct answer first, at most three quoted numbers with their column names, and at most four sentences.
+
+`sweep_20261112_020142.json`, revised prompt. This sweep is the source of the UI fixtures.
+- All 28 answers passed the checks. No paragraph was dropped.
+- Every number in the six world_risk paragraphs carries the right column name.
+- Two rules are still not always followed. Some paragraphs quote more than three numbers. The Nov 19 paragraph ends with "The user may want to propose one of these options, such as TRANSFER", which names an option without a user criterion. Code does not check either rule yet.
+
 ## Consequences
 
 - Answers, the first screen and the tables agree on every date inside the window.

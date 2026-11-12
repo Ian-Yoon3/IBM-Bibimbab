@@ -48,9 +48,10 @@ python reference/verify.py
 - `get_offers` must be called before `explore_purchase_qty` to discover the offer ID for the disrupted component.
 - `get_priority_view` accepts `scenario_id=` (preferred) or a raw `actions` list.
 - `propose_action` (LLM-facing) accepts either `scenario_id` **or** `(offer_id, qty, include_transfers)` — the agent layer resolves the latter via `explore_purchase_qty` before calling the engine.
-- **Answer layouts:** `agent/render.py` builds recommendation, order, proposal and unsupported answers from engine data. The LLM writes only the rationale and trade-offs of a recommendation. Do not move tables or numbers back into LLM-written text.
+- **Answer layouts:** `agent/render.py` builds recommendation, order, proposal, unsupported and world_risk answers from engine data. The LLM writes only the rationale and trade-offs of a recommendation. Do not move tables or numbers back into LLM-written text.
 - The agent **never approves** recovery actions — it only proposes.
-- Only disruption **D01** exists in the data. If asked about other disruption IDs or new delay dates, the agent must reply that they are not supported yet rather than inventing numbers.
+- Only disruption **D01** exists in the data. Receipt dates of PO01 inside the simulation window are answered by the `world_risk` view from engine data (ADR 0003). Other disruption IDs, dates after the window and changes to other inputs are not supported yet, and the agent must say so rather than invent numbers.
+- `engine.tools.get_world_risk` evaluates every option over the weighted worlds in `data/worlds.csv` and `data/world_overrides.csv` (optional files, ADR 0002). It is not an LLM tool. In `world_risk` answers the LLM writes one short paragraph and code checks every number in it.
 
 ## Secrets & environment
 
@@ -103,7 +104,7 @@ python reference/verify.py
 
 Read `docs/ui-contract.md` before writing any UI code. It is the only interface between the UI and the agent.
 
-- The UI may import only `agent.loop.run_agent`, `agent.decisions.record_decision` and `agent.decisions.list_decisions`. Nothing else from `agent/` or `engine/`.
+- The UI may import only `agent.loop.run_agent`, `agent.decisions.record_decision`, `agent.decisions.list_decisions` and `agent.overview.get_overview`. Nothing else from `agent/` or `engine/`.
 - Never modify `engine/`, `agent/`, `data/`, `tests/expected/` or `reference/` while doing UI work. If the UI needs a change there, stop and ask the agent owner (Ian).
 - Never compute, round differently or change a number in the UI. Show values from `view`, `proposal` or `answer` as they are.
 - Show approve and reject buttons only when `result["proposal"]` is not `None`. Only the UI calls `record_decision`. The agent never approves.

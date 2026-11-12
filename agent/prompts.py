@@ -11,8 +11,10 @@ RULES — follow these strictly:
 1. ALL NUMBERS must come from tool results. Never compute or estimate figures
    yourself.
 
-2. SCOPE: Only disruption D01 is modelled. For any other disruption ID,
-   custom delay date, or hypothetical scenario, do NOT make up numbers.
+2. SCOPE: Only disruption D01 is modelled. Other disruption IDs, receipt dates
+   outside the simulation window and changes to other inputs are not supported.
+   Do NOT make up numbers for them. Receipt dates of PO01 inside the window are
+   shown by code from the engine. Do not write numbers for them yourself.
    Gather: call get_disruption(disruption_id="D01") once AND
    compare_scenarios once so the answer can list real D01 options.
    Then stop; do not call explore_purchase_qty or get_priority_view.
@@ -64,7 +66,12 @@ EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
   "priority customers / high-priority orders for a named scenario":
     1. get_priority_view(scenario_id=WAIT|TRANSFER|ALT_BUY|HYBRID)
 
-{propose_playbook}  "different delay length / what if N days / new disruption / hypothetical":
+{propose_playbook}  "risk, chance, worst case, what if N days, what if it arrives on a date
+  (receipt date of PO01 inside the window)":
+    1. get_disruption(disruption_id="D01")
+    — then stop. The tables are built by code from the engine.
+
+  "dates outside the window, other inputs, unknown disruption":
     1. get_disruption(disruption_id="D01")  — confirm actual D01 delay
     2. compare_scenarios                    — get real on-time counts for all options
     — then stop; do not call explore_purchase_qty or get_priority_view
@@ -196,7 +203,7 @@ FACTUAL questions ("how bad", "what is the impact", "how many orders"):
   ## Evidence
   (bullet list: one bullet per key number, citing the tool that returned it)
 
-UNSUPPORTED questions (different delay, hypothetical, unknown disruption):
+UNSUPPORTED questions (dates outside the window, other inputs, unknown disruption):
   ## Answer
   (start with the "scope_note" field of get_disruption, copied word for
   word. Do not recommend an option for the hypothetical case and do not
@@ -364,15 +371,41 @@ def build_world_risk_message(user_message: str, view: dict) -> dict:
     if tradeoff_sec:
         sections.append(tradeoff_sec)
 
+    # Detect date mode: Reading section present means a specific date was resolved.
+    # Extract the bolded focus date label from the Late orders table if present.
+    focus_date_label = None
+    if wi_sec:
+        import re as _re
+        m = _re.search(r"\|\s*\*\*([^*]+)\*\*\s*\|", wi_sec)
+        if m:
+            focus_date_label = m.group(1).strip()
+
+    col_meanings = (
+        "Column meanings:\n"
+        "- Expected late orders, 90th percentile, Worst case and Chance of no late order"
+        " describe all possible receipt dates together. Never use them for one date.\n"
+        '- "Late if it arrives <date>" and the date table give the late orders for one'
+        " receipt date.\n"
+        "- Extra cost does not depend on the receipt date."
+    )
+    if focus_date_label:
+        col_meanings += (
+            f'\nThe user asked about {focus_date_label}. For that date use only the'
+            f' "Late if it arrives {focus_date_label}" column.'
+        )
+
     rules = (
         "Rules:\n"
-        "- Answer the user's question in at most 4 plain sentences.\n"
+        "- Start with a direct answer to the question in the first sentence.\n"
+        "- Write at most 4 sentences.\n"
+        "- Do not restate the table.\n"
+        "- Quote at most three numbers and name the column each number comes from.\n"
         "- Use only numbers that appear above.\n"
         "- Do not compute differences, sums, ratios or averages.\n"
         "- Never combine time and cost into one score.\n"
         "- Do not pick a single best option unless the user gave a criterion; "
         "then use only the marks in the table.\n"
-        "- You may point out where measures disagree.\n"
+        "- Point out where measures disagree when it matters for the question.\n"
         "- Mention only option codes that are rows of the table.\n"
         "- No headings, tables, lists or next steps.\n"
         "- Do not guess about the supplier.\n\n"
@@ -382,6 +415,7 @@ def build_world_risk_message(user_message: str, view: dict) -> dict:
     content = (
         f"User question: {user_message}\n\n"
         + "\n\n".join(sections)
+        + f"\n\n{col_meanings}"
         + f"\n\n{rules}"
     )
     return {"role": "user", "content": content}

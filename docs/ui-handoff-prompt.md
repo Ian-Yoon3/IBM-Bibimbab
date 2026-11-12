@@ -19,7 +19,7 @@ The repository is IBM-Bibimbab. I work on the `ui` branch.
 READ FIRST
 - docs/ui-contract.md : everything the UI receives from the agent. Follow it exactly.
 - AGENTS.md, section "UI work" : rules for UI code.
-- ui_fixtures/agent_results.json : 23 real agent results. Use them instead of the real agent.
+- ui_fixtures/agent_results.json : real agent results. Use them instead of the real agent.
 
 WHAT THE APP DOES
 A manager types a question about a supplier delay.
@@ -29,7 +29,8 @@ A human approves or rejects it in the UI. The agent never approves.
 
 HARD RULES
 - Streamlit, single entry file `app.py` at the repo root. Helper modules may go in `ui/`.
-- Import only run_agent (agent.loop), record_decision and list_decisions (agent.decisions).
+- Import only run_agent (agent.loop), record_decision and list_decisions (agent.decisions),
+  and get_overview (agent.overview).
 - Do not modify engine/, agent/, data/, tests/expected/ or reference/. If you think a change
   there is needed, stop and tell me what and why.
 - Never compute or change a number. Display values from the result as they are.
@@ -47,6 +48,8 @@ Stage 1. Chat with fixtures (must work end to end)
 - Chat layout with st.chat_input and st.chat_message. Keep the conversation in
   st.session_state. Show result["answer"] with st.markdown.
 - If result has "error", show the answer as a warning and a "Try again" button.
+- When the app opens, call get_overview() and show its markdown above the chat. It needs no
+  key and costs nothing. Show its suggested_questions as clickable examples.
 Check: every fixture question opens and its answer renders. The error fixture shows the warning.
 
 Stage 2. Views
@@ -58,6 +61,12 @@ Stage 2. Views
 - order: show view["detail"]["summary"] prominently, then the detail fields.
 - option: show view["row"] metrics and the answer.
 - unsupported: show view["scope_note"] as an info box, then the rows table.
+- world_risk: in date mode show view["reading"] first. Then a table from view["rows"] with
+  Option (name and code), Extra cost, Expected late orders (2 decimals), 90th percentile,
+  Worst case, Chance of no late order (%), plus "Late if it arrives <date>" in date mode and
+  "Within budget" when settings.budget is set. Then the date table from view["what_if"] with
+  the focus_date column highlighted. Then the steps. Show view["explanation"] only when
+  explanation_status is "ok". No star, no approve buttons, never a combined score.
 - No view: show the answer only.
 - An expander "How the agent got this" listing result["tool_trace"] (tool name and args).
 Check: "Our budget is 500 dollars. What should we do?" shows ★ on TRANSFER with 8 of 12 on time

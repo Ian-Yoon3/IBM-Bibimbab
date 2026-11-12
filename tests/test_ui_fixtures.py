@@ -11,7 +11,7 @@ from pathlib import Path
 from scripts.make_ui_fixtures import OUT, build, DEFAULT_SWEEP
 
 EXPECTED_TYPES = {"recommendation", "comparison", "option", "order",
-                  "proposal", "unsupported", None}
+                  "proposal", "unsupported", "world_risk", None}
 
 
 class TestUIFixtures(unittest.TestCase):

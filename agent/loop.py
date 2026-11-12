@@ -23,7 +23,9 @@ run_agent(user_message, history=None, llm=None, max_steps=10) -> dict
 import json
 
 from agent import render
-from agent.prompts import build_messages, build_compose_message, build_narrative_message
+from agent.prompts import (build_messages, build_compose_message,
+                           build_narrative_message, build_world_risk_message)
+from agent.render import parse_world_risk_answer
 from agent.tool_specs import call_tool, tool_specs_for
 
 
@@ -158,7 +160,21 @@ def run_agent(
     except Exception:
         view = None   # rendering must never break the answer; fall back below
 
-    if view is not None and view["type"] not in ("recommendation", "comparison"):
+    if view is not None and view["type"] == "world_risk":
+        # For world_risk views, ask the LLM for a short explanation paragraph.
+        explanation = None
+        try:
+            wr_resp = llm.chat(
+                messages + [build_world_risk_message(user_message, view)], []
+            )
+            content = (wr_resp.get("content") or "").strip()
+            explanation = parse_world_risk_answer(content) or None
+        except Exception:
+            explanation = None
+        view = render.world_risk_view(view["mode"], user_message,
+                                      explanation=explanation)
+        answer = view["markdown"]
+    elif view is not None and view["type"] not in ("recommendation", "comparison"):
         answer = view["markdown"]                     # fully deterministic
     elif view is not None:
         narrative = ""
@@ -219,14 +235,17 @@ def _proposal_code(tool_trace) -> str:
 def _choose_view(user_message, tool_trace, proposal):
     """Pick the fixed view for this turn, or None for a free-text answer.
 
-    Priority: proposal > unsupported question > order explanation >
-    option description > comparison > recommendation (comparison or search
-    ran) > free text.
+    Priority: proposal > unsupported question > world_risk > order explanation >
+    option description > comparison > recommendation > free text.
     """
     if proposal is not None:
         return render.proposal_view(proposal, _proposal_code(tool_trace))
     if render.is_unsupported(user_message):
-        return render.unsupported_view()
+        return render.unsupported_view(user_message=user_message)
+    if render.is_world_risk_question(user_message):
+        res = render.resolve_receipt_date(user_message)
+        mode = "date" if res and res.get("status") == "in_window" else "general"
+        return render.world_risk_view(mode, user_message)
     orders = _ok_results(tool_trace, "get_order_detail")
     if orders:
         return render.order_view(orders[-1]["result"])

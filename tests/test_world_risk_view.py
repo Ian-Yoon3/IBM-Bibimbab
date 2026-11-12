@@ -25,19 +25,20 @@ from engine.worlds import evaluate_worlds
 from engine.loader import load_all
 
 
-def _md_no_exp(view):
+def _md_no_exp(view, disruption_id="D01"):
     """Return the view markdown without the 'What this means' section."""
-    wr = _t.get_world_risk("D01")
+    wr = _t.get_world_risk(disruption_id)
     cat = _catalog()
-    cat["_disruptions"] = ["D01"]
-    sit = situation_text("D01", cat)
+    cat["_disruptions"] = [disruption_id]
+    sit = situation_text(disruption_id, cat)
     scope = wr["scope_note"]
     rows = view["rows"]
     budget = view["settings"]["budget"]
     focus_date = view["focus_date"]
     reading = view["reading"]
     return _build_world_risk_md_no_exp(
-        view["mode"], sit, scope, reading, rows, wr, budget, focus_date
+        view["mode"], sit, scope, reading, rows, wr, budget, focus_date,
+        disruption_id
     )
 
 
@@ -161,7 +162,7 @@ class TestBudget(unittest.TestCase):
             got = rows[sid]["within_budget"]
             self.assertEqual(got, want,
                              msg=f"within_budget {sid}: expected {want}, got {got}")
-        self.assertIn("Within budget", v["markdown"])
+        self.assertIn("Within $500", v["markdown"])
 
     def test_d_no_budget_all_none(self):
         v = world_risk_view("general", "How risky is each option?")
@@ -245,11 +246,46 @@ class TestBuildWorldRiskMessage(unittest.TestCase):
     def test_f_contains_time_cost_table(self):
         self.assertIn("Time and cost by option", self.msg["content"])
 
-    def test_f_contains_at_most_4(self):
-        self.assertIn("at most 4", self.msg["content"])
+    def test_f_contains_at_most_three_numbers(self):
+        self.assertIn("at most three numbers", self.msg["content"])
+
+    def test_f_contains_at_most_4_sentences(self):
+        self.assertIn("at most 4 sentences", self.msg["content"])
 
     def test_f_contains_do_not_compute(self):
         self.assertIn("Do not compute", self.msg["content"])
+
+    def test_f_contains_column_meanings(self):
+        self.assertIn("Column meanings", self.msg["content"])
+
+    def test_f_date_mode_nov19_contains_late_if_nov19(self):
+        """In date mode for Nov 19 the message names the focus column."""
+        v_date = world_risk_view("date", "What if PO01 arrives on Nov 19?")
+        msg_date = build_world_risk_message("What if PO01 arrives on Nov 19?", v_date)
+        self.assertIn("Late if it arrives Nov 19", msg_date["content"])
+
+    def test_f_budget_500_explanation_accepted(self):
+        """$500 from user_message is allowed by check_explanation."""
+        from agent.render import check_explanation, _build_world_risk_md_no_exp, _t, _catalog, situation_text
+        q = "Our budget is $500. How risky is each option?"
+        v = world_risk_view("general", q)
+        wr = _t.get_world_risk("D01")
+        cat = _catalog()
+        cat["_disruptions"] = ["D01"]
+        sit = situation_text("D01", cat)
+        view_md = _build_world_risk_md_no_exp(
+            v["mode"], sit, wr["scope_note"], v["reading"], v["rows"],
+            wr, v["settings"]["budget"], v["focus_date"], "D01"
+        )
+        text = (
+            "The WAIT option has 6.53 expected late orders and costs $0, while the "
+            "TRANSFER option has 3.73 expected late orders and costs $416. The ALT_BUY option "
+            "has 2.99 expected late orders but is not within the budget of $500. The HYBRID "
+            "option has the lowest expected late orders at 1.36, but also exceeds the budget "
+            "at $1,306."
+        )
+        ok, reason = check_explanation(text, view_md + "\n" + q)
+        self.assertTrue(ok, msg=f"Expected ok, got: {reason}")
 
 
 class TestParseWorldRiskAnswer(unittest.TestCase):
@@ -370,6 +406,133 @@ class TestFourFixes(unittest.TestCase):
         scope = v["scope_note"]
         self.assertIn(scope, v["markdown"],
                       msg="scope_note not found in overview markdown")
+
+
+class TestLoopIntegration(unittest.TestCase):
+    """Step 8 integration tests via run_agent with ScriptedLLM."""
+
+    def _tc(self, i, name, **args):
+        return {"tool_calls": [{"id": str(i), "name": name, "args": args}]}
+
+    # (a) "3 days late" -> world_risk date mode, focus 2026-11-14
+    def test_a_3_days_late_world_risk_date(self):
+        from agent.fake_llm import ScriptedLLM
+        from agent.loop import run_agent
+        r = run_agent(
+            "What if the supplier is 3 days late instead?",
+            llm=ScriptedLLM([
+                self._tc(1, "get_disruption", disruption_id="D01"),
+                {"content": "gathered"},
+                {"content": "Answer: HYBRID has 0 late orders at focus date."},
+            ])
+        )
+        self.assertEqual(r["view"]["type"], "world_risk")
+        self.assertEqual(r["view"]["mode"], "date")
+        self.assertEqual(r["view"]["focus_date"], "2026-11-14")
+
+    # (b) Explanation acceptance and failing LLM
+    def test_b_explanation_ok(self):
+        from agent.fake_llm import ScriptedLLM
+        from agent.loop import run_agent
+        r = run_agent(
+            "How risky is each option?",
+            llm=ScriptedLLM([
+                {"content": "gathered"},
+                {"content": "Answer: HYBRID has 1.36 expected late orders."},
+            ])
+        )
+        self.assertEqual(r["view"]["type"], "world_risk")
+        self.assertEqual(r["view"]["explanation_status"], "ok")
+
+    def test_b_failing_llm_explanation_unavailable(self):
+        from agent.loop import run_agent
+
+        class _FailOnNarrative:
+            n = 0
+            def chat(self, messages, tools):
+                self.n += 1
+                if self.n == 1:
+                    return {"content": "gathered", "tool_calls": []}
+                raise ConnectionError("narrative fail")
+
+        r = run_agent("How risky is each option?", llm=_FailOnNarrative())
+        # Must not raise; explanation is unavailable
+        self.assertEqual(r["view"]["type"], "world_risk")
+        self.assertEqual(r["view"]["explanation_status"], "unavailable")
+
+    # (c) "two weeks" -> unsupported, reading line about Nov 25
+    def test_c_two_weeks_unsupported(self):
+        from agent.fake_llm import ScriptedLLM
+        from agent.loop import run_agent
+        r = run_agent(
+            "Suppose the shipment slips by two weeks.",
+            llm=ScriptedLLM([
+                self._tc(1, "get_disruption", disruption_id="D01"),
+                {"content": "gathered"},
+                {"content": "(replayed)"},
+            ])
+        )
+        self.assertEqual(r["view"]["type"], "unsupported")
+        self.assertIn("Nov 25 is after the last simulated day (Nov 21).", r["answer"])
+
+    # (d) ambiguous -> world_risk general
+    def test_d_ambiguous_world_risk_general(self):
+        from agent.fake_llm import ScriptedLLM
+        from agent.loop import run_agent
+        r = run_agent(
+            "What if it is 3 days late or 5 days late?",
+            llm=ScriptedLLM([
+                {"content": "gathered"},
+                {"content": "Answer: HYBRID has 1.36 expected late orders."},
+            ])
+        )
+        self.assertEqual(r["view"]["type"], "world_risk")
+        self.assertEqual(r["view"]["mode"], "general")
+
+    # (e) "What should we do?" stays recommendation
+    def test_e_recommendation_unchanged(self):
+        from agent.fake_llm import ScriptedLLM
+        from agent.loop import run_agent
+        r = run_agent(
+            "What should we do?",
+            llm=ScriptedLLM([
+                {"tool_calls": [{"id": "1", "name": "compare_scenarios", "args": {}}]},
+                {"content": "gathered"},
+                {"content": "Recommendation: TRANSFER.\nTrade-offs:\n- HYBRID costs more"},
+            ])
+        )
+        self.assertEqual(r["view"]["type"], "recommendation")
+
+    # (f) Fixture questions keep their saved view type (using _choose_view only)
+    def test_f_fixture_view_types(self):
+        import json
+        from pathlib import Path
+        from agent.loop import _choose_view
+
+        fixture_path = (
+            Path(__file__).parent.parent / "ui_fixtures" / "agent_results.json"
+        )
+        fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
+        two_world_risk = {
+            "What if the supplier is 3 days late instead?",
+            "The supplier says it will arrive 2 days earlier. What changes?",
+        }
+        for f in fixtures:
+            if f.get("conversation") == "error":
+                continue
+            q = f["question"]
+            expected_type = (f["result"].get("view") or {}).get("type")
+            tool_trace = f["result"].get("tool_trace", [])
+            proposal = f["result"].get("proposal")
+            view = _choose_view(q, tool_trace, proposal)
+            got_type = (view or {}).get("type") if view else None
+            if q in two_world_risk:
+                # These now return world_risk instead of the old fixture type
+                self.assertEqual(got_type, "world_risk",
+                                 msg=f"{q!r}: expected world_risk, got {got_type!r}")
+            else:
+                self.assertEqual(got_type, expected_type,
+                                 msg=f"{q!r}: expected {expected_type!r}, got {got_type!r}")
 
 
 if __name__ == "__main__":

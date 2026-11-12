@@ -55,6 +55,8 @@ def get_disruption(disruption_id: str, data_dir=None) -> dict:
 
     delay_days = (dis["revised_receipt_date"] - po["planned_receipt_date"]).days
 
+    first = po["planned_receipt_date"].isoformat()
+    last = db["HORIZON"].isoformat()
     return {
         "disruption_id": disruption_id,
         "po_id": dis["po_id"],
@@ -66,9 +68,11 @@ def get_disruption(disruption_id: str, data_dir=None) -> dict:
         "component_id": offer["component_id"],
         "qty": po["qty"],
         "scope_note": (
-            f"Only disruption {disruption_id} with its recorded delay of "
-            f"{delay_days} days is modelled. Hypothetical delays or new "
-            f"disruptions are not supported yet and cannot be simulated."
+            f"Only disruption {disruption_id} is modelled. "
+            f"Receipt dates of {dis['po_id']} from "
+            f"{first} to {last} can be computed. "
+            f"Later dates, other disruptions and other "
+            f"changes are not supported yet."
         ),
     }
 

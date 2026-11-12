@@ -547,28 +547,40 @@ def _durations_in_days(msg: str) -> list[int]:
 
 
 def is_unsupported(user_message: str, disruption_id="D01") -> bool:
-    """True when the user asks about a delay length or disruption that is not modelled.
-
-    A different duration counts only next to delay words and either a
-    hypothetical marker ("what if", "suppose", "instead") or the word
-    "delay", so "Why is SO08 2 days late?" stays a normal question.
+    """True when the message names a different disruption ID, or when
+    resolve_receipt_date gives a status of after_window, before_original
+    or other_variable.
     """
-    msg = user_message.lower()
-    recorded = _t.get_disruption(disruption_id)["delay_days"]
-    if _DELAY_TERMS.search(msg) and (_HYPOTHETICAL.search(msg) or "delay" in msg):
-        if any(d != recorded for d in _durations_in_days(msg)):
-            return True
+    # Different or unknown disruption ID
     known = {disruption_id.lower()}
-    return any(d not in known for d in re.findall(r"\bd\d{2}\b", msg))
+    if any(d not in known for d in re.findall(r"\bd\d{2}\b", user_message.lower())):
+        return True
+    # Receipt-date resolution
+    res = resolve_receipt_date(user_message, disruption_id)
+    if res is not None and res.get("status") in (
+            "after_window", "before_original", "other_variable"):
+        return True
+    return False
 
 
-def unsupported_view(disruption_id="D01") -> dict:
+def unsupported_view(disruption_id="D01", user_message="") -> dict:
     cat = _catalog()
     cat["_disruptions"] = [disruption_id]
     d = _t.get_disruption(disruption_id)
     rows = _named_rows(cat)
-    md = "\n".join([
-        "## Answer", d["scope_note"], "",
+    # In after_window / before_original cases, show reading_lines after ## Answer
+    reading = []
+    if user_message:
+        res = resolve_receipt_date(user_message, disruption_id)
+        if res is not None and res.get("status") in ("after_window", "before_original"):
+            reading = reading_lines(res)
+    answer_lines = ["## Answer"]
+    if reading:
+        answer_lines.extend(reading)
+        answer_lines.append("")
+    answer_lines.append(d["scope_note"])
+    md = "\n".join(answer_lines + [
+        "",
         f"## Current {disruption_id} situation (recorded {d['delay_days']}-day delay)",
         situation_text(disruption_id, cat), "",
         options_table(rows), "",
@@ -893,7 +905,7 @@ def is_world_risk_question(user_message: str,
     True when one of these holds:
       a) An uncertainty word (uncertain, chance, likely, probability, odds, ...).
       b) A risk word (risk, worst case) together with a target word.
-      c) resolve_receipt_date gives status "in_window".
+      c) resolve_receipt_date gives status "in_window" or "ambiguous".
     """
     msg = user_message.lower()
 
@@ -911,9 +923,10 @@ def is_world_risk_question(user_message: str,
     if _RISK_RE.search(msg) and _TARGET_RE.search(user_message):
         return True
 
-    # (c) Resolves to a date in-window
+    # (c) Resolves to a date in-window or ambiguous
     res = resolve_receipt_date(user_message, disruption_id)
-    if res is not None and isinstance(res, dict) and res.get("status") == "in_window":
+    if res is not None and isinstance(res, dict) and res.get("status") in (
+            "in_window", "ambiguous"):
         return True
 
     return False
@@ -1030,9 +1043,11 @@ def world_risk_view(
         exp_text = ("(The AI explanation is unavailable. "
                     "The tables above come from the engine.)")
     else:
-        ok, _reason = check_explanation(explanation, _build_world_risk_md_no_exp(
-            mode, sit, scope_note, reading, rows, wr, budget, focus_date
-        ))
+        _view_md = _build_world_risk_md_no_exp(
+            mode, sit, scope_note, reading, rows, wr, budget, focus_date,
+            disruption_id
+        )
+        ok, _reason = check_explanation(explanation, _view_md + "\n" + user_message)
         if ok:
             exp_status = "ok"
             exp_text = explanation
@@ -1045,7 +1060,8 @@ def world_risk_view(
     # _build_world_risk_md_no_exp returns sections up to and including Notes and
     # Next step.  We splice "What this means" between Trade-offs and Notes.
     body_md = _build_world_risk_md_no_exp(
-        mode, sit, scope_note, reading, rows, wr, budget, focus_date
+        mode, sit, scope_note, reading, rows, wr, budget, focus_date,
+        disruption_id
     )
     if mode != "overview" and exp_text:
         # Insert "## What this means" after Trade-offs, before Notes.
@@ -1090,12 +1106,25 @@ def _build_world_risk_md_no_exp(
     wr: dict,
     budget,
     focus_date,
+    disruption_id: str = "D01",
 ) -> str:
     """Build the markdown for world_risk_view excluding the explanation section."""
     parts = []
 
     # ## Situation (with full scope_note)
-    parts.append(f"## Situation\n{sit}\n{scope_note}")
+    # Append "(if <po> arrives on the announced date, <Mon DD>)" to the late-orders
+    # sentence.  Take PO and announced date from the engine.
+    dis = _t.get_disruption(disruption_id)
+    sit_annotated = sit.rstrip()
+    # The sentence ends with "will be late." — append the announced-date clause.
+    announced_label = _day(dis["revised_receipt_date"])
+    _LATE_SENTENCE = "will be late."
+    if sit_annotated.endswith(_LATE_SENTENCE):
+        sit_annotated = (
+            sit_annotated[: -len(_LATE_SENTENCE)]
+            + f"will be late (if {dis['po_id']} arrives on the announced date, {announced_label})."
+        )
+    parts.append(f"## Situation\n{sit_annotated}\n{scope_note}")
 
     # ## Reading (date mode only)
     if mode == "date" and reading:
@@ -1110,7 +1139,7 @@ def _build_world_risk_md_no_exp(
     if focus_date:
         header_cols.append(f"Late if it arrives {focus_date_day}")
     if budget is not None:
-        header_cols.append("Within budget")
+        header_cols.append(f"Within {_money(budget)}")
 
     header = "| " + " | ".join(header_cols) + " |"
     sep = "| " + " | ".join(["---"] * len(header_cols)) + " |"

@@ -16,7 +16,7 @@ check fails, so the fixtures never drift silently from the code.
 Run from the repository root (no .env needed):
 
     python -m scripts.make_ui_fixtures
-    python -m scripts.make_ui_fixtures eval_results/sweep_20261107_235511.json
+    python -m scripts.make_ui_fixtures eval_results/sweep_20261112_020142.json
 
 Output: ``ui_fixtures/agent_results.json``.  See ``docs/ui-contract.md``.
 """
@@ -33,7 +33,7 @@ from agent.fake_llm import ScriptedLLM
 from agent.loop import run_agent
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261107_235511.json"
+DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261112_020142.json"
 OUT = ROOT / "ui_fixtures" / "agent_results.json"
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -54,7 +54,8 @@ def _script_for(entry: dict) -> list[dict]:
             for i, t in enumerate(entry["tools"], 1)
         ]})
     script.append({"content": ""})              # ends the gather phase
-    script.append({"content": "(replayed)"})    # narrative / compose call
+    # For world_risk entries the LLM narrative call uses the saved real text.
+    script.append({"content": entry.get("llm_text", "(replayed)")})
     return script
 
 
@@ -64,16 +65,20 @@ def _check(entry: dict, result: dict) -> None:
     view = result.get("view")
     got_type = view["type"] if view else None
     if got_type != entry["view_type"]:
-        raise SystemExit(f"{q!r}: view type {got_type} != saved {entry['view_type']}")
+        # Print so the message is visible in test output, then raise so
+        # unittest records an error without calling SystemExit (which would
+        # kill the entire test process).
+        print(f"{q!r}: view type {got_type} != saved {entry['view_type']}")
+        raise AssertionError(f"{q!r}: view type {got_type} != saved {entry['view_type']}")
     saved = entry["answer"]
     if got_type in ("recommendation", "comparison"):
         if view["table_markdown"] not in saved:
-            raise SystemExit(f"{q!r}: options table differs from the saved run")
+            raise AssertionError(f"{q!r}: options table differs from the saved run")
     elif got_type is not None:
         if _UUID.sub("<id>", view["markdown"]) != _UUID.sub("<id>", saved):
-            raise SystemExit(f"{q!r}: {got_type} markdown differs from the saved run")
+            raise AssertionError(f"{q!r}: {got_type} markdown differs from the saved run")
     if (result["proposal"] is not None) != entry["proposal_created"]:
-        raise SystemExit(f"{q!r}: proposal created does not match the saved run")
+        raise AssertionError(f"{q!r}: proposal created does not match the saved run")
 
 
 def _public(result: dict) -> dict:
@@ -119,7 +124,10 @@ def build(sweep_path: Path) -> list[dict]:
 
 def main() -> None:
     sweep = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SWEEP
-    fixtures = build(sweep)
+    try:
+        fixtures = build(sweep)
+    except AssertionError as exc:
+        raise SystemExit(str(exc)) from exc
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(fixtures, indent=1, ensure_ascii=False, default=str) + "\n",
                    encoding="utf-8")

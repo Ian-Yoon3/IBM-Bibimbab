@@ -267,18 +267,16 @@ class TestIsWorldRiskQuestion(unittest.TestCase):
     # ── Fixture questions ─────────────────────────────────────────────────────
 
     def test_fixture_questions(self):
-        """All fixture questions return False except the two hypothetical-delay ones."""
+        """is_world_risk_question matches the saved view type for every fixture entry."""
         with open(_FIXTURES, encoding="utf-8") as f:
             data = json.load(f)
 
-        true_set = {
-            "What if the supplier is 3 days late instead?",
-            "The supplier says it will arrive 2 days earlier. What changes?",
-        }
         failures = []
         for item in data:
+            if item.get("conversation") == "error":
+                continue
             q = item["question"]
-            expected = q in true_set
+            expected = (item["result"].get("view") or {}).get("type") == "world_risk"
             got = is_world_risk_question(q)
             if got != expected:
                 failures.append(
