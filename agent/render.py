@@ -577,3 +577,345 @@ def unsupported_view(disruption_id="D01") -> dict:
     ])
     return {"type": "unsupported", "scope_note": d["scope_note"], "rows": rows,
             "markdown": md}
+
+
+# ── receipt-date reading (stage 1) ────────────────────────────────────────────
+
+# Order-id pattern: SO01..SO12
+_ORDER_ID_RE = re.compile(r"\bSO(?:0[1-9]|1[0-2])\b")
+
+# Target words for explicit-date and uncertainty gating
+_TARGET_RE = re.compile(
+    r"\b(arriv\w*|receipt|deliver\w*|dates?\b|PO01|supplier|shipment|wait\w*"
+    r"|transfer|alt_buy|hybrid|options?)\b", re.I)
+
+# Other-variable guard: changes to transfer/lane/offer lead times
+_OTHER_VAR_RE = re.compile(
+    r"\b(transfers?\s+(takes?|is|are)|lead[- ]times?|lanes?|alternat\w*\s+supplier|OF\d{2})\b",
+    re.I)
+
+# Uncertainty words for world-risk routing
+_UNCERTAINTY_RE = re.compile(
+    r"\b(uncertain\w*|unsure|not\s+sure|probabilit\w*|chances?\b|likel\w*|odds\b|percentile\w*)\b",
+    re.I)
+
+# Risk words for world-risk routing
+_RISK_RE = re.compile(r"\b(risk\w*|worst[- ]case)\b", re.I)
+
+# Explicit date formats.
+# Numeric MD forms have \b anchors; the ISO form is matched before them via
+# alternation order so "2026-11-19" is captured as <iso>, not as <md_dash>.
+_DATE_RE = re.compile(
+    r"(?:"
+    r"(?P<iso>\d{4}-\d{2}-\d{2})"
+    r"|\b(?P<md_slash>\d{1,2}/\d{1,2})\b"
+    r"|\b(?P<md_dash>\d{1,2}-\d{1,2})\b"
+    r"|(?P<month>(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?"
+    r"|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+    r"\.?\s+\d{1,2}(?:st|nd|rd|th)?)"
+    r")",
+    re.I)
+
+# Words that disqualify a numeric MM-DD match (range / fraction / unit contexts)
+_MD_DISQUALIFY_RE = re.compile(r"\s*(?:days?|weeks?|units?|orders?|%)", re.I)
+
+_MONTH_NAMES = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+# Extended duration pattern: also catches "N more/extra days" and "N days earlier/later"
+_DUR_EXT_RE = re.compile(
+    r"\b(\d+|one|a\b|an\b|two|three|four|five|six|seven|eight|nine|ten)"
+    r"\s*-?\s*"
+    r"(?:more\s+|extra\s+)?"
+    r"(days?|weeks?)"
+    r"(?:\s+(?:more|extra|earlier|later|sooner|longer))?",
+    re.I)
+
+
+def _durations_in_days_ext(msg: str) -> list[int]:
+    """Like _durations_in_days but also captures 'N more/extra days' and weeks."""
+    out = []
+    for m in _DUR_EXT_RE.finditer(msg):
+        n_str = m.group(1).lower()
+        unit = m.group(2).lower()
+        v = int(n_str) if n_str.isdigit() else _WORD_NUM.get(n_str, 0)
+        if v == 0:
+            continue
+        out.append(v * 7 if unit.startswith("week") else v)
+    return out
+
+
+def _receipt_window(disruption_id: str = "D01") -> dict:
+    """Return key dates for the receipt window of a disruption.
+
+    Reads from engine.tools only.  Returns a dict with:
+        po_id       – str
+        original    – date: PO's original planned receipt date
+        announced   – date: disruption's revised receipt date
+        first       – date: first date in the what_if window
+        last        – date: last date in the what_if window
+    """
+    dis = _t.get_disruption(disruption_id)
+    wr = _t.get_world_risk(disruption_id)
+    return {
+        "po_id": dis["po_id"],
+        "original": date.fromisoformat(dis["original_receipt_date"]),
+        "announced": date.fromisoformat(dis["revised_receipt_date"]),
+        "first": date.fromisoformat(wr["what_if"]["dates"][0]),
+        "last": date.fromisoformat(wr["what_if"]["dates"][-1]),
+    }
+
+
+def _parse_explicit_date(msg: str, announced: date) -> "list[date] | None":
+    """Extract all explicit date references from msg.
+
+    Returns a list of dates, or None when a numeric MM-DD token is found that
+    is disqualified by a following word (days/weeks/units/orders/%) — signalling
+    that the string contains a numeric range or fraction, not a date.
+
+    Numeric MM-DD forms (11-19, 11/19) are accepted only when:
+      - the month equals the month of *announced*, and
+      - the match is not immediately followed by days/weeks/units/orders/%.
+    ISO dates and month-name dates are accepted as-is.
+    """
+    results = []
+    for m in _DATE_RE.finditer(msg):
+        if m.group("iso"):
+            try:
+                results.append(date.fromisoformat(m.group("iso")))
+            except ValueError:
+                pass
+        elif m.group("md_dash"):
+            tail = msg[m.end():]
+            if _MD_DISQUALIFY_RE.match(tail):
+                # Numeric range like "3-4 days" — bail out entirely so the
+                # day-count path does not produce a spurious single date.
+                return None
+            parts = m.group("md_dash").split("-")
+            try:
+                mo, dy = int(parts[0]), int(parts[1])
+                if mo != announced.month:
+                    continue
+                results.append(announced.replace(month=mo, day=dy))
+            except ValueError:
+                pass
+        elif m.group("md_slash"):
+            tail = msg[m.end():]
+            if _MD_DISQUALIFY_RE.match(tail):
+                return None
+            parts = m.group("md_slash").split("/")
+            try:
+                mo, dy = int(parts[0]), int(parts[1])
+                if mo != announced.month:
+                    continue
+                results.append(announced.replace(month=mo, day=dy))
+            except ValueError:
+                pass
+        elif m.group("month"):
+            text = m.group("month")
+            # extract month name and day number
+            mo_m = re.match(r"([a-z]+)\.?\s+(\d+)", text, re.I)
+            if mo_m:
+                mo_name = mo_m.group(1)[:3].lower()
+                dy = int(re.sub(r"\D", "", mo_m.group(2)))
+                mo_num = _MONTH_NAMES.get(mo_name)
+                if mo_num:
+                    try:
+                        results.append(announced.replace(month=mo_num, day=dy))
+                    except ValueError:
+                        pass
+    return results
+
+
+def resolve_receipt_date(user_message: str,
+                         disruption_id: str = "D01") -> "dict | None":
+    """Attempt to read a single receipt date from *user_message*.
+
+    Returns None if the message names an order id (SO01-SO12) or contains no
+    date wording.  Returns a status dict otherwise.
+
+    The returned dict has:
+        date        – ISO date string of the resolved date (when one date found)
+        basis       – "explicit", "announced" or "original"
+        days        – int offset used, or None for explicit dates
+        status      – "announced", "after_window", "before_original" or "in_window"
+        original    – ISO str of PO's planned receipt date
+        announced   – ISO str of disruption's revised receipt date
+        first       – ISO str of first simulated date
+        last        – ISO str of last simulated date
+        po_id       – str
+
+    When more than one distinct date is found:
+        {"status": "ambiguous"}
+    When the change is to another variable (e.g. transfer lead time):
+        {"status": "other_variable"}
+    """
+    msg = user_message.lower()
+
+    # Block if an order id appears
+    if _ORDER_ID_RE.search(user_message):
+        return None
+
+    win = _receipt_window(disruption_id)
+    po_id = win["po_id"]
+    original = win["original"]
+    announced = win["announced"]
+    first = win["first"]
+    last = win["last"]
+
+    def _status(d: date) -> str:
+        if d == announced:
+            return "announced"
+        if d > last:
+            return "after_window"
+        if d < original:
+            return "before_original"
+        return "in_window"
+
+    def _result(d: date, basis: str, days_val) -> dict:
+        return {
+            "date": d.isoformat(),
+            "basis": basis,
+            "days": days_val,
+            "status": _status(d),
+            "original": original.isoformat(),
+            "announced": announced.isoformat(),
+            "first": first.isoformat(),
+            "last": last.isoformat(),
+            "po_id": po_id,
+        }
+
+    # ── explicit date path ─────────────────────────────────────────────────────
+    has_target = bool(_TARGET_RE.search(user_message))
+    explicit_dates = _parse_explicit_date(user_message, announced)
+    # None means a numeric range token was found — treat as no date wording.
+    if explicit_dates is None:
+        return None
+    if explicit_dates and has_target:
+        unique = list(dict.fromkeys(explicit_dates))
+        if len(unique) > 1:
+            return {"status": "ambiguous"}
+        return _result(unique[0], "explicit", None)
+
+    # ── day-count path ─────────────────────────────────────────────────────────
+    delay_gate = (
+        _DELAY_TERMS.search(msg)
+        and (_HYPOTHETICAL.search(msg) or "delay" in msg)
+    )
+    if not delay_gate:
+        return None
+
+    # Other-variable guard
+    if _OTHER_VAR_RE.search(user_message):
+        return {"status": "other_variable"}
+
+    durations = _durations_in_days_ext(msg)
+    if not durations:
+        return None
+
+    # Determine direction
+    _EARLIER_RE = re.compile(r"\b(earlier|sooner|early)\b")
+    _MORE_RE = re.compile(r"\b(more|later|another|further|extra)\b")
+
+    from datetime import timedelta
+
+    def _compute_date(n: int) -> tuple:
+        if _EARLIER_RE.search(msg):
+            return announced - timedelta(days=n), "announced"
+        if _MORE_RE.search(msg):
+            return announced + timedelta(days=n), "announced"
+        return original + timedelta(days=n), "original"
+
+    resolved = []
+    for n in durations:
+        d, basis = _compute_date(n)
+        resolved.append((d, basis, n))
+
+    unique_dates = list(dict.fromkeys(d for d, _, _ in resolved))
+    if len(unique_dates) > 1:
+        return {"status": "ambiguous"}
+
+    d, basis, n = resolved[0]
+    return _result(d, basis, n)
+
+
+def reading_lines(resolution: dict) -> "list[str]":
+    """Return the reading header lines for a resolved receipt date.
+
+    Returns [] for status "other_variable" or "ambiguous".
+    """
+    status = resolution.get("status")
+    if status in ("other_variable", "ambiguous"):
+        return []
+
+    po_id = resolution["po_id"]
+    resolved_date = date.fromisoformat(resolution["date"])
+    original = date.fromisoformat(resolution["original"])
+    announced = date.fromisoformat(resolution["announced"])
+    last = date.fromisoformat(resolution["last"])
+
+    def _fmt(d: date) -> str:
+        return f"{d.month:02d}-{d.day:02d}"
+
+    lines = [
+        f"Read as: {po_id} arrives on {_fmt(resolved_date)}.",
+    ]
+
+    if resolution["basis"] != "explicit":
+        lines.append(
+            f'"N days late" counts from the original planned date'
+            f" ({_fmt(original)}). "
+            f'"N days earlier" or "N days later" counts from the announced'
+            f" date ({_fmt(announced)})."
+        )
+
+    if status == "after_window":
+        lines.append(
+            f"{_fmt(resolved_date)} is after the last simulated day"
+            f" ({_fmt(last)})."
+            f" Dates after the window are planned for stage 2."
+        )
+
+    if status == "before_original":
+        lines.append(
+            f"{_fmt(resolved_date)} is before the original planned date"
+            f" ({_fmt(original)})."
+        )
+
+    return lines
+
+
+def is_world_risk_question(user_message: str,
+                           disruption_id: str = "D01") -> bool:
+    """True when the question is about uncertainty or risk across receipt dates.
+
+    False if an order id or the word customer(s) appears.
+    True when one of these holds:
+      a) An uncertainty word (uncertain, chance, likely, probability, odds, ...).
+      b) A risk word (risk, worst case) together with a target word.
+      c) resolve_receipt_date gives status "in_window".
+    """
+    msg = user_message.lower()
+
+    # Block on order ids or customer references
+    if _ORDER_ID_RE.search(user_message):
+        return False
+    if re.search(r"\bcustomers?\b", msg):
+        return False
+
+    # (a) Uncertainty word
+    if _UNCERTAINTY_RE.search(msg):
+        return True
+
+    # (b) Risk word + target word
+    if _RISK_RE.search(msg) and _TARGET_RE.search(user_message):
+        return True
+
+    # (c) Resolves to a date in-window
+    res = resolve_receipt_date(user_message, disruption_id)
+    if res is not None and isinstance(res, dict) and res.get("status") == "in_window":
+        return True
+
+    return False
