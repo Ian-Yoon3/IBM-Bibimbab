@@ -1,0 +1,327 @@
+# Monte Carlo engine (stage 2) design
+
+- **Status:** Living document. Step 1 (model design) is in progress. Each open question below is replaced by its decision when it is settled.
+- **Branch:** `feature/extension-stage2-ian`, created from `feature/extension-trial-ian` at 34a7f78.
+- **Decision owner:** Sunghyuk (Ian) Yoon
+- **Last updated:** 2026-11-12
+
+## 1. Purpose
+
+Stage 1 gave the receipt date of PO01 fixed weights from a triangular rule (ADR 0002).
+Stage 2 replaces those weights with a Monte Carlo engine.
+The engine samples possible situations, groups identical ones and writes them as weighted worlds.
+The existing engine evaluates every option in every world exactly, as in stage 1.
+
+The engine exists for one reason.
+A single cause can delay several things at once.
+If port or customs congestion delays PO01, it can delay the alternative supplier OF02 too.
+ALT_BUY is then late exactly when it is needed.
+Fixed weights on one variable cannot show this. A joint model of several variables can.
+
+This document holds the structure, the equations, the decisions so far, the open questions and the references.
+
+## 2. How we got here
+
+| Date | Decision | Where it is recorded |
+|---|---|---|
+| 2026-09-28 | The main project is the supply chain recovery decision agent. Monte Carlo becomes a side track that is added once the main project works. | Team discussion |
+| 2026-11-07 | Engine MVP on the team baseline data. `simulate()` takes a list of actions, not a scenario name. Results are checked against precomputed answers in `tests/expected/`. | `README.md`, commit history on `main` |
+| 2026-11-09 | Extension plan in three stages. (1) Uncertain receipt date as data. (2) Monte Carlo creates the worlds. (3) Model refinement. | `docs/extension-plan.md` |
+| 2026-11-09 | Design rules. The engine computes exactly where it can. Monte Carlo is used only where things cannot be counted. Time and cost are never merged into one score. The LLM never sets weights. | `docs/extension-plan.md` |
+| 2026-11-11 | Stage 1 weights are integers from a triangular three-point estimate. | ADR 0002 |
+| 2026-11-12 | Stage 1 answers use a code-built `world_risk` view with one checked LLM paragraph. | ADR 0003 |
+| 2026-11-12 | Stage 1 is complete and frozen for team review (476 tests). Stage 2 starts on its own branch. | `docs/extension-plan.md` |
+| 2026-11-12 | Monte Carlo output is one wide CSV. `world_overrides.csv` goes away. | Section 5, ADR 0004 (step 2) |
+| 2026-11-12 | Three kinds of variables, so that shared causes exist. PO01 receipt date, OF02 lead time, transfer lane lead times. | Section 4.1 |
+| 2026-11-12 | "More realistic" means limited history. Few records per source, synthetic but plausible. | Section 6 |
+| 2026-11-12 | No neural acceleration in stage 2. | Section 5 |
+| 2026-11-12 | Plain Monte Carlo, common random numbers and Latin hypercube sampling. Every summary number gets a standard error. | Section 5 |
+| 2026-11-12 | Scale is split off as optional stage 2-1. | Section 7 |
+| 2026-11-12 | Two shared causes (option B). Gateway congestion moves PO01 and OF02. Regional transport disruption moves LN01 and LN02. | Section 4.2 |
+| 2026-11-12 | Shared causes are modelled as common shocks with a shared severity, not as a copula. | Sections 4.3 and 4.5 |
+
+## 3. Structure
+
+Solid boxes are decided. Dashed boxes are open and name the question that settles them.
+
+```mermaid
+flowchart LR
+    subgraph IN["Inputs"]
+        H["History records<br/>few rows per source<br/>(Q2)"]
+        B["Base data<br/>data/*.csv<br/>unchanged"]
+    end
+
+    subgraph MC["Monte Carlo engine (step 4)"]
+        EST["Estimate distributions<br/>from history<br/>(Q3)"]
+        PAR["Parameter draws<br/>carry estimation error<br/>(Q3)"]
+        SMP["Sample one situation<br/>2 shocks + 4 own delays<br/>plain MC or LHS"]
+        COL["Group identical worlds<br/>counts become weights"]
+    end
+
+    subgraph OUT["Output"]
+        W["data/worlds.csv<br/>wide, one row per world"]
+        META["Run record<br/>seed, N, histories,<br/>run time, distinct worlds<br/>(engine never reads it)"]
+    end
+
+    subgraph ENG["Existing engine (stage 1)"]
+        LD["loader.py<br/>reads worlds.csv"]
+        WM["worlds.py<br/>evaluates every option<br/>in every world"]
+        V["world_risk view<br/>+ standard errors"]
+    end
+
+    H --> EST --> PAR --> SMP --> COL
+    COL --> W
+    COL --> META
+    B --> LD
+    W --> LD --> WM --> V
+
+    classDef open stroke-dasharray: 5 5
+    class H,EST,PAR open
+```
+
+Two separate functions are kept on purpose.
+"Make samples" and "evaluate one world" never share code.
+Stage 2-1 can then swap the sampler or add an estimator without touching stage 2.
+No code assumes that samples collapse into few worlds. Collapsing is an optimisation only.
+
+The simulation window is defined in one place (step 3). Its end is set by Q4.
+
+## 4. Model
+
+### 4.1 Uncertain variables
+
+| Symbol | Variable | Base value | Column in `worlds.csv` |
+|---|---|---|---|
+| $R$ | Receipt date of PO01 | Announced 2026-11-17 (planned 2026-11-11) | `purchase_order.PO01.receipt_date` |
+| $L_O$ | Lead time of offer OF02 (S02, C01) | 3 days | `offer.OF02.lead_days` |
+| $L_1$ | Lead time of lane LN01 (WH02 to WH01) | 2 days | `lane.LN01.lead_days` |
+| $L_2$ | Lead time of lane LN02 (WH03 to WH01) | 4 days | `lane.LN02.lead_days` |
+
+All values are whole days.
+Every other value in the base data stays fixed.
+
+### 4.2 Shared causes
+
+| Cause | Moves | Story |
+|---|---|---|
+| $K_1$ Gateway congestion | $R$, $L_O$ | Port or customs backlog at the import gateway that both C01 suppliers use |
+| $K_2$ Regional transport disruption | $L_1$, $L_2$ | Weather or a carrier shortage on the roads into WH01 |
+
+The two causes are independent of each other.
+A storm that triggers both is left as future work.
+
+**Assumptions** (stated in the README when stage 2 ships)
+
+1. S01 and S02 bring C01 in through the same import gateway.
+2. One congestion episode covers the whole window, so OF02 (shipped 11-09) and PO01 (shipped after the repair) see the same backlog.
+3. The announced date 11-17 reflects the equipment repair only. Gateway congestion comes on top of it.
+
+### 4.3 Equations
+
+Each cause $k \in \{1, 2\}$ is a common shock.
+
+$$S_k \sim \text{Bernoulli}(p_k), \qquad C_k \in \{1, 2, \dots\} \text{ with probability mass function } g_k$$
+
+$S_k = 1$ means the cause occurs. $C_k$ is its severity in days.
+Every variable exposed to cause $k$ is delayed by the same $S_k C_k$ days.
+This is the shared severity. The same backlog delays everything that passes through it.
+
+Each variable also has its own delay $E$ that no other variable shares.
+
+$$
+\begin{aligned}
+R   &= d_{\text{ann}} + E_R + S_1 C_1 \\
+L_O &= 3 + E_O + S_1 C_1 \\
+L_1 &= 2 + E_1 + S_2 C_2 \\
+L_2 &= 4 + E_2 + S_2 C_2
+\end{aligned}
+$$
+
+$d_{\text{ann}}$ is the announced date 2026-11-17.
+$E_R, E_O, E_1, E_2, S_1, C_1, S_2, C_2$ are mutually independent.
+Their distributions are estimated from history (Q2, Q3).
+Constraints from the base data still hold. $R$ is never before the planned date 11-11. Lead times stay at least 1 day.
+Whether shipments skip weekends and holidays is decided in Q4.
+
+One situation therefore needs eight random inputs.
+With LHS each input gets its own stratified column.
+
+### 4.4 Properties used in verification
+
+**Covariance.** For two variables exposed to the same cause $k$,
+
+$$\operatorname{Cov} = \operatorname{Var}(S_k C_k) = p_k\,\mathbb{E}[C_k^2] - p_k^2\,\mathbb{E}[C_k]^2 .$$
+
+Variables exposed to different causes have covariance zero.
+Step 5 checks the sampled covariance against this value.
+
+**Conditional probability.** $P(L_O \ge \ell \mid R \ge r)$ is a finite sum over $S_1$, $C_1$, $E_R$ and $E_O$.
+It is computed exactly and compared with the sampled share.
+
+**Special cases.**
+$p_2 = 0$ gives option A (one cause only).
+$p_1 = p_2 = 0$ gives independent variables, whose joint distribution is an exact convolution.
+These are the known answers for step 5.
+They are also the fallback. If the second cause cannot be estimated well, stage 2 ships with $p_2 = 0$ and states it.
+
+### 4.5 Why a common shock and not a copula
+
+Two ways to make the variables move together were compared.
+A Gaussian copula ties the variables with one correlation $\rho$.
+A common shock names the cause and adds its delay.
+
+| Criterion | Common shock, shared severity | Gaussian copula |
+|---|---|---|
+| Joint delay in the extreme tail | Kept | Vanishes |
+| Meaning of the parameters | "Congestion comes with probability $p$ and adds $C$ days" | $\rho$ has no direct physical meaning |
+| Estimation from tens of records | $p$ and $C$ are estimated separately when the congestion state is recorded | 30 pairs with $\rho = 0.3$ give a 95% interval of about −0.07 to 0.60 (Fisher $z$) |
+| Whole-day variables | No problem | Copula is not unique for discrete margins |
+| Verification | Hand calculation and exact sums | Numerical integration |
+| Advantage | Cause is explicit | Works without knowing the cause |
+
+The tail row decides the matter.
+A Gaussian copula with $|\rho| < 1$ has zero tail dependence (Embrechts, McNeil and Straumann 2002).
+It therefore understates the case where everything is late together, which is the case this engine exists to show.
+
+Illustration. Two continuous delays, each own delay exponential with mean 1, shock probability 0.2, shock severity exponential with mean 3. Both models have the same marginals and the same Spearman rank correlation. 2,000,000 samples, computed outside the repository.
+
+| Top share $q$ | Common shock, severity drawn separately | Common shock, severity shared | Gaussian copula |
+|---|---|---|---|
+| 10% | 0.34 | 0.68 | 0.21 to 0.24 |
+| 1% | 0.05 | 0.80 | 0.05 to 0.07 |
+| 0.1% | 0.00 | 0.80 | 0.01 to 0.02 |
+
+Each cell is the probability that one delay is in its top $q$ given that the other one is.
+Drawing a separate severity per variable loses the tail just as the copula does.
+That is why severity is shared.
+
+### 4.6 What the shared cause changes in the results
+
+Late orders per receipt date of PO01 and lead time of OF02, current engine at 34a7f78.
+
+| ALT_BUY, OF02 lead | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 3 days (stage 1) | 0 | 1 | 1 | 1 | 1 | 3 | 3 | 4 | 6 | 6 | 7 |
+| 4 days | 0 | 1 | 3 | 3 | 3 | 5 | 5 | 6 | 8 | 8 | 9 |
+| 5 days | 0 | 1 | 3 | 4 | 4 | 6 | 6 | 7 | 9 | 9 | 10 |
+| 6 days | 0 | 1 | 3 | 4 | 5 | 7 | 7 | 8 | 10 | 10 | 11 |
+
+One extra day for OF02 removes most of the gain of ALT_BUY.
+At 6 days ALT_BUY equals WAIT.
+WAIT and TRANSFER do not depend on OF02.
+
+Late orders react almost additively to the two delays.
+The expected value of a sum does not depend on how the parts are correlated.
+So the shared cause barely moves expected late orders. It moves the tail and the conditional numbers.
+
+Illustration with assumed parameters (not proposals). PO01 triangular with peak 11-16 without congestion and 11-19 with it, congestion probability 0.3, OF02 lead 3 or 4 days without congestion and 3 to 5 days with it. Same marginals in both columns.
+
+| | Independent | Common shock |
+|---|---|---|
+| ALT_BUY expected late orders | 3.75 | 3.76 |
+| ALT_BUY 90th percentile | 6 | 7 |
+| HYBRID 90th percentile | 4 | 5 |
+| P(OF02 at least 4 days given PO01 on or after 11-17) | 0.345 | 0.403 |
+
+Consequence for the view (step 6). Expected values alone would hide the shared cause.
+The view must show the 90th percentile and the conditional probability next to them.
+With OF02 uncertain, ALT_BUY and TRANSFER come close in expected late orders (3.75 and 3.71 above), so the ranking itself can change.
+
+## 5. Sampling and output (decided)
+
+- **Sampling.** Plain Monte Carlo is the reference. Latin hypercube sampling (McKay, Beckman and Conover 1979) is the variance reduction shown, with error against sample count for both. Sobol quasi-Monte Carlo only if time remains (Niederreiter 1992).
+- **Common random numbers.** Every option is evaluated on the same worlds. This is already how `engine/worlds.py` works (Glasserman 2003, ch. 4).
+- **Standard errors.** Every summary number is reported with its standard error.
+- **Fixed seed.** The seed is part of the run record.
+- **Output.** `data/worlds.csv` with columns `world_id, weight, <target_type>.<target_id>.<field>, ...`, one row per distinct world. Weight is the number of samples that produced that world. Column names are checked against `_OPEN_KINDS`.
+- **Run record.** Seed, sample count, histories used, run time and number of distinct worlds. The engine never reads it.
+- **No neural acceleration.** One simulation takes about 0.1 ms and samples collapse into a few hundred distinct worlds, so there is nothing to accelerate. Neural Importance Sampling (Müller et al. 2019) was considered and rejected. Recorded in ADR 0004.
+- **Dependencies.** Python standard library only unless decided otherwise.
+
+## 6. Open questions
+
+| # | Question | What it settles |
+|---|---|---|
+| Q2 | History records | Files, columns (including the recorded congestion state), rows per source, how the synthetic history is generated. The true parameters live only in the generator. The engine sees only the history. |
+| Q3 | Estimation from few records | Distribution family for $E$, $C$ and $p$. Parametric fit, Bayesian with a prior from the announced date, or pooling across sources. How parameter uncertainty enters the samples. Candidate reference Gelman et al. 2013, to be checked before use. |
+| Q4 | How late dates can get | Upper tail of $R$ and the lead times, the weekend and holiday rule, and with them the new end of the window. |
+| Q5 | Sample count and error target | Default $N$, the standard error target for each reported number, and the LHS comparison grid. |
+
+## 7. How stage 2 proceeds
+
+### Steps
+
+| # | Step | Notes |
+|---|---|---|
+| 1 | Model design | This document. Q2 to Q5 remain. |
+| 2 | Format change | Wide single CSV, loader rewrite, ADR 0004. Stage 1 results must come out identical in the new format. |
+| 3 | Window separation | One place defines the window, up to the end from Q4. Today it lives in `loader.py` (`HORIZON_DAYS`, worlds block), `evaluate.py` (`HORIZON_ISO`) and `simulate.py` (window check). Remove the dead line `DAY0.replace(day=DAY0.day + HORIZON_DAYS)`, which fails past November 30. |
+| 4 | Monte Carlo engine | Samples, grouping, weights, one file. Location of the module is decided here. |
+| 5 | Verification | See section 8. |
+| 6 | Open the new kinds | `offer.lead_days` and `lane.lead_days`. The what-if table varies one variable at a time with the others at base values. View shows the tail and conditional numbers (section 4.6). |
+| 7 | Cleanup | Delete `scripts/stage1_triangular_worlds.py` and its test, mark ADR 0002 superseded, update docs, real sweeps, fixtures. |
+
+Target is stage 2 done around 11-18. The deadline with the demo video is 11-22.
+
+### Routine for every step
+
+1. Decisions are taken one at a time, and work stops where a decision is needed.
+2. Each code step gets a prompt for IBM Bob, the expected values computed in advance and a way to confirm the step is done.
+3. Code is written in IBM Bob, in a new Bob task for stage 2. Documents are written outside Bob.
+4. Before a commit, the change is read in the working folder and the full test suite is run.
+5. After a push, the branch is checked again on GitHub.
+
+### Stage 2-1. Scale (optional upper challenge)
+
+- **Gate.** Starts only if stage 2 is done and verified with about three working days left before 11-22. Otherwise it goes to future work in the README with the design below.
+- **Scope.** A separate, larger synthetic data set in its own folder. The default `data/` and its tests stay untouched.
+- **Experiment.** Same error target, compare run time and error for plain Monte Carlo, LHS and multifidelity Monte Carlo with a surrogate as a control variate (Peherstorfer, Willcox and Gunzburger 2016, 2018). The surrogate only saves exact runs and never sets the reported number.
+- Touches the engine owner's validation, so it is agreed with the team first.
+
+## 8. Verification plan (step 5)
+
+| Check | Known answer |
+|---|---|
+| Independent case ($p_1 = p_2 = 0$) | Exact convolution of the own-delay distributions. Sampled weights converge to it within a tolerance, fixed seed. |
+| Shared cause creates correlation | Sampled covariance against $p_k\,\mathbb{E}[C_k^2] - p_k^2\,\mathbb{E}[C_k]^2$. Covariance across the two causes is zero. |
+| Conditional probability | Exact finite sum (section 4.4) against the sampled share. |
+| Estimator recovers the truth | Parameters estimated from generated history against the generator's true parameters, within the stated uncertainty. |
+| Stage 1 regression | Stage 1 worlds in the new format give the ADR 0002 table exactly. |
+| Error shrinks with $N$ | Standard error falls roughly as $1/\sqrt{N}$ for plain Monte Carlo. |
+| LHS against plain | Error against $N$ for both, same seed set. |
+
+## 9. References
+
+Each reference is listed with the reason it is treated as verified.
+
+- N. Metropolis, S. Ulam, "The Monte Carlo Method," *Journal of the American Statistical Association* 44(247), 335–341, 1949. [doi:10.1080/01621459.1949.10483310](https://doi.org/10.1080/01621459.1949.10483310)
+  Founding paper of the method.
+- P. Glasserman, *Monte Carlo Methods in Financial Engineering*, Springer, 2003. [doi:10.1007/978-0-387-21617-1](https://doi.org/10.1007/978-0-387-21617-1)
+  Standard graduate textbook. Variance reduction including common random numbers and control variates, quasi-Monte Carlo, and factor models for dependent defaults.
+- M. D. McKay, R. J. Beckman, W. J. Conover, "A Comparison of Three Methods for Selecting Values of Input Variables in the Analysis of Output from a Computer Code," *Technometrics* 21(2), 239–245, 1979. [doi:10.1080/00401706.1979.10489755](https://doi.org/10.1080/00401706.1979.10489755)
+  Origin of Latin hypercube sampling. Cited thousands of times.
+- H. Niederreiter, *Random Number Generation and Quasi-Monte Carlo Methods*, SIAM, 1992. [doi:10.1137/1.9781611970081](https://doi.org/10.1137/1.9781611970081)
+  Standard text on quasi-Monte Carlo.
+- B. Efron, "Bootstrap Methods: Another Look at the Jackknife," *Annals of Statistics* 7(1), 1–26, 1979. [doi:10.1214/aos/1176344552](https://doi.org/10.1214/aos/1176344552)
+  Origin of the bootstrap. Among the most cited papers in statistics.
+- A. W. Marshall, I. Olkin, "A Multivariate Exponential Distribution," *Journal of the American Statistical Association* 62(317), 30–44, 1967. [doi:10.1080/01621459.1967.10482885](https://doi.org/10.1080/01621459.1967.10482885)
+  Origin of the common shock model. Cited thousands of times and standard in reliability and insurance texts.
+- P. Embrechts, A. McNeil, D. Straumann, "Correlation and Dependence in Risk Management: Properties and Pitfalls," in M. Dempster (ed.), *Risk Management: Value at Risk and Beyond*, Cambridge University Press, 176–223, 2002. [doi:10.1017/CBO9780511615337.008](https://doi.org/10.1017/CBO9780511615337.008)
+  Shows that a Gaussian copula has zero tail dependence. Cited thousands of times and a standard reference in risk management.
+- A. J. McNeil, R. Frey, P. Embrechts, *Quantitative Risk Management*, revised ed., Princeton University Press, 2015.
+  Standard graduate textbook covering copulas, tail dependence and common shock models.
+- C. Genest, J. Nešlehová, "A Primer on Copulas for Count Data," *ASTIN Bulletin* 37(2), 475–515, 2007. [doi:10.2143/AST.37.2.2024077](https://doi.org/10.2143/AST.37.2.2024077)
+  Review in a leading actuarial journal on why copulas are not unique for discrete data. Widely cited.
+- R. B. Nelsen, *An Introduction to Copulas*, 2nd ed., Springer, 2006. [doi:10.1007/0-387-28678-0](https://doi.org/10.1007/0-387-28678-0)
+  Standard textbook on copulas. Cited only to describe the rejected option.
+- R. A. Fisher, "Frequency Distribution of the Values of the Correlation Coefficient in Samples from an Indefinitely Large Population," *Biometrika* 10(4), 507–521, 1915. [doi:10.2307/2331838](https://doi.org/10.2307/2331838)
+  Origin of the $z$ transformation used for the interval on $\rho$. Taught in every statistics curriculum.
+- D. V. Lindley, *Making Decisions*, 2nd ed., Wiley, 1985.
+  Standard textbook of Bayesian decision analysis. Source of Cromwell's rule (no zero probability for a possible event), already used in `docs/extension-plan.md`.
+- For stage 2-1 only. B. Peherstorfer, K. Willcox, M. Gunzburger, "Optimal Model Management for Multifidelity Monte Carlo Estimation," *SIAM Journal on Scientific Computing* 38(5), A3163–A3194, 2016. [doi:10.1137/15M1046472](https://doi.org/10.1137/15M1046472) And "Survey of Multifidelity Methods in Uncertainty Propagation, Inference, and Optimization," *SIAM Review* 60(3), 550–591, 2018. [doi:10.1137/16M1082469](https://doi.org/10.1137/16M1082469)
+  Top applied mathematics journals, widely cited.
+- Considered and not used. T. Müller, B. McWilliams, F. Rousselle, M. Gross, J. Novák, "Neural Importance Sampling," *ACM Transactions on Graphics* 38(5), 145, 2019. [doi:10.1145/3341156](https://doi.org/10.1145/3341156)
+- Candidate for Q3, not yet adopted. A. Gelman, J. B. Carlin, H. S. Stern, D. B. Dunson, A. Vehtari, D. B. Rubin, *Bayesian Data Analysis*, 3rd ed., CRC Press, 2013.
+  Standard textbook. To be checked against the chosen method before it is cited.
+
+Weight rule references for stage 1 (Jaynes 1957, Malcolm et al. 1959, Garthwaite, Kadane and O'Hagan 2005, Law 2015) are in ADR 0002.
