@@ -8,11 +8,11 @@ Using an AI tool? Paste `docs/team-ai-prompt.md` into it before you start.
 
 | Area | Folder | Owner | Others |
 |---|---|---|---|
-| Engine | `engine/`, `data/`, `tests/expected/` | Ian (built by Junseo) | Ask before changing |
-| Agent | `agent/`, `scripts/` | Ian | Ask before changing |
-| UI | `app.py`, `ui/` (if needed), `.streamlit/`, `streamlit` line in `requirements.txt` | UI owner (TBD) | Free to change on the `ui` branch |
+| Engine | `engine/`, `data/`, `tests/expected/` | Ian (built by Dennis(Junseo) and John(Jonghyun)) | Ask before changing |
+| Agent | `agent/`, `scripts/` | Ian(Sunghyuk) | Ask before changing |
+| UI | `app.py`, `ui/` (if needed), `.streamlit/`, `streamlit` line in `requirements.txt` | Soo(Hyunsoo) (built with Ian in some part) | Free to change on the `ui` branch |
 | Team docs | `CONTRIBUTING.md`, `docs/` | Anyone | Keep `docs/ui-contract.md` in sync with the agent |
-| Bob records | `bob_sessions/<your name>/` | Each member | Only your own folder |
+| Bob records | `bob_sessions/<your name>/` | Each member (some members worked together and in this case only one recod will be represented) | Only your own folder |
 
 UI owner, start with `docs/ui-handoff-prompt.md`. Paste it into the AI tool you use.
 
