@@ -119,10 +119,10 @@ class TestTriangularDayWeights(unittest.TestCase):
             )
 
     # ------------------------------------------------------------------
-    # (f) Writing to a temporary folder produces correct files.
+    # (f) Writing to a temporary folder produces the correct wide file.
     # ------------------------------------------------------------------
     def test_f_write_worlds(self):
-        """Writing default weights gives exact headers, 11 rows, matching ids."""
+        """Writing default weights gives one wide worlds.csv, no overrides file."""
         weights = triangular_day_weights(
             date(2026, 11, 11), date(2026, 11, 17), date(2026, 11, 21), 1000
         )
@@ -135,29 +135,33 @@ class TestTriangularDayWeights(unittest.TestCase):
             overrides_path = pathlib.Path(tmp) / "world_overrides.csv"
 
             self.assertTrue(worlds_path.exists())
-            self.assertTrue(overrides_path.exists())
+            self.assertFalse(overrides_path.exists(),
+                             "world_overrides.csv must not be written (ADR 0004)")
 
             with open(worlds_path, newline="", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
-                self.assertEqual(reader.fieldnames, ["world_id", "weight"])
+                expected_fieldnames = [
+                    "world_id", "draw", "weight",
+                    "purchase_order.PO01.receipt_date",
+                ]
+                self.assertEqual(reader.fieldnames, expected_fieldnames)
                 w_rows = list(reader)
             self.assertEqual(len(w_rows), 11)
 
-            with open(overrides_path, newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                self.assertEqual(
-                    reader.fieldnames,
-                    ["world_id", "target_type", "target_id", "field", "value"]
-                )
-                o_rows = list(reader)
-            self.assertEqual(len(o_rows), 11)
+            # draw must be "0" for all rows
+            for row in w_rows:
+                self.assertEqual(row["draw"], "0",
+                                 f"draw must be 0, got {row['draw']!r}")
 
-            # World ids must be identical in both files, in order
-            world_ids_w = [r["world_id"] for r in w_rows]
-            world_ids_o = [r["world_id"] for r in o_rows]
-            self.assertEqual(world_ids_w, world_ids_o)
-            self.assertEqual(world_ids_w[0], "W001")
-            self.assertEqual(world_ids_w[-1], "W011")
+            # world_ids in order
+            world_ids = [r["world_id"] for r in w_rows]
+            self.assertEqual(world_ids[0], "W001")
+            self.assertEqual(world_ids[-1], "W011")
+
+            # receipt dates
+            dates = [r["purchase_order.PO01.receipt_date"] for r in w_rows]
+            self.assertEqual(dates[0], "2026-11-11")
+            self.assertEqual(dates[-1], "2026-11-21")
 
     # ------------------------------------------------------------------
     # (g) No other file under engine/, agent/, or scripts/ (except this

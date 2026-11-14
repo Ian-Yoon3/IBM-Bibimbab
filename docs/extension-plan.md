@@ -51,16 +51,16 @@ Triangular weights also use the announced date. They are the stage 1 data. See `
 A world is one possible situation. It is a set of overrides on the base data, with a weight.
 The base data in `data/*.csv` stays as it is. A value a world does not list keeps its base value.
 
-Two files hold the worlds.
+One file holds the worlds (ADR 0004, stage 2). Stage 1 used two files, `worlds.csv` and `world_overrides.csv`.
 
 | File | Columns |
 |---|---|
-| `data/worlds.csv` | `world_id,weight` |
-| `data/world_overrides.csv` | `world_id,target_type,target_id,field,value` |
+| `data/worlds.csv` | `world_id,draw,weight,<target_type>.<target_id>.<field>,...` |
 
 - Weights are positive integers. The engine divides each weight by the total.
 - The total has no meaning of its own in stage 1. It is a chosen scale (1000). In stage 2 it is the Monte Carlo sample count. The engine never reads it as a sample size.
-- New variables add rows to `world_overrides.csv`, never columns.
+- New variables add columns. A program writes the file, so the number of columns costs nothing.
+- `draw` names the parameter draw that produced a world. Every draw has the same total weight. Stage 1 has one draw.
 - Values inside one world come from one situation. Variables are therefore not assumed independent. A shared cause can move several values together.
 - The number of variables is free. The kinds of variables are opened one by one in the engine. A kind that is not open raises an error, so nothing is silently ignored.
 
@@ -136,7 +136,7 @@ New module `engine/worlds.py`.
 
 ## Stage 2. Worlds from a Monte Carlo engine
 
-- A Monte Carlo engine writes `data/worlds.csv` and `data/world_overrides.csv`. Stage 1 code does not change.
+- A Monte Carlo engine writes `data/worlds.csv` (ADR 0004). The full design is in `docs/montecarlo-engine.md`.
 - It keeps random variables, distributions and shared causes inside itself. It writes only sampled outcomes and their counts.
 - The model is meant to be rich. Shared causes, conditions such as weekends, and several variables at once.
 - The engine reports its own sampling error. The total weight is a sample count only here.

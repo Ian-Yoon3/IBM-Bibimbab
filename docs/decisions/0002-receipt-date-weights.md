@@ -4,6 +4,7 @@
 - **Date:** 2026-11-11
 - **Branch:** `feature/extension-trial-ian`
 - **Decision owner:** Sunghyuk (Ian) Yoon
+- **Update 2026-11-13:** The two world files described below were replaced by one wide `data/worlds.csv` (ADR 0004). The weights are unchanged.
 
 ## Context
 

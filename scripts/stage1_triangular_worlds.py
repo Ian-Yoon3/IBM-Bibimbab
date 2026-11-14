@@ -2,7 +2,12 @@
 estimate until the stage 2 Monte Carlo engine replaces this script.
 Nothing in engine/, agent/ or scripts/ may import this module.
 Delete this file and tests/test_stage1_triangular_worlds.py when stage 2
-writes data/worlds.csv. See docs/decisions/0002-receipt-date-weights.md."""
+writes data/worlds.csv. See docs/decisions/0002-receipt-date-weights.md.
+
+Output format (ADR 0004, stage 2 step 2): one wide worlds.csv with columns
+world_id, draw, weight, <target_type>.<target_id>.<field>.
+draw is 0 for every row (single draw; stage 1 has no parameter uncertainty).
+world_overrides.csv is no longer written."""
 
 import argparse
 import csv
@@ -119,7 +124,7 @@ def _world_id(n):
 
 
 def write_worlds(weights, po, out_dir):
-    """Write worlds.csv and world_overrides.csv into out_dir.
+    """Write a wide worlds.csv into out_dir (ADR 0004 format).
 
     Parameters
     ----------
@@ -130,6 +135,11 @@ def write_worlds(weights, po, out_dir):
     Returns
     -------
     list of (world_id, date, weight) – one entry per world written
+
+    The column for the receipt date override is named
+    "purchase_order.<po>.receipt_date".
+    draw is 0 for every row (single draw; stage 1 has no parameter uncertainty).
+    world_overrides.csv is NOT written.
     """
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -138,22 +148,14 @@ def write_worlds(weights, po, out_dir):
     for idx, (day, weight) in enumerate(weights, start=1):
         rows.append((_world_id(idx), day, weight))
 
+    col_name = f"purchase_order.{po}.receipt_date"
     worlds_path = out_dir / "worlds.csv"
-    overrides_path = out_dir / "world_overrides.csv"
 
     with open(worlds_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["world_id", "weight"])
-        for world_id, _, weight in rows:
-            writer.writerow([world_id, weight])
-
-    with open(overrides_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["world_id", "target_type", "target_id", "field", "value"])
-        for world_id, day, _ in rows:
-            writer.writerow(
-                [world_id, "purchase_order", po, "receipt_date", day.isoformat()]
-            )
+        writer.writerow(["world_id", "draw", "weight", col_name])
+        for world_id, day, weight in rows:
+            writer.writerow([world_id, 0, weight, day.isoformat()])
 
     return rows
 

@@ -41,6 +41,7 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-12 | Shared causes are modelled as common shocks with a shared severity, not as a copula. | Sections 4.3 and 4.5 |
 | 2026-11-12 | Shared causes are recorded in the history as episodes. Two history files under `data/history/`. | Section 6.1 |
 | 2026-11-12 | History is generated as a calendar process that is richer than the estimator. One demo history is committed. The method is checked over many generated histories. | Sections 6.3 and 6.4 |
+| 2026-11-13 | `worlds.csv` carries a `draw` column. Every draw has the same total weight. | ADR 0004 |
 | 2026-11-13 | Estimation is Bayesian with conjugate priors and a uniform prior. Chosen by comparing six established methods on the engine itself. | Section 7 |
 | 2026-11-13 | Parameter uncertainty enters by two-level sampling. Every summary number gets an interval. | Section 7.2 |
 | 2026-11-13 | The view states the model assumptions and one threshold line per shared cause. No fixed stress scenario. | Section 7.6 |
@@ -241,7 +242,7 @@ With OF02 uncertain, ALT_BUY and TRANSFER come close in expected late orders (3.
 - **Common random numbers.** Every option is evaluated on the same worlds. This is already how `engine/worlds.py` works (Glasserman 2003, ch. 4).
 - **Standard errors.** Every summary number is reported with its standard error.
 - **Fixed seed.** The seed is part of the run record.
-- **Output.** `data/worlds.csv` with columns `world_id, weight, <target_type>.<target_id>.<field>, ...`, one row per distinct world. Weight is the number of samples that produced that world. Column names are checked against `_OPEN_KINDS`.
+- **Output.** `data/worlds.csv` with columns `world_id, draw, weight, <target_type>.<target_id>.<field>, ...`, one row per world and parameter draw (ADR 0004). Weight is the number of samples that produced that world. Column names are checked against `_OPEN_KINDS`.
 - **Run record.** Seed, sample count, histories used, run time and number of distinct worlds. The engine never reads it.
 - **No neural acceleration.** One simulation takes about 0.1 ms and samples collapse into a few hundred distinct worlds, so there is nothing to accelerate. Neural Importance Sampling (Müller et al. 2019) was considered and rejected. Recorded in ADR 0004.
 - **Dependencies.** Python standard library only unless decided otherwise.
@@ -421,7 +422,7 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 | # | Step | Notes |
 |---|---|---|
 | 1 | Model design | This document. Q1 to Q3 decided. Q4 and Q5 remain. |
-| 2 | Format change | Wide single CSV, loader rewrite, ADR 0004. Stage 1 results must come out identical in the new format. |
+| 2 | Format change | Done (ADR 0004). Wide single CSV with a `draw` column, loader rewritten, stage 1 results identical, 498 tests. |
 | 3 | Window separation | One place defines the window, up to the end from Q4. Today it lives in `loader.py` (`HORIZON_DAYS`, worlds block), `evaluate.py` (`HORIZON_ISO`) and `simulate.py` (window check). Remove the dead line `DAY0.replace(day=DAY0.day + HORIZON_DAYS)`, which fails past November 30. |
 | 4 | Monte Carlo engine | Samples, grouping, weights, one file. Location of the module is decided here. |
 | 5 | Verification | See section 10. |

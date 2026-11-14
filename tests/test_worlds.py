@@ -40,6 +40,9 @@ def _write_csv(path, rows):
             w.writerow(row)
 
 
+_WIDE_HEADER = ["world_id", "draw", "weight", "purchase_order.PO01.receipt_date"]
+
+
 # ---------------------------------------------------------------------------
 # (a) No world files: source "announced_date", results match compare_scenarios
 # ---------------------------------------------------------------------------
@@ -50,7 +53,6 @@ class TestNoWorldFiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             (dd / "worlds.csv").unlink()
-            (dd / "world_overrides.csv").unlink()
             cls.db = load_all(dd)
         cls.result = evaluate_worlds("D01", cls.db)
         cls.cs = compare_scenarios()
@@ -114,12 +116,8 @@ class TestOneWorldFile(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             _write_csv(dd / "worlds.csv", [
-                ["world_id", "weight"],
-                ["W1", "5"],
-            ])
-            _write_csv(dd / "world_overrides.csv", [
-                ["world_id", "target_type", "target_id", "field", "value"],
-                ["W1", "purchase_order", "PO01", "receipt_date", "2026-11-17"],
+                _WIDE_HEADER,
+                ["W1", "0", "5", "2026-11-17"],
             ])
             cls.db = load_all(dd)
         cls.result = evaluate_worlds("D01", cls.db)
@@ -162,12 +160,8 @@ class TestWaitOnEarliestEqualsNormal(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             _write_csv(dd / "worlds.csv", [
-                ["world_id", "weight"],
-                ["W1", "1"],
-            ])
-            _write_csv(dd / "world_overrides.csv", [
-                ["world_id", "target_type", "target_id", "field", "value"],
-                ["W1", "purchase_order", "PO01", "receipt_date", "2026-11-11"],
+                _WIDE_HEADER,
+                ["W1", "0", "1", "2026-11-11"],
             ])
             db_one = load_all(dd)
 
@@ -201,13 +195,10 @@ class TestEqualWeights(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             dates = [date(2026, 11, 11) + timedelta(days=i) for i in range(11)]
-            worlds_rows = [["world_id", "weight"]] + [[f"W{i+1:03d}", "1"] for i in range(11)]
+            worlds_rows = [_WIDE_HEADER] + [
+                [f"W{i+1:03d}", "0", "1", d.isoformat()] for i, d in enumerate(dates)
+            ]
             _write_csv(dd / "worlds.csv", worlds_rows)
-            overrides_rows = [["world_id", "target_type", "target_id", "field", "value"]]
-            for i, d in enumerate(dates):
-                overrides_rows.append([f"W{i+1:03d}", "purchase_order", "PO01",
-                                       "receipt_date", d.isoformat()])
-            _write_csv(dd / "world_overrides.csv", overrides_rows)
             db = load_all(dd)
         cls.result = evaluate_worlds("D01", db)
 
@@ -317,13 +308,15 @@ class TestWeightsScaling(unittest.TestCase):
             # Read the existing worlds.csv and multiply weights by 7
             worlds_path = dd / "worlds.csv"
             rows = []
+            fieldnames = None
             with open(worlds_path, newline="", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
                 for row in reader:
                     row["weight"] = str(int(row["weight"]) * 7)
                     rows.append(row)
             with open(worlds_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=["world_id", "weight"])
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(rows)
             db7 = load_all(dd)
@@ -408,7 +401,6 @@ class TestWhatIf(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             (dd / "worlds.csv").unlink()
-            (dd / "world_overrides.csv").unlink()
             db_no = load_all(dd)
         r_no = evaluate_worlds("D01", db_no)
         self.assertEqual(r_no["what_if"], self.result["what_if"])
@@ -481,6 +473,111 @@ class TestApplyWorldUnsupportedKind(unittest.TestCase):
         }
         with self.assertRaises(ValueError):
             apply_world(db, bad_world)
+
+
+# ---------------------------------------------------------------------------
+# (m) Two-draw test: pre-computed expected values
+#
+# draw 0: {2026-11-11 weight 1, 2026-11-17 weight 1}  (total 2)
+# draw 1: {2026-11-21 weight 2}                        (total 2)
+#
+# evaluate_worlds pools all 3 rows (total_w = 4).
+#
+# Late orders per world (from what_if table):
+#   date  WAIT  TRANSFER  ALT_BUY  HYBRID
+#   11-11    0         0        0       0
+#   11-17    7         4        3       1
+#   11-21   11         8        7       5
+#
+# expected = (1*0 + 1*7 + 2*11) / 4 = 29/4 = 7.25  (WAIT)
+#           (1*0 + 1*4 + 2*8)  / 4 = 20/4 = 5.0   (TRANSFER)
+#           (1*0 + 1*3 + 2*7)  / 4 = 17/4 = 4.25  (ALT_BUY)
+#           (1*0 + 1*1 + 2*5)  / 4 = 11/4 = 2.75  (HYBRID)
+#
+# p_no_late_pct = weight(late==0) / total_w * 100 = 1/4 * 100 = 25.0 for all
+# (only the draw-0 world W1 has late==0)
+#
+# p90: quantile at level 0.9 of [(0,1),(7,1),(11,2)] sorted:
+#   WAIT: cumw at 0 = 1/4=0.25, at 7 = 2/4=0.5, at 11 = 4/4=1.0 → p90 = 11
+#   HYBRID: cumw at 0 = 1/4, at 1 = 2/4, at 5 = 4/4 → p90 = 5
+# ---------------------------------------------------------------------------
+
+_TWO_DRAW_EXPECTED = {
+    "WAIT":     {"expected": 7.25, "p90": 11, "p_no": 25.0},
+    "TRANSFER": {"expected": 5.0,  "p90":  8, "p_no": 25.0},
+    "ALT_BUY":  {"expected": 4.25, "p90":  7, "p_no": 25.0},
+    "HYBRID":   {"expected": 2.75, "p90":  5, "p_no": 25.0},
+}
+
+
+class TestTwoDraws(unittest.TestCase):
+    """Two draws with equal totals (2 each) pooled over 4 rows."""
+
+    @classmethod
+    def setUpClass(cls):
+        with tempfile.TemporaryDirectory() as tmp:
+            dd = _copy_data(tmp)
+            _write_csv(dd / "worlds.csv", [
+                _WIDE_HEADER,
+                ["W1", "0", "1", "2026-11-11"],
+                ["W2", "0", "1", "2026-11-17"],
+                ["W3", "1", "2", "2026-11-21"],
+            ])
+            db = load_all(dd)
+        cls.result = evaluate_worlds("D01", db)
+
+    def _opt(self, sid):
+        return next(o for o in self.result["options"] if o["scenario_id"] == sid)
+
+    def _check(self, sid):
+        exp = _TWO_DRAW_EXPECTED[sid]
+        opt = self._opt(sid)
+        got_exp = opt["expected_late_orders"]
+        if got_exp != exp["expected"]:
+            self.fail(
+                f"two_draw {sid} expected_late_orders: "
+                f"expected {exp['expected']}, got {got_exp}"
+            )
+        got_p90 = opt["p90_late_orders"]
+        if got_p90 != exp["p90"]:
+            self.fail(
+                f"two_draw {sid} p90_late_orders: "
+                f"expected {exp['p90']}, got {got_p90}"
+            )
+        got_pno = opt["p_no_late_pct"]
+        if got_pno != exp["p_no"]:
+            self.fail(
+                f"two_draw {sid} p_no_late_pct: "
+                f"expected {exp['p_no']}, got {got_pno}"
+            )
+
+    def test_m_wait(self):      self._check("WAIT")
+    def test_m_transfer(self):  self._check("TRANSFER")
+    def test_m_alt_buy(self):   self._check("ALT_BUY")
+    def test_m_hybrid(self):    self._check("HYBRID")
+
+    def test_m_world_count(self):
+        """world_count is 3 (all rows, not draws)."""
+        self.assertEqual(self.result["world_count"], 3)
+
+
+class TestTwoDrawsUnequalTotalsRaises(unittest.TestCase):
+    """Same rows but draw 1 weight 3 -> error (totals 2 and 3)."""
+
+    def test_m_unequal_totals_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dd = _copy_data(tmp)
+            _write_csv(dd / "worlds.csv", [
+                _WIDE_HEADER,
+                ["W1", "0", "1", "2026-11-11"],
+                ["W2", "0", "1", "2026-11-17"],
+                ["W3", "1", "3", "2026-11-21"],  # draw 1 total 3 ≠ draw 0 total 2
+            ])
+            with self.assertRaises(ValueError) as ctx:
+                load_all(dd)
+            msg = str(ctx.exception)
+            self.assertIn("draw 0", msg)
+            self.assertIn("draw 1", msg)
 
 
 if __name__ == "__main__":

@@ -51,7 +51,7 @@ python reference/verify.py
 - **Answer layouts:** `agent/render.py` builds recommendation, order, proposal, unsupported and world_risk answers from engine data. The LLM writes only the rationale and trade-offs of a recommendation. Do not move tables or numbers back into LLM-written text.
 - The agent **never approves** recovery actions — it only proposes.
 - Only disruption **D01** exists in the data. Receipt dates of PO01 inside the simulation window are answered by the `world_risk` view from engine data (ADR 0003). Other disruption IDs, dates after the window and changes to other inputs are not supported yet, and the agent must say so rather than invent numbers.
-- `engine.tools.get_world_risk` evaluates every option over the weighted worlds in `data/worlds.csv` and `data/world_overrides.csv` (optional files, ADR 0002). It is not an LLM tool. In `world_risk` answers the LLM writes one short paragraph and code checks every number in it.
+- `engine.tools.get_world_risk` evaluates every option over the weighted worlds in `data/worlds.csv` (optional file, format in ADR 0004, stage 1 weights in ADR 0002). It is not an LLM tool. In `world_risk` answers the LLM writes one short paragraph and code checks every number in it.
 
 ## Secrets & environment
 

@@ -1,5 +1,17 @@
 """Load and validate all 14 CSV data files for the supply chain engine,
-plus two optional world files (worlds.csv and world_overrides.csv)."""
+plus one optional world file (worlds.csv) in the wide format introduced
+by ADR 0004 (stage 2, step 2).
+
+worlds.csv header: world_id, draw, weight, <variable_columns...>
+  - Each variable column name has the form target_type.target_id.field
+    where (target_type, field) is a key in _OPEN_KINDS.
+  - One row per (draw, world_id).  Duplicate value combinations are allowed;
+    their weights simply add up during evaluate_worlds pooling.
+  - Every draw must have the same total weight (rule 7).
+
+world_overrides.csv is no longer read.  If it still exists, the loader
+raises ValueError explaining that its content belongs in worlds.csv (ADR 0004).
+"""
 import csv
 from collections import defaultdict
 from datetime import date
@@ -282,144 +294,182 @@ def load_all(data_dir=None) -> dict:
             "reason": _require(r, "reason", "disruptions"),
         }
 
-    # ── worlds (optional) ─────────────────────────────────────────────────────
-    # Both files must be present together, or both absent.
+    # ── worlds (optional, wide format, ADR 0004) ──────────────────────────────
     worlds_path = dd / "worlds.csv"
     overrides_path = dd / "world_overrides.csv"
-    worlds_present = worlds_path.exists()
-    overrides_present = overrides_path.exists()
 
-    if worlds_present != overrides_present:
-        missing = "world_overrides.csv" if worlds_present else "worlds.csv"
-        present = "worlds.csv" if worlds_present else "world_overrides.csv"
+    # world_overrides.csv is retired; its existence is an error.
+    if overrides_path.exists():
         raise ValueError(
-            f"{present} is present but {missing} is missing; "
-            "both world files must be present together or both absent"
+            "worlds.csv: world_overrides.csv is no longer read; "
+            "its content belongs in worlds.csv (see ADR 0004)"
         )
 
-    if not worlds_present:
+    if not worlds_path.exists():
         worlds_db = None
     else:
-        # --- worlds.csv ---
+        # po_ids that appear in disruptions (supported target_ids for
+        # the purchase_order kind)
+        disrupted_po_ids = {d["po_id"] for d in disruptions.values()}
+
+        HORIZON = DAY0 + __import__("datetime").timedelta(days=HORIZON_DAYS)
+
+        # Rule 3: read raw header to detect duplicates before DictReader
         with worlds_path.open(encoding="utf-8", newline="") as fh:
-            reader = csv.DictReader(fh)
-            actual_header = reader.fieldnames or []
-            expected_header = ["world_id", "weight"]
-            if list(actual_header) != expected_header:
+            raw_header = next(csv.reader(fh))
+
+        if len(raw_header) != len(set(raw_header)):
+            seen = set()
+            dups = []
+            for col in raw_header:
+                if col in seen:
+                    dups.append(col)
+                seen.add(col)
+            raise ValueError(
+                f"worlds.csv: duplicate column name(s): {dups}"
+            )
+
+        # Rule 3: first three columns must be world_id, draw, weight; at least
+        # one variable column follows.
+        if len(raw_header) < 4 or raw_header[:3] != ["world_id", "draw", "weight"]:
+            raise ValueError(
+                "worlds.csv: first three header names must be "
+                "world_id, draw, weight followed by at least one variable column; "
+                f"got {raw_header}"
+            )
+
+        var_cols = raw_header[3:]  # variable column names
+
+        # Rule 4: validate each variable column name
+        col_kinds = {}  # col_name -> (ttype, tid, field)
+        for col in var_cols:
+            parts = col.split(".")
+            if len(parts) != 3 or any(p == "" for p in parts):
                 raise ValueError(
-                    f"worlds.csv: header must be exactly {expected_header}, "
-                    f"got {list(actual_header)}"
+                    f"worlds.csv: variable column {col!r} must split into "
+                    "exactly 3 non-empty parts on '.'"
                 )
-            worlds_order = []   # list of world_id in file order
-            worlds_weight = {}  # world_id -> weight int
-            for row in reader:
+            ttype, tid, field = parts
+            kind_key = (ttype, field)
+            if kind_key not in _OPEN_KINDS:
+                raise ValueError(
+                    f"worlds.csv: variable column {col!r}: "
+                    f"kind ({ttype!r}, {field!r}) is not supported yet"
+                )
+            if ttype == "purchase_order":
+                if tid not in disrupted_po_ids:
+                    raise ValueError(
+                        f"worlds.csv: variable column {col!r}: "
+                        f"target_id {tid!r} is not a PO named in disruptions"
+                    )
+            col_kinds[col] = (ttype, tid, field)
+
+        # Read all rows with DictReader
+        worlds_db = []
+        seen_world_ids = set()
+        draw_totals = {}  # draw int -> total weight int
+
+        with worlds_path.open(encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                # Rule 5: world_id non-empty and unique
                 wid = row.get("world_id", "")
                 if not wid:
                     raise ValueError("worlds.csv: world_id must not be empty")
-                if wid in worlds_weight:
+                if wid in seen_world_ids:
                     raise ValueError(
                         f"worlds.csv: duplicate world_id {wid!r}"
                     )
+                seen_world_ids.add(wid)
+
+                # Rule 5: draw is an integer >= 0
+                raw_draw = row.get("draw", "")
+                if raw_draw == "":
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: draw must not be empty"
+                    )
+                try:
+                    draw = _int(raw_draw, "draw")
+                except ValueError as exc:
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: {exc}"
+                    ) from exc
+
+                # Rule 5: weight is an integer >= 1
                 raw_w = row.get("weight", "")
+                if raw_w == "":
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: weight must not be empty"
+                    )
                 try:
                     weight = _int(raw_w, "weight")
                 except ValueError as exc:
-                    raise ValueError(f"worlds.csv: world {wid!r}: {exc}") from exc
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: {exc}"
+                    ) from exc
                 if weight < 1:
                     raise ValueError(
                         f"worlds.csv: world {wid!r}: weight must be >= 1, got {weight}"
                     )
-                worlds_order.append(wid)
-                worlds_weight[wid] = weight
 
-        if not worlds_order:
+                # Rule 5: no empty cells — variable columns; Rule 6: parse values
+                overrides = {}
+                for col in var_cols:
+                    raw_val = row.get(col, "")
+                    if raw_val == "":
+                        raise ValueError(
+                            f"worlds.csv: world {wid!r}: "
+                            f"column {col!r} must not be empty"
+                        )
+                    ttype, tid, field = col_kinds[col]
+                    kind_key = (ttype, field)
+                    try:
+                        parsed = _OPEN_KINDS[kind_key](raw_val, field)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"worlds.csv: world {wid!r}: {exc}"
+                        ) from exc
+                    # receipt_date bounds (stage 1 bounds preserved)
+                    if kind_key == ("purchase_order", "receipt_date"):
+                        po = purchase_orders[tid]
+                        lo = po["planned_receipt_date"]
+                        if parsed < lo:
+                            raise ValueError(
+                                f"worlds.csv: world {wid!r}: "
+                                f"receipt_date {parsed} is before the PO's "
+                                f"planned_receipt_date {lo}"
+                            )
+                        if parsed > HORIZON:
+                            raise ValueError(
+                                f"worlds.csv: world {wid!r}: "
+                                f"receipt_date {parsed} is after the simulation window "
+                                f"({HORIZON}); dates after the window need stage 2"
+                            )
+                    override_key = (ttype, tid, field)
+                    overrides[override_key] = parsed
+
+                # Accumulate draw totals for rule 7
+                draw_totals[draw] = draw_totals.get(draw, 0) + weight
+
+                worlds_db.append({
+                    "world_id": wid,
+                    "draw": draw,
+                    "weight": weight,
+                    "overrides": overrides,
+                })
+
+        if not worlds_db:
             raise ValueError("worlds.csv: must contain at least one world")
 
-        # --- world_overrides.csv ---
-        # Collect: world_id -> {(target_type, target_id, field): parsed_value}
-        overrides_by_world = {wid: {} for wid in worlds_order}
-
-        # po_ids that appear in disruptions (these are the supported target_ids
-        # for the purchase_order kind)
-        disrupted_po_ids = {d["po_id"] for d in disruptions.values()}
-
-        with overrides_path.open(encoding="utf-8", newline="") as fh:
-            reader = csv.DictReader(fh)
-            actual_header = reader.fieldnames or []
-            expected_header = ["world_id", "target_type", "target_id", "field", "value"]
-            if list(actual_header) != expected_header:
-                raise ValueError(
-                    f"world_overrides.csv: header must be exactly {expected_header}, "
-                    f"got {list(actual_header)}"
-                )
-            for row in reader:
-                wid = row.get("world_id", "")
-                if wid not in worlds_weight:
-                    raise ValueError(
-                        f"world_overrides.csv: world_id {wid!r} not found in worlds.csv"
-                    )
-                ttype = row.get("target_type", "")
-                field = row.get("field", "")
-                kind_key = (ttype, field)
-                if kind_key not in _OPEN_KINDS:
-                    raise ValueError(
-                        f"world_overrides.csv: world {wid!r}: "
-                        f"kind ({ttype!r}, {field!r}) is not supported yet"
-                    )
-                tid = row.get("target_id", "")
-                if ttype == "purchase_order":
-                    if tid not in disrupted_po_ids:
-                        raise ValueError(
-                            f"world_overrides.csv: world {wid!r}: "
-                            f"target_id {tid!r} is not a PO named in disruptions"
-                        )
-                override_key = (ttype, tid, field)
-                if override_key in overrides_by_world[wid]:
-                    raise ValueError(
-                        f"world_overrides.csv: world {wid!r}: "
-                        f"({ttype!r}, {tid!r}, {field!r}) appears more than once"
-                    )
-                raw_val = row.get("value", "")
-                try:
-                    parsed = _OPEN_KINDS[kind_key](raw_val, field)
-                except ValueError as exc:
-                    raise ValueError(
-                        f"world_overrides.csv: world {wid!r}: {exc}"
-                    ) from exc
-                # receipt_date window check
-                if kind_key == ("purchase_order", "receipt_date"):
-                    po = purchase_orders[tid]
-                    lo = po["planned_receipt_date"]
-                    hi = DAY0 + __import__("datetime").timedelta(days=HORIZON_DAYS)
-                    if parsed < lo:
-                        raise ValueError(
-                            f"world_overrides.csv: world {wid!r}: "
-                            f"receipt_date {parsed} is before the PO's "
-                            f"planned_receipt_date {lo}"
-                        )
-                    if parsed > hi:
-                        raise ValueError(
-                            f"world_overrides.csv: world {wid!r}: "
-                            f"receipt_date {parsed} is after the simulation window "
-                            f"({hi}); dates after the window need stage 2"
-                        )
-                overrides_by_world[wid][override_key] = parsed
-
-        # Every world must have at least one override
-        for wid in worlds_order:
-            if not overrides_by_world[wid]:
-                raise ValueError(
-                    f"world_overrides.csv: world {wid!r} has no overrides"
-                )
-
-        worlds_db = [
-            {
-                "world_id": wid,
-                "weight": worlds_weight[wid],
-                "overrides": overrides_by_world[wid],
-            }
-            for wid in worlds_order
-        ]
+        # Rule 7: every draw must have the same total weight
+        totals_set = set(draw_totals.values())
+        if len(totals_set) > 1:
+            draws_summary = ", ".join(
+                f"draw {d} total {t}"
+                for d, t in sorted(draw_totals.items())
+            )
+            raise ValueError(
+                f"worlds.csv: draws have unequal total weights ({draws_summary})"
+            )
 
     # ── transfer_lanes ────────────────────────────────────────────────────────
     lanes = {}

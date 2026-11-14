@@ -66,7 +66,6 @@ class TestGetWorldRisk(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             (dd / "worlds.csv").unlink()
-            (dd / "world_overrides.csv").unlink()
 
             result = get_world_risk("D01", data_dir=dd)
             cs = compare_scenarios(data_dir=dd)
