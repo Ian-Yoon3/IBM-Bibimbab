@@ -48,6 +48,10 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-14 | Every date comes from the data. No date is fixed in code. | Section 4.7 |
 | 2026-11-14 | Gateway inputs move on business days of the real calendar, US federal holidays computed for any year, with an optional closed-days file. | Section 4.7 |
 | 2026-11-14 | Exposure period of each cause comes from the data. A cause already active on the decision day is certain. | Section 4.7 |
+| 2026-11-14 | Opening the offer and lane kinds moves before the Monte Carlo engine, so the engine can write all four variables. | Section 9 |
+| 2026-11-14 | An offer lead time sampled in business days is stored in business days and converted at the actual order date by the simulator. | Section 4.7 |
+| 2026-11-14 | The threshold line uses a closed form. Each world carries a 0/1 tag per cause. | Section 7.6 |
+| 2026-11-14 | The true parameters of the synthetic world are fixed before any result is seen. | Section 6.3 |
 
 ## 3. Structure
 
@@ -263,11 +267,22 @@ Closed days are the US federal holidays of 5 U.S.C. § 6103, computed by rule fo
 A holiday on a Saturday is observed on the Friday before, and one on a Sunday on the Monday after (OPM).
 Inauguration Day is left out because it applies only around Washington, D.C.
 Juneteenth counts from 2021.
-Federal holidays fit the gateway because customs clearance is a federal service.
+Federal holidays fit the gateway because customs clearance is a federal service. This is a modelling assumption, not a measured fact about any port.
 An optional `data/closed_days.csv` (`date, closed`) adds closed days such as a company shutdown with `closed = 1` and reopens a holiday with `closed = 0`.
 Transfers between own warehouses and production keep running every day, because the base data has due dates on weekends.
 One consequence for the current data is that Veterans Day, 2026-11-11, is closed, so a sampled receipt on that day moves to 2026-11-12.
 The original planned date 11-11 is a plan made before the disruption and is not changed.
+
+**Lead times in business days are converted at the actual order date.**
+The same business-day lead time gives different calendar dates depending on the weekday of the order.
+Three business days from Monday 2026-11-09 end on Thursday 11-12, while three business days from Friday 11-13 end on Wednesday 11-18.
+A world therefore stores a sampled offer lead time in business days, in its own column `offer.<offer_id>.lead_business_days`.
+The simulator converts it at the order date of each purchase with the business calendar.
+The calendar-day `lead_days` of `supplier_offers.csv` stays as it is and is used whenever no world sets a business-day lead time.
+Lane lead times stay in calendar days, since transfers run every day.
+Because an order may be placed later than the decision day, the simulator extends its own window to cover the latest event it schedules plus the longest production time.
+The weights do not change. Measuring the lead time in business days is what makes it independent of the weekday.
+One approximation remains. The exposure period of section 4.7 is fixed when the worlds are sampled. An order placed much later than the decision day is still treated as sharing the gateway episode of that period. Orders that wait for new information belong to the conditional options of stage 3.
 
 **Exposure period of each cause.**
 $p_k$ is the chance that cause $k$ starts while the shipments it can hit are in transit.
@@ -278,7 +293,7 @@ If the history shows an episode of cause $k$ still open on the decision day, the
 Two simplifications are stated with it.
 An episode that starts after OF02 has arrived is still treated as delaying both, which slightly overstates joint delays.
 The period ends at base arrival dates, not at delayed ones.
-With a true rate of 4 episodes a year, $p_1$ is about 8%, smaller than the 21% of the illustrations in section 7. The scale of the true parameters is set in step 4.
+With a true rate of 4 episodes a year, $p_1$ is about 8%, smaller than the 21% of the illustrations in section 7. The true parameters are fixed in section 6.3, and section 7.6 shows why a small $p_1$ still makes the shared cause visible.
 
 ## 5. Sampling and output (decided)
 
@@ -335,7 +350,21 @@ The severity distribution of each cause rests on three to five numbers.
 
 - **Calendar process.** Episodes of each cause start at random times on the twelve-month calendar, last a random number of days and carry a severity in days. Shipments are placed on the calendar by their schedule. A shipment in transit during an episode of a cause it is exposed to receives that episode's delay. Shipments of S01 and S02 in the same weeks therefore share the same congestion, as in reality.
 - **Richer than the estimator, on purpose.** The generator has episode start times, durations and severities. The estimator in section 4.3 only knows whether a cause is active in the window ($S_k$) and how many days it adds ($C_k$). Real systems are always richer than the model used on them, so the mismatch is the honest test.
-- **True parameters live only in the generator.** They define the synthetic world and are stated as such in the README. Real records would replace the generator, not the engine. Their values are set after Q3 and Q4. Where a verified public statistic gives a plausible scale it is used, otherwise the values are stated as chosen.
+- **True parameters live only in the generator.** They define the synthetic world and are stated as such in the README. Real records would replace the generator, not the engine.
+- **The values are fixed before any result is seen** and are not tuned afterwards. They are the values of the method comparison in section 7.3, so the comparison and the demo describe the same world. No verified public statistic could be retrieved to anchor their scale, so they are stated as chosen.
+
+| Source | Early / on time / late | Days early or late, mean | Unit |
+|---|---|---|---|
+| OF01 (S01 promises, gives $E_R$) | 0.20 / 0.30 / 0.50 | 2 | business days |
+| OF02 | 0.10 / 0.60 / 0.30 | 1.5 | business days |
+| LN01, LN02 | 0.05 / 0.75 / 0.20 | 1.5 | calendar days |
+
+| Cause | Episodes per year | Severity $C$, mean | Duration, mean (generator only) | Unit of $C$ |
+|---|---|---|---|---|
+| K1 gateway congestion | 4 | 3 | 3 days | business days |
+| K2 regional transport | 5 | 2 | 2 days | calendar days |
+
+Days early or late and severities follow 1 plus a geometric count, as the estimator assumes. The upper challenge replaces these families in the generator.
 - **Fixed seed.** The demo history is committed, so nobody needs to rerun the generator to see the demo.
 - **Upper challenge.** The generator also uses different distribution families from the estimator, and coverage (section 6.4) is checked again.
 
@@ -364,7 +393,7 @@ The closed forms are ratios of gamma functions whose arguments differ by integer
 | Episode rate $\lambda_k$ per year | $n$ episodes in one year, Poisson | flat | $\mathrm{Gamma}(n+1,\ 1)$ |
 | Cause active in the window | $S_k$ Bernoulli with $p_k = 1 - e^{-\lambda_k w}$ | from $\lambda_k$ | $P(S_k = 1) = 1 - (1+w)^{-(n+1)}$ |
 | Severity $C_k - 1$ | Geometric($\theta_k$) | $\mathrm{Beta}(1,1)$ | $\mathrm{Beta}(n+1,\ S+1)$, $S$ = sum of observed $C_k - 1$ |
-| Own delay category (early, on time, late) | Categorical | $\mathrm{Dirichlet}(1,1,1)$ | $\mathrm{Dirichlet}$(counts + 1) |
+| Own delay category (early, on time, late) | Categorical. Separating the on-time outcome from the size of a deviation follows the hurdle idea for count data (Mullahy 1986) | $\mathrm{Dirichlet}(1,1,1)$ | $\mathrm{Dirichlet}$(counts + 1) |
 | Days early minus 1, days late minus 1 | Geometric | $\mathrm{Beta}(1,1)$ | as for the severity |
 
 $w$ is the exposure window in years. It is set in Q4.
@@ -448,7 +477,13 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 ### 7.6 What the view shows because of this
 
 - **Assumptions on screen.** One or two lines in the view and the full list in the README. The past twelve months represent the window. Records are independent. S01 and S02 use the same import gateway. A revised date is kept like an ordinary promise.
-- **One threshold line per shared cause.** Instead of a fixed stress scenario, the view states where the ranking of two adjacent options flips as $p_k$ grows, next to the current estimate (threshold analysis, Pauker and Kassirer 1980, Clemen and Reilly 2014). In the illustrative model ALT_BUY stays ahead of TRANSFER only while gateway congestion in the window is below about 52%, against an estimate of 21%. The threshold is computed with the other parameters at their point values and moves one parameter at a time. Both limits are stated with it.
+- **One threshold line per shared cause.** Instead of a fixed stress scenario, the view states where the ranking of two adjacent options flips as $p_k$ grows, next to the current estimate (threshold analysis, Pauker and Kassirer 1980, Clemen and Reilly 2014).
+  Each world carries a tag column `cause.K1.active` and `cause.K2.active` with value 0 or 1. Tags never change the base data.
+  The expected late orders of an option are an exact mixture, $\mathbb{E}(p_k) = (1-p_k) e_0 + p_k e_1$, where $e_0$ and $e_1$ are the expected values over the worlds tagged 0 and 1. The expectation is therefore a straight line in $p_k$.
+  Two options $A$ and $B$ swap order at $p_k^{*} = (e_0^B - e_0^A) / ((e_1^A - e_0^A) - (e_1^B - e_0^B))$, when that value lies between 0 and 1.
+  The uncertainty of every other input stays integrated in $e_0$ and $e_1$. Only $p_k$ moves.
+  The same split gives the view its most direct sentence, the expected late orders with and without the cause. In the illustrative model with $p_1$ about 8%, ALT_BUY expects 4.48 late orders without gateway congestion and 8.97 with it, against 5.38 and 7.39 for TRANSFER, and the ranking flips at $p_1^{*}$ of about 36%.
+  Format change recorded as an amendment to ADR 0004.
 - **Prior share per source in the run record.** Shows where results lean on the prior more than on data.
 - **P90 next to the expected value.** In the illustrative model ALT_BUY is better than TRANSFER on average (5.40 against 6.19 late orders) and worse in the tail (P90 10 against 9).
 
@@ -467,9 +502,10 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 | 1 | Model design | This document. Q1 to Q4 decided. Q5 remains. |
 | 2 | Format change | Done (ADR 0004). Wide single CSV with a `draw` column, loader rewritten, stage 1 results identical, 498 tests. |
 | 3 | Dates from data and calendar | Done. Decision day, order horizon and simulation end computed from the data (section 4.7). `engine/business_calendar.py` with US federal holidays and the optional `data/closed_days.csv`. The two loader gaps of ADR 0004 closed. 551 tests. Open for step 6: the simulation end must also count lead times opened as world columns (offer and lane `lead_days`). |
-| 4 | Monte Carlo engine | Samples, grouping, weights, one file. Location of the module is decided here. |
+| 4a | Open the new kinds | Moved before the engine. `offer.<id>.lead_business_days` (converted at the order date), `lane.<id>.lead_days`, tag columns `cause.<K>.active`. Simulator window extends to the latest event it schedules. |
+| 4b | Monte Carlo engine | Generator, estimator, two-level sampler for all four variables, grouping, run record. Start from the reviewed parts of `draft/stage2-bob-run`. |
 | 5 | Verification | See section 10. |
-| 6 | Open the new kinds | `offer.lead_days` and `lane.lead_days`. The what-if table varies one variable at a time with the others at base values. View shows the tail and conditional numbers (section 4.6), the assumptions and the threshold line (section 7.6). |
+| 6 | View | The what-if table varies one variable at a time with the others at base values. The view shows intervals per draw, the tail and conditional numbers (section 4.6), the numbers with and without each cause, the assumptions and the threshold line (section 7.6). |
 | 7 | Cleanup | Delete `scripts/stage1_triangular_worlds.py` and its test, mark ADR 0002 superseded, update docs, real sweeps, fixtures. |
 
 Target is stage 2 done around 11-18. The deadline with the demo video is 11-22.
@@ -500,7 +536,8 @@ Target is stage 2 done around 11-18. The deadline with the demo video is 11-22.
 | Interval coverage | Share of many generated histories whose interval contains the true value, against the nominal level (section 6.4). |
 | Method comparison | The table of section 7.3 repeated with the real generator. |
 | Prior sensitivity | Uniform against Jeffreys prior on the demo history, reported side by side. |
-| Threshold | The threshold of section 7.6 against a direct evaluation just below and just above it. |
+| Threshold | The closed-form threshold of section 7.6 against a direct evaluation just below and just above it. |
+| Order date | A business-day lead time ordered on a Friday or across a holiday lands on the date the calendar gives. |
 | Stage 1 regression | Stage 1 worlds in the new format give the ADR 0002 table exactly. |
 | Error shrinks with $N$ | Standard error falls roughly as $1/\sqrt{N}$ for plain Monte Carlo. |
 | LHS against plain | Error against $N$ for both, same seed set. |
@@ -533,6 +570,8 @@ Each reference is listed with the reason it is treated as verified.
   Standard method for estimation with hidden variables. Among the most cited papers in statistics. Cited only to explain why episodes are recorded rather than hidden.
 - T. P. Morris, I. R. White, M. J. Crowther, "Using Simulation Studies to Evaluate Statistical Methods," *Statistics in Medicine* 38(11), 2074–2102, 2019. [doi:10.1002/sim.8086](https://doi.org/10.1002/sim.8086)
   Tutorial on evaluating a method over many generated data sets, including coverage. Cited thousands of times and used as the standard guide for simulation studies.
+- J. Mullahy, "Specification and Testing of Some Modified Count Data Models," *Journal of Econometrics* 33(3), 341–365, 1986.
+  Origin of the hurdle model, which treats the zero outcome and the size of a nonzero outcome separately. Widely cited in econometrics and statistics.
 - R. A. Fisher, "Frequency Distribution of the Values of the Correlation Coefficient in Samples from an Indefinitely Large Population," *Biometrika* 10(4), 507–521, 1915. [doi:10.2307/2331838](https://doi.org/10.2307/2331838)
   Origin of the $z$ transformation used for the interval on $\rho$. Taught in every statistics curriculum.
 - D. V. Lindley, *Making Decisions*, 2nd ed., Wiley, 1985.
