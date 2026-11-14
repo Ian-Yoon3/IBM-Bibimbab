@@ -49,7 +49,9 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-14 | Gateway inputs move on business days of the real calendar, US federal holidays computed for any year, with an optional closed-days file. | Section 4.7 |
 | 2026-11-14 | Exposure period of each cause comes from the data. A cause already active on the decision day is certain. | Section 4.7 |
 | 2026-11-14 | Opening the offer and lane kinds moves before the Monte Carlo engine, so the engine can write all four variables. | Section 9 |
-| 2026-11-14 | An offer lead time sampled in business days is stored in business days and converted at the actual order date by the simulator. | Section 4.7 |
+| 2026-11-14 | An offer arrives at its promised date (order date plus the calendar lead time) moved by a deviation in business days. The world stores the deviation, and the simulator converts it at the actual order date. | Section 4.7 |
+| 2026-11-14 | Latin hypercube sampling is the default inside each parameter draw. Plain Monte Carlo stays as an option for comparison and verification. | Section 5 |
+| 2026-11-14 | M = 1000 parameter draws, N = 200 worlds per draw, error targets, coverage check over 200 histories, evaluation cached per distinct world. | Section 5 |
 | 2026-11-14 | The threshold line uses a closed form. Each world carries a 0/1 tag per cause. | Section 7.6 |
 | 2026-11-14 | The true parameters of the synthetic world are fixed before any result is seen. | Section 6.3 |
 
@@ -273,15 +275,17 @@ Transfers between own warehouses and production keep running every day, because 
 One consequence for the current data is that Veterans Day, 2026-11-11, is closed, so a sampled receipt on that day moves to 2026-11-12.
 The original planned date 11-11 is a plan made before the disruption and is not changed.
 
-**Lead times in business days are converted at the actual order date.**
-The same business-day lead time gives different calendar dates depending on the weekday of the order.
-Three business days from Monday 2026-11-09 end on Thursday 11-12, while three business days from Friday 11-13 end on Wednesday 11-18.
-A world therefore stores a sampled offer lead time in business days, in its own column `offer.<offer_id>.lead_business_days`.
-The simulator converts it at the order date of each purchase with the business calendar.
-The calendar-day `lead_days` of `supplier_offers.csv` stays as it is and is used whenever no world sets a business-day lead time.
+**An offer arrives at its promised date moved by business days.**
+The supplier promises a date, the order date plus the calendar lead time of `supplier_offers.csv`, moved to the next business day if it falls on a closed day.
+The actual receipt is the promised date moved by the deviation $E_O + S_1 C_1$ in business days.
+This is the same form as the receipt date of PO01 (announced date plus business days), and it matches the history, where the own delay is measured as receipt minus promised date in business days.
+A world stores the deviation in its own column `offer.<offer_id>.delay_business_days`. The simulator converts it at the order date of each purchase.
+A receipt never falls on or before the order date. Such a value moves to the first business day after the order date.
+With no deviation the receipt equals the stage 1 receipt, so stage 1 results do not change.
+The conversion is exact for any order date. An order on Monday 2026-11-09 is promised for Thursday 11-12, while an order on Friday 11-13 is promised for Monday 11-16. Two business days of delay then give Monday 11-16 in the first case, because Saturday and Sunday are skipped, and Wednesday 11-18 in the second.
 Lane lead times stay in calendar days, since transfers run every day.
 Because an order may be placed later than the decision day, the simulator extends its own window to cover the latest event it schedules plus the longest production time.
-The weights do not change. Measuring the lead time in business days is what makes it independent of the weekday.
+The weights do not change. Measuring the deviation in business days is what makes it independent of the weekday.
 One approximation remains. The exposure period of section 4.7 is fixed when the worlds are sampled. An order placed much later than the decision day is still treated as sharing the gateway episode of that period. Orders that wait for new information belong to the conditional options of stage 3.
 
 **Exposure period of each cause.**
@@ -297,7 +301,14 @@ With a true rate of 4 episodes a year, $p_1$ is about 8%, smaller than the 21% o
 
 ## 5. Sampling and output (decided)
 
-- **Sampling.** Plain Monte Carlo is the reference. Latin hypercube sampling (McKay, Beckman and Conover 1979) is the variance reduction shown, with error against sample count for both. Sobol quasi-Monte Carlo only if time remains (Niederreiter 1992).
+- **Sampling.** Latin hypercube sampling (McKay, Beckman and Conover 1979) is the default inside each parameter draw. LHS is still Monte Carlo. Each input range is cut into $N$ equal-probability strata, one value is drawn at random in each stratum, and the strata of different inputs are paired at random. Plain Monte Carlo stays available as an option, for comparison and for verification. The outer level draws parameter sets from the posterior by plain random sampling. Sobol quasi-Monte Carlo only if time remains (Niederreiter 1992).
+- **Why LHS by default.** Late orders do not decrease when any delay grows. For outputs that are monotone in each input, LHS never has a larger variance than plain random sampling (McKay, Beckman and Conover 1979). LHS removes the variance of the additive part of the output (Stein 1987), and late orders are close to additive in the delays (section 4.6). Measured in the illustrative model with $N = 200$, the standard deviation of a per-draw estimate fell from 0.14–0.16 to 0.03–0.05 for expected late orders, from 0.006–0.016 to 0.002–0.010 for the chance of no late order, and from 0.28–0.49 to 0.18–0.39 for the 90th percentile. The gain is largest for averages and smallest for tail numbers. No estimate was biased.
+- **Standard errors with LHS.** Points of one LHS sample are not independent, so the usual formula does not apply inside a draw. The parameter draws are independent LHS batches, and the spread across draws gives valid standard errors.
+- **Sample sizes.** $M = 1000$ parameter draws and $N = 200$ worlds per draw, 200,000 samples in all. Measured in the illustrative model, the spread of expected late orders across parameter draws is 0.40–0.65 and the spread between single worlds is 1.7–2.6.
+- **Error targets.** Monte Carlo standard error of a point value at most 0.02 late orders, about 2% of the half-width of its interval. Standard deviation of an interval end at most 0.05. Noise inside a draw at most 10% of the spread across draws, so intervals are widened by about 1%. Measured, the 5th and 95th percentile ends move by 0.13, 0.10, 0.07 and 0.05 for $M$ = 50, 100, 200 and 400.
+- **LHS comparison shown.** Plain against LHS at $N$ = 100, 200, 400 and 1000, 200 repetitions each, standard deviation of each reported number.
+- **Coverage check.** 200 generated histories, each with $M = 200$ and $N = 100$. The Monte Carlo error of a coverage value is then about ±2%.
+- **Evaluation cache.** With these sizes `worlds.csv` holds over 100,000 rows, but only a few thousand distinct value combinations. Each distinct combination is simulated once per option and reused.
 - **Common random numbers.** Every option is evaluated on the same worlds. This is already how `engine/worlds.py` works (Glasserman 2003, ch. 4).
 - **Standard errors.** Every summary number is reported with its standard error.
 - **Fixed seed.** The seed is part of the run record.
@@ -489,9 +500,7 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 
 ## 8. Open questions
 
-| # | Question | What it settles |
-|---|---|---|
-| Q5 | Sample count and error target | Default $N$, number of parameter draws $M$, the error target for each reported number, the LHS comparison grid and the number of histories for the coverage check. |
+None for the model design. Q1 to Q5 are decided (sections 4 to 7). Questions that arise during the build are recorded here.
 
 ## 9. How stage 2 proceeds
 
@@ -499,10 +508,10 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 
 | # | Step | Notes |
 |---|---|---|
-| 1 | Model design | This document. Q1 to Q4 decided. Q5 remains. |
+| 1 | Model design | Done. Q1 to Q5 decided. |
 | 2 | Format change | Done (ADR 0004). Wide single CSV with a `draw` column, loader rewritten, stage 1 results identical, 498 tests. |
 | 3 | Dates from data and calendar | Done. Decision day, order horizon and simulation end computed from the data (section 4.7). `engine/business_calendar.py` with US federal holidays and the optional `data/closed_days.csv`. The two loader gaps of ADR 0004 closed. 551 tests. Open for step 6: the simulation end must also count lead times opened as world columns (offer and lane `lead_days`). |
-| 4a | Open the new kinds | Moved before the engine. `offer.<id>.lead_business_days` (converted at the order date), `lane.<id>.lead_days`, tag columns `cause.<K>.active`. Simulator window extends to the latest event it schedules. |
+| 4a | Open the new kinds | Moved before the engine. `offer.<id>.delay_business_days` (converted at the order date), `lane.<id>.lead_days`, tag columns `cause.<K>.active`. Simulator window extends to the latest event it schedules. Evaluation cached per distinct world. |
 | 4b | Monte Carlo engine | Generator, estimator, two-level sampler for all four variables, grouping, run record. Start from the reviewed parts of `draft/stage2-bob-run`. |
 | 5 | Verification | See section 10. |
 | 6 | View | The what-if table varies one variable at a time with the others at base values. The view shows intervals per draw, the tail and conditional numbers (section 4.6), the numbers with and without each cause, the assumptions and the threshold line (section 7.6). |
@@ -572,6 +581,8 @@ Each reference is listed with the reason it is treated as verified.
   Tutorial on evaluating a method over many generated data sets, including coverage. Cited thousands of times and used as the standard guide for simulation studies.
 - J. Mullahy, "Specification and Testing of Some Modified Count Data Models," *Journal of Econometrics* 33(3), 341–365, 1986.
   Origin of the hurdle model, which treats the zero outcome and the size of a nonzero outcome separately. Widely cited in econometrics and statistics.
+- M. Stein, "Large Sample Properties of Simulations Using Latin Hypercube Sampling," *Technometrics* 29(2), 143–151, 1987. [doi:10.1080/00401706.1987.10488205](https://doi.org/10.1080/00401706.1987.10488205)
+  Shows that LHS removes the variance of the additive part of the output. Standard reference in the theory of LHS, widely cited.
 - R. A. Fisher, "Frequency Distribution of the Values of the Correlation Coefficient in Samples from an Indefinitely Large Population," *Biometrika* 10(4), 507–521, 1915. [doi:10.2307/2331838](https://doi.org/10.2307/2331838)
   Origin of the $z$ transformation used for the interval on $\rho$. Taught in every statistics curriculum.
 - D. V. Lindley, *Making Decisions*, 2nd ed., Wiley, 1985.
