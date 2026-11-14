@@ -1,7 +1,5 @@
 """Compute KPI summary from a simulate() result."""
 
-HORIZON_ISO = "2026-11-21"
-
 
 def evaluate(sim_result: dict) -> dict:
     """Compute KPI summary metrics from a ``simulate()`` return value.
@@ -18,7 +16,8 @@ def evaluate(sim_result: dict) -> dict:
         late_orders                 – count of orders with days_late > 0
         total_orders                – count of orders in the simulation
         on_time_units               – sum of qty for on-time orders
-        orders_completed_by_horizon – count of orders delivered by 2026-11-21
+        orders_completed_by_horizon – count of orders delivered by the latest
+                                      due_date found in order_results
         total_order_days_late       – sum of days_late (no qty weighting)
         max_order_days_late         – max days_late
         purchase_cost               – int USD (from simulate)
@@ -32,9 +31,13 @@ def evaluate(sim_result: dict) -> dict:
     late_orders = sum(1 for r in order_results if r["days_late"] > 0)
     total_orders = len(order_results)
     on_time_units = sum(r["qty"] for r in order_results if r["days_late"] == 0)
+
+    # horizon_iso: latest due_date in this result set
+    horizon_iso = max(r["due_date"] for r in order_results) if order_results else ""
     orders_completed_by_horizon = sum(
-        1 for r in order_results if r["delivery_date"] <= HORIZON_ISO
+        1 for r in order_results if r["delivery_date"] <= horizon_iso
     )
+
     late_days = [r["days_late"] for r in order_results]
     total_order_days_late = sum(late_days)
     max_order_days_late = max(late_days) if late_days else 0

@@ -1,27 +1,28 @@
 """Load and validate all 14 CSV data files for the supply chain engine,
-plus one optional world file (worlds.csv) in the wide format introduced
-by ADR 0004 (stage 2, step 2).
+plus optional world and calendar files.
 
-worlds.csv header: world_id, draw, weight, <variable_columns...>
-  - Each variable column name has the form target_type.target_id.field
-    where (target_type, field) is a key in _OPEN_KINDS.
-  - One row per (draw, world_id).  Duplicate value combinations are allowed;
-    their weights simply add up during evaluate_worlds pooling.
-  - Every draw must have the same total weight (rule 7).
+Key dates (all computed from the data, none hard-coded):
+  db["DAY0"]    – reported_date of the disruption(s); all must share the same date.
+  db["HORIZON"] – latest due_date in orders.csv; user-facing tables run to this day.
+  db["SIM_END"] – DAY0..SIM_END is the simulation loop range; = max of all schedulable
+                  dates (planned/revised receipts, recovery receipts, worlds.csv dates,
+                  DAY0 + longest offer lead) plus the longest production_days.
 
-world_overrides.csv is no longer read.  If it still exists, the loader
-raises ValueError explaining that its content belongs in worlds.csv (ADR 0004).
+worlds.csv (optional, wide format, ADR 0004):
+  header: world_id, draw, weight, <variable_columns...>
+  receipt_date values must be in [PO.planned_receipt_date, DAY0+365].
+
+closed_days.csv (optional):
+  header: date, closed  (closed = 1 or 0)
+  Loads into db["calendar"] as a BusinessCalendar with overrides.
 """
 import csv
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 # Default data directory: engine/../data resolved from this file
 _DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-
-DAY0 = date(2026, 11, 9)
-HORIZON_DAYS = 12
 
 # ---------------------------------------------------------------------------
 # Open kinds: the single place that maps (target_type, field) to a value parser.
@@ -63,7 +64,7 @@ def _require(row: dict, field: str, table: str) -> str:
 
 
 def load_all(data_dir=None) -> dict:
-    """Load and validate all 14 CSVs and optional world files.  Returns a single db dict."""
+    """Load and validate all CSVs and optional world/calendar files.  Returns a single db dict."""
     dd = Path(data_dir) if data_dir is not None else _DEFAULT_DATA_DIR
 
     # ── products ──────────────────────────────────────────────────────────────
@@ -174,45 +175,8 @@ def load_all(data_dir=None) -> dict:
     if set(inventory) != expected_inv_keys:
         raise ValueError("inventory must have one row for every (warehouse, component) pair")
 
-    # ── orders ────────────────────────────────────────────────────────────────
-    horizon = DAY0.replace(day=DAY0.day + HORIZON_DAYS)
-    from datetime import timedelta
-    horizon = DAY0 + timedelta(days=HORIZON_DAYS)
-    orders = {}
-    for r in _load_csv("orders", dd):
-        oid = _require(r, "order_id", "orders")
-        if oid in orders:
-            raise ValueError(f"Duplicate order_id: {oid}")
-        pid = _require(r, "product_id", "orders")
-        if pid not in products:
-            raise ValueError(f"orders.product_id '{pid}' not in products")
-        wid = _require(r, "warehouse_id", "orders")
-        if wid not in warehouses:
-            raise ValueError(f"orders.warehouse_id '{wid}' not in warehouses")
-        if warehouses[wid]["role"] != "PRODUCTION":
-            raise ValueError(f"orders.warehouse_id '{wid}' must be a PRODUCTION warehouse")
-        qty = _int(_require(r, "qty", "orders"), "qty")
-        if qty <= 0:
-            raise ValueError(f"orders.qty must be > 0, got {qty}")
-        priority = _int(_require(r, "priority_rank", "orders"), "priority_rank")
-        if priority <= 0:
-            raise ValueError(f"orders.priority_rank must be > 0, got {priority}")
-        due = _date(_require(r, "due_date", "orders"), "due_date")
-        if not (DAY0 <= due <= horizon):
-            raise ValueError(f"orders.due_date {due} out of range [{DAY0}, {horizon}]")
-        orders[oid] = {
-            "order_id": oid,
-            "customer_id": _require(r, "customer_id", "orders"),
-            "product_id": pid,
-            "qty": qty,
-            "due_date": due,
-            "priority_rank": priority,
-            "warehouse_id": wid,
-        }
-    if len(orders) != 12:
-        raise ValueError(f"Expected 12 orders, got {len(orders)}")
-
     # ── supplier_offers ───────────────────────────────────────────────────────
+    # Load offers before purchase_orders and disruptions; needed for DAY0 check.
     offers = {}
     for r in _load_csv("supplier_offers", dd):
         oid = _require(r, "offer_id", "supplier_offers")
@@ -239,8 +203,24 @@ def load_all(data_dir=None) -> dict:
             "max_qty": _int(_require(r, "max_qty", "supplier_offers"), "max_qty"),
         }
 
+    # ── disruptions – raw pass to extract DAY0 ───────────────────────────────
+    # Must be before purchase_orders (we need DAY0 to validate order_date < DAY0).
+    # Full cross-reference validation happens after purchase_orders are loaded.
+    disruptions_raw = _load_csv("disruptions", dd)
+    if not disruptions_raw:
+        raise ValueError("disruptions.csv: at least one disruption is required")
+    reported_dates = set()
+    for r in disruptions_raw:
+        rd = _date(_require(r, "reported_date", "disruptions"), "reported_date")
+        reported_dates.add(rd)
+    if len(reported_dates) > 1:
+        raise ValueError(
+            f"disruptions.reported_date must be the same for all rows; "
+            f"got {sorted(reported_dates)}"
+        )
+    DAY0 = next(iter(reported_dates))
+
     # ── purchase_orders ───────────────────────────────────────────────────────
-    from datetime import timedelta as _td
     purchase_orders = {}
     for r in _load_csv("purchase_orders", dd):
         po_id = _require(r, "po_id", "purchase_orders")
@@ -259,7 +239,7 @@ def load_all(data_dir=None) -> dict:
         planned = _date(_require(r, "planned_receipt_date", "purchase_orders"), "planned_receipt_date")
         if not (order_date < DAY0 <= planned):
             raise ValueError(f"purchase_orders date constraint violated: order_date={order_date}, planned={planned}")
-        expected_planned = order_date + _td(days=offer["lead_days"])
+        expected_planned = order_date + timedelta(days=offer["lead_days"])
         if planned != expected_planned:
             raise ValueError(f"purchase_orders planned_receipt_date {planned} != order_date+lead_days {expected_planned}")
         purchase_orders[po_id] = {
@@ -271,9 +251,9 @@ def load_all(data_dir=None) -> dict:
             "planned_receipt_date": planned,
         }
 
-    # ── disruptions ───────────────────────────────────────────────────────────
+    # ── disruptions – full validation ─────────────────────────────────────────
     disruptions = {}
-    for r in _load_csv("disruptions", dd):
+    for r in disruptions_raw:
         did = _require(r, "disruption_id", "disruptions")
         if did in disruptions:
             raise ValueError(f"Duplicate disruption_id: {did}")
@@ -281,8 +261,7 @@ def load_all(data_dir=None) -> dict:
         if po_id not in purchase_orders:
             raise ValueError(f"disruptions.po_id '{po_id}' not in purchase_orders")
         reported = _date(_require(r, "reported_date", "disruptions"), "reported_date")
-        if reported != DAY0:
-            raise ValueError(f"disruptions.reported_date must be DAY0 {DAY0}, got {reported}")
+        # reported == DAY0 is guaranteed by the raw pass above
         revised = _date(_require(r, "revised_receipt_date", "disruptions"), "revised_receipt_date")
         if revised <= purchase_orders[po_id]["planned_receipt_date"]:
             raise ValueError("disruptions.revised_receipt_date must be after planned_receipt_date")
@@ -293,6 +272,44 @@ def load_all(data_dir=None) -> dict:
             "revised_receipt_date": revised,
             "reason": _require(r, "reason", "disruptions"),
         }
+
+    # ── orders ────────────────────────────────────────────────────────────────
+    orders = {}
+    for r in _load_csv("orders", dd):
+        oid = _require(r, "order_id", "orders")
+        if oid in orders:
+            raise ValueError(f"Duplicate order_id: {oid}")
+        pid = _require(r, "product_id", "orders")
+        if pid not in products:
+            raise ValueError(f"orders.product_id '{pid}' not in products")
+        wid = _require(r, "warehouse_id", "orders")
+        if wid not in warehouses:
+            raise ValueError(f"orders.warehouse_id '{wid}' not in warehouses")
+        if warehouses[wid]["role"] != "PRODUCTION":
+            raise ValueError(f"orders.warehouse_id '{wid}' must be a PRODUCTION warehouse")
+        qty = _int(_require(r, "qty", "orders"), "qty")
+        if qty <= 0:
+            raise ValueError(f"orders.qty must be > 0, got {qty}")
+        priority = _int(_require(r, "priority_rank", "orders"), "priority_rank")
+        if priority <= 0:
+            raise ValueError(f"orders.priority_rank must be > 0, got {priority}")
+        due = _date(_require(r, "due_date", "orders"), "due_date")
+        if due < DAY0:
+            raise ValueError(f"orders.due_date {due} is before DAY0 {DAY0}")
+        orders[oid] = {
+            "order_id": oid,
+            "customer_id": _require(r, "customer_id", "orders"),
+            "product_id": pid,
+            "qty": qty,
+            "due_date": due,
+            "priority_rank": priority,
+            "warehouse_id": wid,
+        }
+    if len(orders) != 12:
+        raise ValueError(f"Expected 12 orders, got {len(orders)}")
+
+    # ── HORIZON = latest due_date in orders ───────────────────────────────────
+    HORIZON = max(o["due_date"] for o in orders.values())
 
     # ── worlds (optional, wide format, ADR 0004) ──────────────────────────────
     worlds_path = dd / "worlds.csv"
@@ -305,14 +322,15 @@ def load_all(data_dir=None) -> dict:
             "its content belongs in worlds.csv (see ADR 0004)"
         )
 
+    # Sampling cap: DAY0 + 365 days
+    SAMPLING_CAP = DAY0 + timedelta(days=365)
+
     if not worlds_path.exists():
         worlds_db = None
     else:
         # po_ids that appear in disruptions (supported target_ids for
         # the purchase_order kind)
         disrupted_po_ids = {d["po_id"] for d in disruptions.values()}
-
-        HORIZON = DAY0 + __import__("datetime").timedelta(days=HORIZON_DAYS)
 
         # Rule 3: read raw header to detect duplicates before DictReader
         with worlds_path.open(encoding="utf-8", newline="") as fh:
@@ -339,6 +357,7 @@ def load_all(data_dir=None) -> dict:
             )
 
         var_cols = raw_header[3:]  # variable column names
+        expected_ncols = len(raw_header)
 
         # Rule 4: validate each variable column name
         col_kinds = {}  # col_name -> (ttype, tid, field)
@@ -364,15 +383,39 @@ def load_all(data_dir=None) -> dict:
                     )
             col_kinds[col] = (ttype, tid, field)
 
-        # Read all rows with DictReader
+        # Read all rows; check raw column count per row (Part B gaps check)
+        # Read once into memory: list of (raw_row_list, dict_row)
+        with worlds_path.open(encoding="utf-8", newline="") as fh:
+            all_raw = list(csv.reader(fh))
+        # all_raw[0] is the header; data rows start at index 1
+        raw_data_rows = all_raw[1:]
+
+        with worlds_path.open(encoding="utf-8", newline="") as fh:
+            dict_rows = list(csv.DictReader(fh))
+
         worlds_db = []
         seen_world_ids = set()
         draw_totals = {}  # draw int -> total weight int
 
-        with worlds_path.open(encoding="utf-8", newline="") as fh:
-            for row in csv.DictReader(fh):
+        for raw_row, row in zip(raw_data_rows, dict_rows):
+                ncols = len(raw_row)
+
+                # Rule B: row width checks
+                wid = row.get("world_id", "") or ""
+                if ncols > expected_ncols:
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: row has {ncols} cells "
+                        f"but header has {expected_ncols} columns"
+                    )
+                if ncols < expected_ncols:
+                    # Identify the first missing column
+                    missing = raw_header[ncols] if ncols < len(raw_header) else "unknown"
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: row is missing column {missing!r} "
+                        f"({ncols} cells, header has {expected_ncols})"
+                    )
+
                 # Rule 5: world_id non-empty and unique
-                wid = row.get("world_id", "")
                 if not wid:
                     raise ValueError("worlds.csv: world_id must not be empty")
                 if wid in seen_world_ids:
@@ -428,7 +471,7 @@ def load_all(data_dir=None) -> dict:
                         raise ValueError(
                             f"worlds.csv: world {wid!r}: {exc}"
                         ) from exc
-                    # receipt_date bounds (stage 1 bounds preserved)
+                    # receipt_date bounds: >= PO's planned date, <= sampling cap
                     if kind_key == ("purchase_order", "receipt_date"):
                         po = purchase_orders[tid]
                         lo = po["planned_receipt_date"]
@@ -438,11 +481,12 @@ def load_all(data_dir=None) -> dict:
                                 f"receipt_date {parsed} is before the PO's "
                                 f"planned_receipt_date {lo}"
                             )
-                        if parsed > HORIZON:
+                        if parsed > SAMPLING_CAP:
                             raise ValueError(
                                 f"worlds.csv: world {wid!r}: "
-                                f"receipt_date {parsed} is after the simulation window "
-                                f"({HORIZON}); dates after the window need stage 2"
+                                f"receipt_date {parsed} is after the sampling cap "
+                                f"({SAMPLING_CAP}, one year after DAY0); "
+                                f"dates after the cap need stage 2"
                             )
                     override_key = (ttype, tid, field)
                     overrides[override_key] = parsed
@@ -573,6 +617,80 @@ def load_all(data_dir=None) -> dict:
             "qty": qty,
         }
 
+    # ── SIM_END: latest schedulable date + max production_days ───────────────
+    # Collect all dates the simulation may need to reach.
+    sim_end_candidates = [HORIZON]
+
+    # planned and revised receipts of purchase_orders / disruptions
+    for po in purchase_orders.values():
+        sim_end_candidates.append(po["planned_receipt_date"])
+    for dis in disruptions.values():
+        sim_end_candidates.append(dis["revised_receipt_date"])
+
+    # recovery purchase receipts
+    for rp in recovery_purchases.values():
+        offer = offers[rp["offer_id"]]
+        sim_end_candidates.append(rp["action_date"] + timedelta(days=offer["lead_days"]))
+
+    # recovery transfer receipts
+    for rt in recovery_transfers.values():
+        lane = lanes[rt["lane_id"]]
+        sim_end_candidates.append(rt["action_date"] + timedelta(days=lane["lead_days"]))
+
+    # DAY0 + longest offer lead_days (purchase on the decision day)
+    max_offer_lead = max(o["lead_days"] for o in offers.values())
+    sim_end_candidates.append(DAY0 + timedelta(days=max_offer_lead))
+
+    # Every receipt_date value in worlds.csv
+    if worlds_db is not None:
+        for w in worlds_db:
+            for (ttype, tid, field), val in w["overrides"].items():
+                if field == "receipt_date":
+                    sim_end_candidates.append(val)
+
+    max_sched = max(sim_end_candidates)
+    max_prod_days = max(p["production_days"] for p in products.values())
+    SIM_END = max_sched + timedelta(days=max_prod_days)
+
+    # ── closed_days.csv (optional) ────────────────────────────────────────────
+    from engine.business_calendar import BusinessCalendar
+    closed_days_path = dd / "closed_days.csv"
+    if closed_days_path.exists():
+        overrides_cal = {}
+        with closed_days_path.open(encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            if list(reader.fieldnames or []) != ["date", "closed"]:
+                raise ValueError(
+                    f"closed_days.csv: header must be exactly ['date', 'closed'], "
+                    f"got {list(reader.fieldnames or [])}"
+                )
+            for row in reader:
+                raw_d = row.get("date", "")
+                raw_c = row.get("closed", "")
+                if not raw_d or not raw_c:
+                    raise ValueError(
+                        f"closed_days.csv: empty cell in row {dict(row)}"
+                    )
+                try:
+                    d = date.fromisoformat(raw_d)
+                except ValueError:
+                    raise ValueError(
+                        f"closed_days.csv: invalid date {raw_d!r} in row {dict(row)}"
+                    )
+                if raw_c not in ("0", "1"):
+                    raise ValueError(
+                        f"closed_days.csv: closed must be 0 or 1, got {raw_c!r} "
+                        f"in row {dict(row)}"
+                    )
+                if d in overrides_cal:
+                    raise ValueError(
+                        f"closed_days.csv: duplicate date {raw_d!r}"
+                    )
+                overrides_cal[d] = (raw_c == "1")
+        calendar = BusinessCalendar(overrides=overrides_cal)
+    else:
+        calendar = BusinessCalendar()
+
     # ── derived structures ────────────────────────────────────────────────────
     # floor[warehouse_id][component_id] = reserved + protected
     floor: dict[str, dict[str, int]] = {}
@@ -626,7 +744,9 @@ def load_all(data_dir=None) -> dict:
         "queue": queue,
         "needs": needs,
         "DAY0": DAY0,
-        "HORIZON": DAY0 + __import__("datetime").timedelta(days=HORIZON_DAYS),
+        "HORIZON": HORIZON,
+        "SIM_END": SIM_END,
+        "calendar": calendar,
     }
 
 

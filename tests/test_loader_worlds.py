@@ -90,6 +90,7 @@ class TestRule1Absent(unittest.TestCase):
     """Rule 1: worlds.csv absent -> db['worlds'] = None."""
 
     def test_rule1_absent(self):
+        from engine.business_calendar import BusinessCalendar
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             (dd / "worlds.csv").unlink()
@@ -99,8 +100,18 @@ class TestRule1Absent(unittest.TestCase):
 
             self.assertIsNone(db_no["worlds"])
 
+            # calendar objects cannot be compared by equality (they are instances).
+            # Check that both are BusinessCalendar instances, then skip them in
+            # the per-key equality loop.
+            self.assertIsInstance(db_no["calendar"], BusinessCalendar)
+            self.assertIsInstance(db_with["calendar"], BusinessCalendar)
+
+            # SIM_END can legitimately differ when worlds.csv contributes dates
+            # that extend the simulation window; both loads use the same base data
+            # so all other keys are equal.
+            skip = {"worlds", "calendar"}
             for key in db_with:
-                if key == "worlds":
+                if key in skip:
                     continue
                 with self.subTest(key=key):
                     self.assertEqual(db_no[key], db_with[key])
@@ -385,7 +396,11 @@ class TestRule5RowFields(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestRule6DateBounds(unittest.TestCase):
-    """Rule 6: receipt_date >= planned_receipt_date; receipt_date <= horizon."""
+    """Rule 6: receipt_date >= planned_receipt_date AND <= sampling cap (DAY0+365).
+
+    The upper bound is DAY0+365 = 2027-11-09, NOT the order horizon.
+    Dates beyond the horizon but within the cap are valid stage 1 inputs.
+    """
 
     _H = ["world_id", "draw", "weight", "purchase_order.PO01.receipt_date"]
 
@@ -397,14 +412,22 @@ class TestRule6DateBounds(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_all(dd)
 
-    def test_rule6_date_after_horizon_raises(self):
-        """2026-11-22 > horizon 2026-11-21."""
+    def test_rule6_date_after_cap_raises(self):
+        """2027-11-10 > sampling cap 2027-11-09 (DAY0+365)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            dd = _copy_data(tmp)
+            _write_csv(dd / "worlds.csv", [self._H, ["W1", "0", "1", "2027-11-10"]])
+            with self.assertRaises(ValueError) as ctx:
+                load_all(dd)
+            self.assertIn("cap", str(ctx.exception).lower())
+
+    def test_rule6_date_after_horizon_accepted(self):
+        """2026-11-22 > horizon 2026-11-21 but within cap: accepted."""
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             _write_csv(dd / "worlds.csv", [self._H, ["W1", "0", "1", "2026-11-22"]])
-            with self.assertRaises(ValueError) as ctx:
-                load_all(dd)
-            self.assertIn("stage 2", str(ctx.exception))
+            db = load_all(dd)   # must NOT raise
+            self.assertIsNotNone(db["worlds"])
 
     def test_rule6_invalid_iso_date_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -424,11 +447,11 @@ class TestRule6DateBounds(unittest.TestCase):
             db = load_all(dd)
             self.assertIsNotNone(db["worlds"])
 
-    def test_rule6_horizon_date_valid(self):
-        """Exactly at the horizon (2026-11-21) is valid."""
+    def test_rule6_cap_date_valid(self):
+        """Exactly at the sampling cap (2027-11-09 = DAY0+365) is valid."""
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
-            _write_csv(dd / "worlds.csv", [self._H, ["W1", "0", "1", "2026-11-21"]])
+            _write_csv(dd / "worlds.csv", [self._H, ["W1", "0", "1", "2027-11-09"]])
             db = load_all(dd)
             self.assertIsNotNone(db["worlds"])
 

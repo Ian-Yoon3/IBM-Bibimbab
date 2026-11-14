@@ -45,6 +45,9 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-13 | Estimation is Bayesian with conjugate priors and a uniform prior. Chosen by comparing six established methods on the engine itself. | Section 7 |
 | 2026-11-13 | Parameter uncertainty enters by two-level sampling. Every summary number gets an interval. | Section 7.2 |
 | 2026-11-13 | The view states the model assumptions and one threshold line per shared cause. No fixed stress scenario. | Section 7.6 |
+| 2026-11-14 | Every date comes from the data. No date is fixed in code. | Section 4.7 |
+| 2026-11-14 | Gateway inputs move on business days of the real calendar, US federal holidays computed for any year, with an optional closed-days file. | Section 4.7 |
+| 2026-11-14 | Exposure period of each cause comes from the data. A cause already active on the decision day is certain. | Section 4.7 |
 
 ## 3. Structure
 
@@ -236,6 +239,47 @@ Consequence for the view (step 6). Expected values alone would hide the shared c
 The view must show the 90th percentile and the conditional probability next to them.
 With OF02 uncertain, ALT_BUY and TRANSFER come close in expected late orders (3.75 and 3.71 above), so the ranking itself can change.
 
+### 4.7 Dates and calendar
+
+**Every date comes from the data.** No date is fixed in code, so another data set works without changes.
+
+| Date | Rule | Value for the current data |
+|---|---|---|
+| Decision day | The reported date of the disruptions. All disruptions of a data set share it. | 2026-11-09 |
+| Order horizon | The latest due date in `orders.csv`. Late orders are judged against due dates, and user-facing tables run to this day. | 2026-11-21 |
+| Simulation end | The latest date the data can schedule (planned and revised receipts, recovery receipts, a purchase on the decision day at the longest lead time, dates in `worlds.csv`) plus the longest production time | 2026-11-23 |
+| Sampling cap | One year after the decision day. A sampled date beyond it is cut there and the cut share is reported. | 2027-11-09 |
+
+Every order is due by the order horizon and takes at least one day to produce.
+A receipt after the order horizon therefore saves no order.
+Late order counts stop changing there, while days late keep growing.
+That is why the stage 1 results do not change when the simulation end moves.
+
+**Business days of the real calendar for gateway inputs.**
+The receipt date $R$, the lead time $L_O$ and the gateway delay $C_1$ are counted in business days.
+In section 4.3 the plus sign means "add business days" for these three.
+A business day is a weekday that is not a closed day.
+Closed days are the US federal holidays of 5 U.S.C. § 6103, computed by rule for any year.
+A holiday on a Saturday is observed on the Friday before, and one on a Sunday on the Monday after (OPM).
+Inauguration Day is left out because it applies only around Washington, D.C.
+Juneteenth counts from 2021.
+Federal holidays fit the gateway because customs clearance is a federal service.
+An optional `data/closed_days.csv` (`date, closed`) adds closed days such as a company shutdown with `closed = 1` and reopens a holiday with `closed = 0`.
+Transfers between own warehouses and production keep running every day, because the base data has due dates on weekends.
+One consequence for the current data is that Veterans Day, 2026-11-11, is closed, so a sampled receipt on that day moves to 2026-11-12.
+The original planned date 11-11 is a plan made before the disruption and is not changed.
+
+**Exposure period of each cause.**
+$p_k$ is the chance that cause $k$ starts while the shipments it can hit are in transit.
+With episodes arriving at rate $\lambda_k$, the chance of at least one start in $w_k$ days is $1 - e^{-\lambda_k w_k}$ (Ross 2019).
+$w_k$ runs from the decision day to the latest base arrival among the variables exposed to cause $k$, in calendar days because congestion runs in calendar time.
+For the current data that is 2026-11-09 to 2026-11-17 for K1 (8 days, ending at the announced date of PO01) and 2026-11-09 to 2026-11-13 for K2 (4 days, ending at the base arrival of LN02).
+If the history shows an episode of cause $k$ still open on the decision day, the manager knows it, so $S_k = 1$ and only the severity is uncertain.
+Two simplifications are stated with it.
+An episode that starts after OF02 has arrived is still treated as delaying both, which slightly overstates joint delays.
+The period ends at base arrival dates, not at delayed ones.
+With a true rate of 4 episodes a year, $p_1$ is about 8%, smaller than the 21% of the illustrations in section 7. The scale of the true parameters is set in step 4.
+
 ## 5. Sampling and output (decided)
 
 - **Sampling.** Plain Monte Carlo is the reference. Latin hypercube sampling (McKay, Beckman and Conover 1979) is the variance reduction shown, with error against sample count for both. Sobol quasi-Monte Carlo only if time remains (Niederreiter 1992).
@@ -412,7 +456,6 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 
 | # | Question | What it settles |
 |---|---|---|
-| Q4 | How late dates can get | Upper tail of $R$ and the lead times, the weekend and holiday rule, the new end of the window, the exposure window $w$ and the scale of the true parameters. |
 | Q5 | Sample count and error target | Default $N$, number of parameter draws $M$, the error target for each reported number, the LHS comparison grid and the number of histories for the coverage check. |
 
 ## 9. How stage 2 proceeds
@@ -421,9 +464,9 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 
 | # | Step | Notes |
 |---|---|---|
-| 1 | Model design | This document. Q1 to Q3 decided. Q4 and Q5 remain. |
+| 1 | Model design | This document. Q1 to Q4 decided. Q5 remains. |
 | 2 | Format change | Done (ADR 0004). Wide single CSV with a `draw` column, loader rewritten, stage 1 results identical, 498 tests. |
-| 3 | Window separation | One place defines the window, up to the end from Q4. Today it lives in `loader.py` (`HORIZON_DAYS`, worlds block), `evaluate.py` (`HORIZON_ISO`) and `simulate.py` (window check). Remove the dead line `DAY0.replace(day=DAY0.day + HORIZON_DAYS)`, which fails past November 30. |
+| 3 | Dates from data and calendar | Done. Decision day, order horizon and simulation end computed from the data (section 4.7). `engine/business_calendar.py` with US federal holidays and the optional `data/closed_days.csv`. The two loader gaps of ADR 0004 closed. 551 tests. Open for step 6: the simulation end must also count lead times opened as world columns (offer and lane `lead_days`). |
 | 4 | Monte Carlo engine | Samples, grouping, weights, one file. Location of the module is decided here. |
 | 5 | Verification | See section 10. |
 | 6 | Open the new kinds | `offer.lead_days` and `lane.lead_days`. The what-if table varies one variable at a time with the others at base values. View shows the tail and conditional numbers (section 4.6), the assumptions and the threshold line (section 7.6). |
@@ -524,6 +567,12 @@ Each reference is listed with the reason it is treated as verified.
   Standard decision analysis textbook. Sensitivity and threshold analysis.
 - A. M. Law, *Simulation Modeling and Analysis*, 5th ed., McGraw-Hill, 2015.
   Standard simulation textbook. Fitting input distributions by plug-in estimates.
+- 5 U.S.C. § 6103, Holidays. United States Code. [Office of the Law Revision Counsel](https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title5-section6103&num=0&edition=prelim)
+  Primary legal source for the federal holidays.
+- U.S. Office of Personnel Management, Federal Holidays. [opm.gov](https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/)
+  Official list of observed dates, used as known answers for 2025 to 2027 in the calendar tests, and the weekend observance rule.
+- S. M. Ross, *Introduction to Probability Models*, 12th ed., Academic Press, 2019.
+  Standard textbook. Poisson process, the chance of at least one event in an interval.
 - Considered and not used. T. Müller, B. McWilliams, F. Rousselle, M. Gross, J. Novák, "Neural Importance Sampling," *ACM Transactions on Graphics* 38(5), 145, 2019. [doi:10.1145/3341156](https://doi.org/10.1145/3341156)
 - A. Gelman, J. B. Carlin, H. S. Stern, D. B. Dunson, A. Vehtari, D. B. Rubin, *Bayesian Data Analysis*, 3rd ed., CRC Press, 2013.
   Standard textbook, cited tens of thousands of times. Chapter 2 covers the conjugate models and posterior predictive distributions used in section 7.1.

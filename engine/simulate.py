@@ -37,6 +37,7 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
     """
     DAY0 = db["DAY0"]
     HORIZON = db["HORIZON"]
+    SIM_END = db["SIM_END"]
     products = db["products"]
     warehouses = db["warehouses"]
     offers = db["offers"]
@@ -61,9 +62,9 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
     transfer_cost = 0
 
     def schedule(when, kind, wid, cid, qty, ref):
-        if not (DAY0 <= when <= HORIZON):
+        if not (DAY0 <= when <= SIM_END):
             raise ValueError(
-                f"Event date {when} outside simulation window [{DAY0}, {HORIZON}]"
+                f"Event date {when} outside simulation window [{DAY0}, {SIM_END}]"
             )
         events[when].append((kind, wid, cid, qty, ref))
 
@@ -171,7 +172,7 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
     starts: dict[str, object] = {}  # order_id -> date
     next_order = 0
 
-    for offset in range((HORIZON - DAY0).days + 1):
+    for offset in range((SIM_END - DAY0).days + 1):
         today = DAY0 + timedelta(days=offset)
         # Process all events for today: sort by qty descending (largest first)
         for kind, wid, cid, qty, ref in sorted(
