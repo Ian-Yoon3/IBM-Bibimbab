@@ -259,7 +259,7 @@ These simplifications hold in every result the engine returns.
 2. **Fixed production queue.** Orders start in order of due date, then priority, then order ID. If the next order cannot start, later orders wait even when their own components are available.
 3. **Only the receipt date of PO01 is uncertain.** Lead times of the alternative supplier and the transfer lanes are fixed. Options that rely on them can look safer than they are.
 4. **All recovery actions are decided and executed on 11-09.** No option waits for more information before acting.
-5. **Simulation window 11-09 to 11-21.** Receipts and order starts are simulated inside this window. A receipt date after 11-21 is not supported yet (stage 2).
+5. **Dates come from the data.** The decision day is the reported date of the disruption (11-09). The order horizon is the latest due date (11-21). The simulation runs until production after the latest scheduled receipt can finish (11-23 for the current data). The engine accepts receipt dates up to one year after the decision day. The agent still answers receipt dates only up to the order horizon until stage 2, step 6. See `docs/montecarlo-engine.md`, section 4.7.
 6. **Receipt-date weights from a three-point estimate.** See ADR 0002. Extra cost does not depend on the receipt date in the current model.
 
 ## Repository layout

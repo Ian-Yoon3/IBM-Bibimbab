@@ -6,7 +6,7 @@ This file provides guidance to agents when working with code in this repository.
 
 Supply chain recovery simulation for a fictional manufacturer (NovaTech). The simulation engine lives in `engine/`; an LLM-based agent layer lives in `agent/`. All data lives in `data/*.csv`; expected outputs are in `tests/expected/*.csv`.
 
-- **Base date:** 2026-11-09; **horizon:** 2026-11-21 (12 calendar days)
+- **Dates come from the data** (no date is fixed in code). Decision day `db["DAY0"]` = reported date of the disruptions (2026-11-09). Order horizon `db["HORIZON"]` = latest due date (2026-11-21), used by every user-facing table. Simulation end `db["SIM_END"]` = latest schedulable date plus the longest production time (2026-11-23). US business calendar in `engine/business_calendar.py`, optional `data/closed_days.csv`.
 - **Scenarios:** `NORMAL`, `WAIT`, `TRANSFER`, `ALT_BUY`, `HYBRID`
 
 ## Commands

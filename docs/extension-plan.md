@@ -142,7 +142,7 @@ New module `engine/worlds.py`.
 - The engine reports its own sampling error. The total weight is a sample count only here.
 - History records are synthetic in the demo. Real records would replace them.
 - Check. With simple independent distributions the exact distribution of the sum can be computed. The sampled weights must converge to it. Tests use a fixed seed and a tolerance.
-- First task. Separate the simulation window from the order horizon, so receipt dates after 11-21 can be computed. The window is set in several places today: `HORIZON_DAYS` in `engine/loader.py`, the string `HORIZON_ISO` in `engine/evaluate.py`, and the window check in `engine/simulate.py`. Line 157 of `engine/loader.py` (`DAY0.replace(day=DAY0.day + HORIZON_DAYS)`) is dead code that fails once the horizon passes November 30. It must go.
+- Done in step 3 (`docs/montecarlo-engine.md`, section 4.7). Every date comes from the data, the simulation end is separate from the order horizon, and the dead line in `engine/loader.py` is gone.
 - The temporary stage 1 script and its test are deleted. ADR 0002 is marked superseded.
 
 ## Stage 3. Model refinement
