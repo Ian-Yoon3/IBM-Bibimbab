@@ -52,6 +52,8 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-14 | An offer arrives at its promised date (order date plus the calendar lead time) moved by a deviation in business days. The world stores the deviation, and the simulator converts it at the actual order date. | Section 4.7 |
 | 2026-11-14 | Latin hypercube sampling is the default inside each parameter draw. Plain Monte Carlo stays as an option for comparison and verification. | Section 5 |
 | 2026-11-14 | M = 1000 parameter draws, N = 200 worlds per draw, error targets, coverage check over 200 histories, evaluation cached per distinct world. | Section 5 |
+| 2026-11-15 | The Monte Carlo engine writes its output to `runs/<name>/`, never into `data/`. `data/worlds.csv` keeps the stage 1 worlds until one deliberate switch in step 6. | Section 9 |
+| 2026-11-15 | Which variable each cause can hit, and in which day unit, is data (`data/history/causes.csv`). | Section 6.1 |
 | 2026-11-14 | The threshold line uses a closed form. Each world carries a 0/1 tag per cause. | Section 7.6 |
 | 2026-11-14 | The true parameters of the synthetic world are fixed before any result is seen. | Section 6.3 |
 
@@ -329,10 +331,14 @@ Keeping it under the data folder lets a separate data set (stage 2-1) carry its 
 |---|---|
 | `shipments.csv` | `shipment_id, source_id, ship_date, promised_date, receipt_date, episode_id` |
 | `episodes.csv` | `episode_id, cause_id, start_date, end_date, delay_days` |
+| `causes.csv` | `cause_id, day_unit, target_type, target_id`, one row per variable a cause can hit. `day_unit` is `business` or `calendar` |
 
 - `source_id` is one of OF01, OF02, LN01, LN02.
 - `cause_id` is K1 (gateway congestion) or K2 (regional transport disruption).
 - `episode_id` is empty for a shipment that met no episode.
+- `end_date` is empty for an episode still open on the decision day. That cause is then certain in the window (section 4.7).
+- The history of a variable is the shipments of its source. A purchase order uses the shipments of its offer (PO01 uses OF01), an offer and a lane use their own.
+- Own delays are counted in the day unit of the cause that can hit the variable, business days for K1 and calendar days for K2.
 - The own delay of a shipment is its lateness minus the delay of its episode. In days, `receipt_date - promised_date - delay_days`, with `delay_days` taken as 0 when there is no episode.
 
 Episodes are recorded rather than hidden.
@@ -512,9 +518,9 @@ None for the model design. Q1 to Q5 are decided (sections 4 to 7). Questions tha
 | 2 | Format change | Done (ADR 0004). Wide single CSV with a `draw` column, loader rewritten, stage 1 results identical, 498 tests. |
 | 3 | Dates from data and calendar | Done. Decision day, order horizon and simulation end computed from the data (section 4.7). `engine/business_calendar.py` with US federal holidays and the optional `data/closed_days.csv`. The two loader gaps of ADR 0004 closed. 551 tests. Open for step 6: the simulation end must also count lead times opened as world columns (offer and lane `lead_days`). |
 | 4a | Open the new kinds | Moved before the engine. `offer.<id>.delay_business_days` (converted at the order date), `lane.<id>.lead_days`, tag columns `cause.<K>.active`. Simulator window extends to the latest event it schedules. Evaluation cached per distinct world. |
-| 4b | Monte Carlo engine | Generator, estimator, two-level sampler for all four variables, grouping, run record. Start from the reviewed parts of `draft/stage2-bob-run`. |
+| 4b | Monte Carlo engine | Package `montecarlo/`, separate from `engine/`. Part 1 generator and demo history (seed 20261109, fixed before generating). Part 2 estimator. Part 3 two-level LHS sampler, grouping, run record, command `python -m montecarlo.run`. Output goes to `runs/<name>/`, never into `data/`. The draft branch `draft/stage2-bob-run` may be reused where it meets this design. |
 | 5 | Verification | See section 10. |
-| 6 | View | The what-if table varies one variable at a time with the others at base values. The view shows intervals per draw, the tail and conditional numbers (section 4.6), the numbers with and without each cause, the assumptions and the threshold line (section 7.6). |
+| 6 | Switch and view | One deliberate switch: stage 1 known-answer tests move to a test fixture, `data/worlds.csv` is replaced by a Monte Carlo run, a new real sweep is recorded under a new file name, and the UI fixtures are rebuilt from it. Then the view | The what-if table varies one variable at a time with the others at base values. The view shows intervals per draw, the tail and conditional numbers (section 4.6), the numbers with and without each cause, the assumptions and the threshold line (section 7.6). |
 | 7 | Cleanup | Delete `scripts/stage1_triangular_worlds.py` and its test, mark ADR 0002 superseded, update docs, real sweeps, fixtures. |
 
 Target is stage 2 done around 11-18. The deadline with the demo video is 11-22.
