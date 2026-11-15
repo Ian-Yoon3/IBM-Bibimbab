@@ -15,8 +15,10 @@ from engine.simulate import build_scenario_actions, simulate
 def apply_world(db: dict, world: dict) -> dict:
     """Return a shallow copy of db with world overrides applied.
 
-    Only ("purchase_order", po_id, "receipt_date") is handled.
-    Any other override kind raises ValueError.
+    Supported override kinds:
+      ("purchase_order", po_id, "receipt_date")     – update disruption date
+      ("offer",          offer_id, "delay_business_days") – copy offer with delay
+      ("lane",           lane_id,  "lead_days")           – copy lane with lead
     db itself is never mutated.
     """
     db2 = dict(db)
@@ -26,6 +28,9 @@ def apply_world(db: dict, world: dict) -> dict:
 
     # Copy the disruptions dict so we can set revised dates without touching db.
     new_disruptions = dict(db["disruptions"])
+    new_offers = None   # copied lazily if needed
+    new_lanes = None    # copied lazily if needed
+
     for (ttype, tid, field), value in overrides.items():
         if ttype == "purchase_order" and field == "receipt_date":
             # Update every disruption whose po_id matches tid.
@@ -34,11 +39,28 @@ def apply_world(db: dict, world: dict) -> dict:
                     new_dis = dict(dis)
                     new_dis["revised_receipt_date"] = value
                     new_disruptions[did] = new_dis
+        elif ttype == "offer" and field == "delay_business_days":
+            if new_offers is None:
+                new_offers = dict(db["offers"])
+            offer_copy = dict(new_offers[tid])
+            offer_copy["delay_business_days"] = value
+            new_offers[tid] = offer_copy
+        elif ttype == "lane" and field == "lead_days":
+            if new_lanes is None:
+                new_lanes = dict(db["lanes"])
+            lane_copy = dict(new_lanes[tid])
+            lane_copy["lead_days"] = value
+            new_lanes[tid] = lane_copy
         else:
             raise ValueError(
                 f"apply_world: override kind ({ttype!r}, {field!r}) is not supported"
             )
+
     db2["disruptions"] = new_disruptions
+    if new_offers is not None:
+        db2["offers"] = new_offers
+    if new_lanes is not None:
+        db2["lanes"] = new_lanes
     return db2
 
 

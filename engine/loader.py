@@ -30,6 +30,9 @@ _DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # ---------------------------------------------------------------------------
 _OPEN_KINDS = {
     ("purchase_order", "receipt_date"): lambda v, f: _date(v, f),
+    ("offer",          "delay_business_days"): lambda v, f: _signed_int(v, f),
+    ("lane",           "lead_days"):           lambda v, f: _pos_int(v, f),
+    ("cause",          "active"):              lambda v, f: _cause_active(v, f),
 }
 
 
@@ -46,6 +49,36 @@ def _int(value: str, field: str) -> int:
         raise ValueError(f"Field '{field}' is not an integer: {value!r}")
     if v < 0:
         raise ValueError(f"Field '{field}' must be >= 0, got {v}")
+    return v
+
+
+def _signed_int(value: str, field: str) -> int:
+    """Parse an integer that may be negative (e.g. delay_business_days)."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        raise ValueError(f"Field '{field}' is not an integer: {value!r}")
+
+
+def _pos_int(value: str, field: str) -> int:
+    """Parse a positive integer (>= 1)."""
+    try:
+        v = int(value)
+    except (ValueError, TypeError):
+        raise ValueError(f"Field '{field}' is not an integer: {value!r}")
+    if v < 1:
+        raise ValueError(f"Field '{field}' must be >= 1, got {v}")
+    return v
+
+
+def _cause_active(value: str, field: str) -> int:
+    """Parse a cause tag: must be 0 or 1."""
+    try:
+        v = int(value)
+    except (ValueError, TypeError):
+        raise ValueError(f"Field '{field}' is not an integer: {value!r}")
+    if v not in (0, 1):
+        raise ValueError(f"Field '{field}' must be 0 or 1, got {v!r}")
     return v
 
 
@@ -311,6 +344,34 @@ def load_all(data_dir=None) -> dict:
     # ── HORIZON = latest due_date in orders ───────────────────────────────────
     HORIZON = max(o["due_date"] for o in orders.values())
 
+    # ── transfer_lanes ────────────────────────────────────────────────────────
+    # Loaded before worlds so that lane target_ids can be validated.
+    lanes = {}
+    for r in _load_csv("transfer_lanes", dd):
+        lid = _require(r, "lane_id", "transfer_lanes")
+        if lid in lanes:
+            raise ValueError(f"Duplicate lane_id: {lid}")
+        from_wid = _require(r, "from_warehouse_id", "transfer_lanes")
+        to_wid = _require(r, "to_warehouse_id", "transfer_lanes")
+        if from_wid not in warehouses:
+            raise ValueError(f"transfer_lanes.from_warehouse_id '{from_wid}' not in warehouses")
+        if to_wid not in warehouses:
+            raise ValueError(f"transfer_lanes.to_warehouse_id '{to_wid}' not in warehouses")
+        if from_wid == to_wid:
+            raise ValueError(f"transfer_lanes from and to must differ for lane {lid}")
+        lead = _int(_require(r, "lead_days", "transfer_lanes"), "lead_days")
+        if lead <= 0:
+            raise ValueError(f"transfer_lanes.lead_days must be > 0")
+        lanes[lid] = {
+            "lane_id": lid,
+            "from_warehouse_id": from_wid,
+            "to_warehouse_id": to_wid,
+            "lead_days": lead,
+            "max_qty": _int(_require(r, "max_qty", "transfer_lanes"), "max_qty"),
+            "unit_cost_usd": _int(_require(r, "unit_cost_usd", "transfer_lanes"), "unit_cost_usd"),
+            "fixed_fee_usd": _int(_require(r, "fixed_fee_usd", "transfer_lanes"), "fixed_fee_usd"),
+        }
+
     # ── worlds (optional, wide format, ADR 0004) ──────────────────────────────
     worlds_path = dd / "worlds.csv"
     overrides_path = dd / "world_overrides.csv"
@@ -380,6 +441,25 @@ def load_all(data_dir=None) -> dict:
                     raise ValueError(
                         f"worlds.csv: variable column {col!r}: "
                         f"target_id {tid!r} is not a PO named in disruptions"
+                    )
+            elif ttype == "offer":
+                if tid not in offers:
+                    raise ValueError(
+                        f"worlds.csv: variable column {col!r}: "
+                        f"target_id {tid!r} is not in supplier_offers"
+                    )
+            elif ttype == "lane":
+                if tid not in lanes:
+                    raise ValueError(
+                        f"worlds.csv: variable column {col!r}: "
+                        f"target_id {tid!r} is not in transfer_lanes"
+                    )
+            elif ttype == "cause":
+                if field != "active":
+                    raise ValueError(
+                        f"worlds.csv: variable column {col!r}: "
+                        f"only field 'active' is allowed for target_type 'cause', "
+                        f"got {field!r}"
                     )
             col_kinds[col] = (ttype, tid, field)
 
@@ -456,6 +536,7 @@ def load_all(data_dir=None) -> dict:
 
                 # Rule 5: no empty cells — variable columns; Rule 6: parse values
                 overrides = {}
+                tags = {}
                 for col in var_cols:
                     raw_val = row.get(col, "")
                     if raw_val == "":
@@ -488,8 +569,27 @@ def load_all(data_dir=None) -> dict:
                                 f"({SAMPLING_CAP}, one year after DAY0); "
                                 f"dates after the cap need stage 2"
                             )
-                    override_key = (ttype, tid, field)
-                    overrides[override_key] = parsed
+                    elif kind_key == ("offer", "delay_business_days"):
+                        # Bounds: receipt at DAY0 must not exceed SAMPLING_CAP.
+                        # We defer the actual date computation to after the
+                        # calendar is loaded; store the raw delay here and
+                        # re-check below once _cal is available.
+                        pass  # checked after calendar load
+                    elif kind_key == ("lane", "lead_days"):
+                        # DAY0 + lead_days must not exceed sampling cap.
+                        if DAY0 + timedelta(days=parsed) > SAMPLING_CAP:
+                            raise ValueError(
+                                f"worlds.csv: world {wid!r}: "
+                                f"lane {tid!r} lead_days {parsed} would put "
+                                f"DAY0 + lead_days beyond the sampling cap "
+                                f"({SAMPLING_CAP})"
+                            )
+                    # Tags are stored separately; offer/lane go into overrides.
+                    if ttype == "cause":
+                        tags[tid] = parsed
+                    else:
+                        override_key = (ttype, tid, field)
+                        overrides[override_key] = parsed
 
                 # Accumulate draw totals for rule 7
                 draw_totals[draw] = draw_totals.get(draw, 0) + weight
@@ -499,6 +599,7 @@ def load_all(data_dir=None) -> dict:
                     "draw": draw,
                     "weight": weight,
                     "overrides": overrides,
+                    "tags": tags,
                 })
 
         if not worlds_db:
@@ -514,33 +615,6 @@ def load_all(data_dir=None) -> dict:
             raise ValueError(
                 f"worlds.csv: draws have unequal total weights ({draws_summary})"
             )
-
-    # ── transfer_lanes ────────────────────────────────────────────────────────
-    lanes = {}
-    for r in _load_csv("transfer_lanes", dd):
-        lid = _require(r, "lane_id", "transfer_lanes")
-        if lid in lanes:
-            raise ValueError(f"Duplicate lane_id: {lid}")
-        from_wid = _require(r, "from_warehouse_id", "transfer_lanes")
-        to_wid = _require(r, "to_warehouse_id", "transfer_lanes")
-        if from_wid not in warehouses:
-            raise ValueError(f"transfer_lanes.from_warehouse_id '{from_wid}' not in warehouses")
-        if to_wid not in warehouses:
-            raise ValueError(f"transfer_lanes.to_warehouse_id '{to_wid}' not in warehouses")
-        if from_wid == to_wid:
-            raise ValueError(f"transfer_lanes from and to must differ for lane {lid}")
-        lead = _int(_require(r, "lead_days", "transfer_lanes"), "lead_days")
-        if lead <= 0:
-            raise ValueError(f"transfer_lanes.lead_days must be > 0")
-        lanes[lid] = {
-            "lane_id": lid,
-            "from_warehouse_id": from_wid,
-            "to_warehouse_id": to_wid,
-            "lead_days": lead,
-            "max_qty": _int(_require(r, "max_qty", "transfer_lanes"), "max_qty"),
-            "unit_cost_usd": _int(_require(r, "unit_cost_usd", "transfer_lanes"), "unit_cost_usd"),
-            "fixed_fee_usd": _int(_require(r, "fixed_fee_usd", "transfer_lanes"), "fixed_fee_usd"),
-        }
 
     # ── scenarios ─────────────────────────────────────────────────────────────
     scenarios = {}
@@ -617,41 +691,6 @@ def load_all(data_dir=None) -> dict:
             "qty": qty,
         }
 
-    # ── SIM_END: latest schedulable date + max production_days ───────────────
-    # Collect all dates the simulation may need to reach.
-    sim_end_candidates = [HORIZON]
-
-    # planned and revised receipts of purchase_orders / disruptions
-    for po in purchase_orders.values():
-        sim_end_candidates.append(po["planned_receipt_date"])
-    for dis in disruptions.values():
-        sim_end_candidates.append(dis["revised_receipt_date"])
-
-    # recovery purchase receipts
-    for rp in recovery_purchases.values():
-        offer = offers[rp["offer_id"]]
-        sim_end_candidates.append(rp["action_date"] + timedelta(days=offer["lead_days"]))
-
-    # recovery transfer receipts
-    for rt in recovery_transfers.values():
-        lane = lanes[rt["lane_id"]]
-        sim_end_candidates.append(rt["action_date"] + timedelta(days=lane["lead_days"]))
-
-    # DAY0 + longest offer lead_days (purchase on the decision day)
-    max_offer_lead = max(o["lead_days"] for o in offers.values())
-    sim_end_candidates.append(DAY0 + timedelta(days=max_offer_lead))
-
-    # Every receipt_date value in worlds.csv
-    if worlds_db is not None:
-        for w in worlds_db:
-            for (ttype, tid, field), val in w["overrides"].items():
-                if field == "receipt_date":
-                    sim_end_candidates.append(val)
-
-    max_sched = max(sim_end_candidates)
-    max_prod_days = max(p["production_days"] for p in products.values())
-    SIM_END = max_sched + timedelta(days=max_prod_days)
-
     # ── closed_days.csv (optional) ────────────────────────────────────────────
     from engine.business_calendar import BusinessCalendar
     closed_days_path = dd / "closed_days.csv"
@@ -690,6 +729,58 @@ def load_all(data_dir=None) -> dict:
         calendar = BusinessCalendar(overrides=overrides_cal)
     else:
         calendar = BusinessCalendar()
+
+    # ── SIM_END: latest schedulable date + max production_days ───────────────
+    # Collect all dates the simulation may need to reach.
+    # This runs after calendar is loaded because offer delay bounds use it.
+    sim_end_candidates = [HORIZON]
+
+    # planned and revised receipts of purchase_orders / disruptions
+    for po in purchase_orders.values():
+        sim_end_candidates.append(po["planned_receipt_date"])
+    for dis in disruptions.values():
+        sim_end_candidates.append(dis["revised_receipt_date"])
+
+    # recovery purchase receipts (stage 1: calendar days only)
+    for rp in recovery_purchases.values():
+        offer = offers[rp["offer_id"]]
+        sim_end_candidates.append(rp["action_date"] + timedelta(days=offer["lead_days"]))
+
+    # recovery transfer receipts
+    for rt in recovery_transfers.values():
+        lane = lanes[rt["lane_id"]]
+        sim_end_candidates.append(rt["action_date"] + timedelta(days=lane["lead_days"]))
+
+    # DAY0 + longest offer lead_days (purchase on the decision day)
+    max_offer_lead = max(o["lead_days"] for o in offers.values())
+    sim_end_candidates.append(DAY0 + timedelta(days=max_offer_lead))
+
+    # Worlds: receipt_date overrides, offer delay receipts (at DAY0), lane leads
+    if worlds_db is not None:
+        from engine.simulate import offer_receipt_date as _ord
+        for w in worlds_db:
+            for (ttype, tid, field), val in w["overrides"].items():
+                if field == "receipt_date":
+                    sim_end_candidates.append(val)
+                elif ttype == "offer" and field == "delay_business_days":
+                    offer = offers[tid]
+                    offer_w = dict(offer)
+                    offer_w["delay_business_days"] = val
+                    rd = _ord(DAY0, offer_w, calendar)
+                    # Bounds: must not exceed sampling cap
+                    if rd > SAMPLING_CAP:
+                        raise ValueError(
+                            f"worlds.csv: offer {tid!r} delay_business_days {val} "
+                            f"converts to receipt {rd} which exceeds the sampling cap "
+                            f"({SAMPLING_CAP}, one year after DAY0)"
+                        )
+                    sim_end_candidates.append(rd)
+                elif ttype == "lane" and field == "lead_days":
+                    sim_end_candidates.append(DAY0 + timedelta(days=val))
+
+    max_sched = max(sim_end_candidates)
+    max_prod_days = max(p["production_days"] for p in products.values())
+    SIM_END = max_sched + timedelta(days=max_prod_days)
 
     # ── derived structures ────────────────────────────────────────────────────
     # floor[warehouse_id][component_id] = reserved + protected

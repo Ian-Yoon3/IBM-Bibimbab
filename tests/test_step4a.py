@@ -1,0 +1,713 @@
+"""Tests for stage 2 step 4a.
+
+PART A: new worlds.csv column kinds (offer.*.delay_business_days,
+        lane.*.lead_days, cause.*.active) in engine/loader.py and
+        engine/worlds.py.
+PART B: offer_receipt_date() in engine/simulate.py and its use in the
+        simulator.
+
+Expected values come from docs/montecarlo-engine.md section 4.7 and
+the prompt specification.
+"""
+
+import csv
+import pathlib
+import shutil
+import tempfile
+import unittest
+from datetime import date, timedelta
+from fractions import Fraction
+
+from engine.loader import load_all
+from engine.simulate import offer_receipt_date, build_scenario_actions, simulate
+from engine.worlds import apply_world, evaluate_worlds
+from engine.business_calendar import BusinessCalendar
+
+_DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
+
+
+def _copy_data(tmp):
+    """Copy the repo data directory into a temp dir and return its path."""
+    dest = pathlib.Path(tmp) / "data"
+    shutil.copytree(_DATA_DIR, dest)
+    return dest
+
+
+def _write_csv(path, rows):
+    """Write rows (list of lists) to a CSV; first row is the header."""
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        csv.writer(fh).writerows(rows)
+
+
+# ---------------------------------------------------------------------------
+# PART B – offer_receipt_date()
+# ---------------------------------------------------------------------------
+
+class TestOfferReceiptDateNoDelay(unittest.TestCase):
+    """Without delay_business_days the function is identical to stage 1."""
+
+    def setUp(self):
+        self.cal = BusinessCalendar()
+        self.offer_no_delay = {"lead_days": 3}            # stage 1 offer
+        self.offer_delay0 = {"lead_days": 3, "delay_business_days": 0}
+
+    def test_no_delay_key_uses_calendar_days(self):
+        d = date(2026, 11, 9)
+        result = offer_receipt_date(d, self.offer_no_delay, self.cal)
+        self.assertEqual(result, date(2026, 11, 12))
+
+    def test_delay0_same_as_no_delay(self):
+        d = date(2026, 11, 9)
+        result = offer_receipt_date(d, self.offer_delay0, self.cal)
+        self.assertEqual(result, date(2026, 11, 12))
+
+    def test_calendar_none_uses_calendar_days(self):
+        d = date(2026, 11, 9)
+        result = offer_receipt_date(d, self.offer_no_delay, None)
+        self.assertEqual(result, date(2026, 11, 12))
+
+
+class TestOfferReceiptDateOF02(unittest.TestCase):
+    """OF02 lead_days=3, expected values from the spec.
+
+    order 2026-11-09 (Mon):
+      promised = next_bday(11-09+3) = next_bday(11-12 Thu) = 11-12
+      delay  0 -> 11-12
+      delay  1 -> 11-13
+      delay  2 -> 11-16  (skips weekend)
+      delay -1 -> 11-10  (11-11 is Veterans Day, closed)
+      delay -5 -> 11-10  (clamped: would be 11-04 <= action_date)
+
+    order 2026-11-13 (Fri):
+      promised = next_bday(11-13+3) = next_bday(11-16 Mon) = 11-16
+      delay  0 -> 11-16
+      delay  2 -> 11-18
+
+    order 2026-11-23 (Mon):
+      promised = next_bday(11-23+3) = next_bday(11-26 Thu=Thanksgiving) = 11-27 (Fri)
+      delay  0 -> 11-27
+    """
+
+    def setUp(self):
+        self.cal = BusinessCalendar()
+        self.offer = {"lead_days": 3}
+
+    def _rd(self, action_date, delay):
+        o = dict(self.offer, delay_business_days=delay)
+        return offer_receipt_date(action_date, o, self.cal)
+
+    def test_order_1109_delay_0(self):
+        self.assertEqual(self._rd(date(2026, 11, 9), 0), date(2026, 11, 12))
+
+    def test_order_1109_delay_1(self):
+        self.assertEqual(self._rd(date(2026, 11, 9), 1), date(2026, 11, 13))
+
+    def test_order_1109_delay_2(self):
+        self.assertEqual(self._rd(date(2026, 11, 9), 2), date(2026, 11, 16))
+
+    def test_order_1109_delay_neg1(self):
+        # 11-11 is Veterans Day → skipped; -1 bday from 11-12 → 11-10
+        self.assertEqual(self._rd(date(2026, 11, 9), -1), date(2026, 11, 10))
+
+    def test_order_1109_delay_neg5_clamped(self):
+        # -5 bdays from 11-12 would reach 11-04, which is <= action_date 11-09
+        # → clamped to next_bday(11-10) = 11-10
+        self.assertEqual(self._rd(date(2026, 11, 9), -5), date(2026, 11, 10))
+
+    def test_order_1113_delay_0(self):
+        self.assertEqual(self._rd(date(2026, 11, 13), 0), date(2026, 11, 16))
+
+    def test_order_1113_delay_2(self):
+        self.assertEqual(self._rd(date(2026, 11, 13), 2), date(2026, 11, 18))
+
+    def test_order_1123_delay_0_thanksgiving(self):
+        # 11-26 = Thanksgiving → promised moves to 11-27 (Fri)
+        self.assertEqual(self._rd(date(2026, 11, 23), 0), date(2026, 11, 27))
+
+    def test_receipt_never_on_or_before_action_date(self):
+        # Extreme negative delay: action_date+1 must be a business day or move forward
+        for delay in (-10, -20):
+            with self.subTest(delay=delay):
+                result = self._rd(date(2026, 11, 9), delay)
+                self.assertGreater(result, date(2026, 11, 9))
+
+
+# ---------------------------------------------------------------------------
+# PART A – loader: offer kind
+# ---------------------------------------------------------------------------
+
+class TestLoaderOfferKind(unittest.TestCase):
+    """offer.<id>.delay_business_days column in worlds.csv."""
+
+    _HEADER = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "offer.OF02.delay_business_days"]
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._dd = _copy_data(self._tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp)
+
+    def _load(self, worlds_rows):
+        _write_csv(self._dd / "worlds.csv", [self._HEADER] + worlds_rows)
+        return load_all(self._dd)
+
+    def test_valid_offer_delay_loads(self):
+        db = self._load([
+            ["W1", "0", "1000", "2026-11-17", "2"],
+        ])
+        w = db["worlds"][0]
+        key = ("offer", "OF02", "delay_business_days")
+        self.assertEqual(w["overrides"][key], 2)
+        self.assertEqual(w["tags"], {})
+
+    def test_negative_delay_loads(self):
+        db = self._load([
+            ["W1", "0", "1000", "2026-11-17", "-1"],
+        ])
+        key = ("offer", "OF02", "delay_business_days")
+        self.assertEqual(db["worlds"][0]["overrides"][key], -1)
+
+    def test_offer_not_in_supplier_offers_raises(self):
+        # "offer.NOEXIST.delay_business_days" should fail at header validation
+        hdr = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "offer.NOEXIST.delay_business_days"]
+        _write_csv(self._dd / "worlds.csv",
+                   [hdr, ["W1", "0", "1000", "2026-11-17", "1"]])
+        with self.assertRaises(ValueError):
+            load_all(self._dd)
+
+    def test_offer_kind_bad_field_raises(self):
+        # offer.OF02.lead_days is not an open kind
+        hdr = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "offer.OF02.lead_days"]
+        _write_csv(self._dd / "worlds.csv",
+                   [hdr, ["W1", "0", "1000", "2026-11-17", "3"]])
+        with self.assertRaises(ValueError):
+            load_all(self._dd)
+
+    def test_offer_delay_non_integer_raises(self):
+        with self.assertRaises(ValueError):
+            self._load([["W1", "0", "1000", "2026-11-17", "1.5"]])
+
+    def test_offer_delay_exceeds_cap_raises(self):
+        # OF02 lead=3, order DAY0=2026-11-09:
+        # promised=2026-11-12; delay 365 bdays → way past cap
+        with self.assertRaises(ValueError):
+            self._load([["W1", "0", "1000", "2026-11-17", "365"]])
+
+
+# ---------------------------------------------------------------------------
+# PART A – loader: lane kind
+# ---------------------------------------------------------------------------
+
+class TestLoaderLaneKind(unittest.TestCase):
+    """lane.<id>.lead_days column in worlds.csv."""
+
+    _HEADER = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "lane.LN01.lead_days"]
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._dd = _copy_data(self._tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp)
+
+    def _load(self, worlds_rows):
+        _write_csv(self._dd / "worlds.csv", [self._HEADER] + worlds_rows)
+        return load_all(self._dd)
+
+    def test_valid_lane_lead_loads(self):
+        db = self._load([["W1", "0", "1000", "2026-11-17", "3"]])
+        key = ("lane", "LN01", "lead_days")
+        self.assertEqual(db["worlds"][0]["overrides"][key], 3)
+
+    def test_lane_lead_1_valid(self):
+        db = self._load([["W1", "0", "1000", "2026-11-17", "1"]])
+        key = ("lane", "LN01", "lead_days")
+        self.assertEqual(db["worlds"][0]["overrides"][key], 1)
+
+    def test_lane_lead_zero_raises(self):
+        with self.assertRaises(ValueError):
+            self._load([["W1", "0", "1000", "2026-11-17", "0"]])
+
+    def test_lane_lead_negative_raises(self):
+        with self.assertRaises(ValueError):
+            self._load([["W1", "0", "1000", "2026-11-17", "-1"]])
+
+    def test_lane_not_in_transfer_lanes_raises(self):
+        hdr = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "lane.NOEXIST.lead_days"]
+        _write_csv(self._dd / "worlds.csv",
+                   [hdr, ["W1", "0", "1000", "2026-11-17", "2"]])
+        with self.assertRaises(ValueError):
+            load_all(self._dd)
+
+    def test_lane_lead_exceeds_cap_raises(self):
+        # DAY0 + 366 > cap
+        with self.assertRaises(ValueError):
+            self._load([["W1", "0", "1000", "2026-11-17", "366"]])
+
+    def test_lane_lead_365_accepted(self):
+        # DAY0 + 365 == cap, should be accepted
+        db = self._load([["W1", "0", "1000", "2026-11-17", "365"]])
+        key = ("lane", "LN01", "lead_days")
+        self.assertEqual(db["worlds"][0]["overrides"][key], 365)
+
+
+# ---------------------------------------------------------------------------
+# PART A – loader: cause tag columns
+# ---------------------------------------------------------------------------
+
+class TestLoaderCauseTags(unittest.TestCase):
+    """cause.<K>.active columns in worlds.csv."""
+
+    _HEADER = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "cause.K1.active"]
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._dd = _copy_data(self._tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp)
+
+    def _load(self, worlds_rows, header=None):
+        hdr = header if header is not None else self._HEADER
+        _write_csv(self._dd / "worlds.csv", [hdr] + worlds_rows)
+        return load_all(self._dd)
+
+    def test_cause_tag_0_loads(self):
+        db = self._load([["W1", "0", "1000", "2026-11-17", "0"]])
+        self.assertEqual(db["worlds"][0]["tags"], {"K1": 0})
+
+    def test_cause_tag_1_loads(self):
+        db = self._load([["W1", "0", "1000", "2026-11-17", "1"]])
+        self.assertEqual(db["worlds"][0]["tags"], {"K1": 1})
+
+    def test_cause_tag_2_raises(self):
+        with self.assertRaises(ValueError):
+            self._load([["W1", "0", "1000", "2026-11-17", "2"]])
+
+    def test_cause_tag_not_in_overrides(self):
+        # Tag must not appear in world["overrides"]
+        db = self._load([["W1", "0", "1000", "2026-11-17", "1"]])
+        for key in db["worlds"][0]["overrides"]:
+            self.assertNotEqual(key[0], "cause")
+
+    def test_cause_non_active_field_raises(self):
+        hdr = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "cause.K1.severity"]
+        _write_csv(self._dd / "worlds.csv",
+                   [hdr, ["W1", "0", "1000", "2026-11-17", "3"]])
+        with self.assertRaises(ValueError):
+            load_all(self._dd)
+
+    def test_two_cause_tags(self):
+        hdr = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "cause.K1.active", "cause.K2.active"]
+        db = self._load([["W1", "0", "1000", "2026-11-17", "0", "1"]], header=hdr)
+        self.assertEqual(db["worlds"][0]["tags"], {"K1": 0, "K2": 1})
+
+    def test_no_tag_columns_gives_empty_tags(self):
+        hdr = ["world_id", "draw", "weight", "purchase_order.PO01.receipt_date"]
+        _write_csv(self._dd / "worlds.csv",
+                   [hdr, ["W1", "0", "1000", "2026-11-17"]])
+        db = load_all(self._dd)
+        self.assertEqual(db["worlds"][0]["tags"], {})
+
+    def test_tags_do_not_change_db(self):
+        """Worlds with cause tags give same evaluate_worlds results as without."""
+        # Load without tags
+        hdr_no = ["world_id", "draw", "weight", "purchase_order.PO01.receipt_date"]
+        _write_csv(self._dd / "worlds.csv",
+                   [hdr_no, ["W1", "0", "1000", "2026-11-17"]])
+        db_no = load_all(self._dd)
+        result_no = evaluate_worlds("D01", db_no)
+
+        # Load with tags (K1=0 and K1=1 worlds)
+        hdr_tag = ["world_id", "draw", "weight",
+                   "purchase_order.PO01.receipt_date",
+                   "cause.K1.active"]
+        _write_csv(self._dd / "worlds.csv",
+                   [hdr_tag,
+                    ["W1", "0", "500", "2026-11-17", "0"],
+                    ["W2", "0", "500", "2026-11-17", "1"]])
+        db_tag = load_all(self._dd)
+        result_tag = evaluate_worlds("D01", db_tag)
+
+        # expected_late_orders should be identical (same receipt dates, same weight)
+        for opt_no, opt_tag in zip(result_no["options"], result_tag["options"]):
+            with self.subTest(scenario=opt_no["scenario_id"]):
+                self.assertEqual(opt_no["scenario_id"], opt_tag["scenario_id"])
+                self.assertEqual(opt_no["expected_late_orders"],
+                                 opt_tag["expected_late_orders"])
+
+
+# ---------------------------------------------------------------------------
+# PART A – SIM_END with offer delay worlds
+# ---------------------------------------------------------------------------
+
+class TestSimEndOfferDelay(unittest.TestCase):
+    """SIM_END is extended when world offer delays push receipt past base."""
+
+    _HEADER = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "offer.OF02.delay_business_days"]
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._dd = _copy_data(self._tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp)
+
+    def test_delay_10_gives_sim_end_nov29(self):
+        """OF02 delay=10 ordered on DAY0=2026-11-09:
+        promised=2026-11-12, +10 bdays = 2026-11-27.
+        SIM_END = 2026-11-27 + max_prod_days(2) = 2026-11-29.
+        """
+        _write_csv(self._dd / "worlds.csv", [
+            self._HEADER,
+            ["W1", "0", "1000", "2026-11-17", "10"],
+        ])
+        db = load_all(self._dd)
+        self.assertEqual(db["SIM_END"], date(2026, 11, 29))
+
+    def test_no_delay_sim_end_unchanged(self):
+        """With delay=0, SIM_END stays at the base 2026-11-23."""
+        _write_csv(self._dd / "worlds.csv", [
+            self._HEADER,
+            ["W1", "0", "1000", "2026-11-17", "0"],
+        ])
+        db = load_all(self._dd)
+        self.assertEqual(db["SIM_END"], date(2026, 11, 23))
+
+
+# ---------------------------------------------------------------------------
+# PART A – SIM_END with lane lead worlds
+# ---------------------------------------------------------------------------
+
+class TestSimEndLaneLead(unittest.TestCase):
+    """SIM_END is extended when world lane leads push DAY0+lead past base."""
+
+    _HEADER = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "lane.LN01.lead_days", "lane.LN02.lead_days"]
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._dd = _copy_data(self._tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp)
+
+    def test_lane_lead_extends_sim_end(self):
+        """LN01=3, LN02=5 on DAY0=2026-11-09.
+        DAY0+5 = 2026-11-14.  Base max_sched=2026-11-21; still wins.
+        SIM_END = 2026-11-23 unchanged.
+        """
+        _write_csv(self._dd / "worlds.csv", [
+            self._HEADER,
+            ["W1", "0", "1000", "2026-11-17", "3", "5"],
+        ])
+        db = load_all(self._dd)
+        self.assertEqual(db["SIM_END"], date(2026, 11, 23))
+
+
+# ---------------------------------------------------------------------------
+# PART B – apply_world with offer and lane kinds
+# ---------------------------------------------------------------------------
+
+class TestApplyWorldOfferKind(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = load_all()
+
+    def test_offer_delay_applies(self):
+        world = {
+            "overrides": {
+                ("offer", "OF02", "delay_business_days"): 2,
+            }
+        }
+        db2 = apply_world(self.db, world)
+        self.assertEqual(db2["offers"]["OF02"]["delay_business_days"], 2)
+
+    def test_offer_delay_does_not_mutate_db(self):
+        world = {
+            "overrides": {
+                ("offer", "OF02", "delay_business_days"): 2,
+            }
+        }
+        apply_world(self.db, world)
+        self.assertNotIn("delay_business_days", self.db["offers"]["OF02"])
+
+    def test_other_offers_unchanged(self):
+        world = {
+            "overrides": {
+                ("offer", "OF02", "delay_business_days"): 2,
+            }
+        }
+        db2 = apply_world(self.db, world)
+        self.assertNotIn("delay_business_days", db2["offers"]["OF01"])
+
+
+class TestApplyWorldLaneKind(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = load_all()
+
+    def test_lane_lead_applies(self):
+        world = {
+            "overrides": {
+                ("lane", "LN01", "lead_days"): 5,
+            }
+        }
+        db2 = apply_world(self.db, world)
+        self.assertEqual(db2["lanes"]["LN01"]["lead_days"], 5)
+
+    def test_lane_lead_does_not_mutate_db(self):
+        world = {
+            "overrides": {
+                ("lane", "LN01", "lead_days"): 5,
+            }
+        }
+        apply_world(self.db, world)
+        self.assertEqual(self.db["lanes"]["LN01"]["lead_days"], 2)  # original
+
+    def test_other_lanes_unchanged(self):
+        world = {
+            "overrides": {
+                ("lane", "LN01", "lead_days"): 5,
+            }
+        }
+        db2 = apply_world(self.db, world)
+        self.assertEqual(db2["lanes"]["LN02"]["lead_days"],
+                         self.db["lanes"]["LN02"]["lead_days"])
+
+
+# ---------------------------------------------------------------------------
+# PART B – simulate with offer delay (via world)
+# ---------------------------------------------------------------------------
+
+class TestSimulateOfferDelay(unittest.TestCase):
+    """Simulate ALT_BUY and HYBRID with OF02 delay, PO01 receipt 2026-11-17."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = load_all()
+
+    def _run(self, sid, of02_delay=None, ln01_lead=None, ln02_lead=None,
+             po01_receipt=None):
+        overrides = {}
+        if po01_receipt is not None:
+            overrides[("purchase_order", "PO01", "receipt_date")] = po01_receipt
+        if of02_delay is not None:
+            overrides[("offer", "OF02", "delay_business_days")] = of02_delay
+        if ln01_lead is not None:
+            overrides[("lane", "LN01", "lead_days")] = ln01_lead
+        if ln02_lead is not None:
+            overrides[("lane", "LN02", "lead_days")] = ln02_lead
+        db_w = apply_world(self.db, {"overrides": overrides})
+        actions, dis_id = build_scenario_actions(sid, self.db)
+        sim = db_w  # pass as db argument; actions come from base db
+        result = simulate(actions, dis_id, db_w)
+        late = sum(r["days_late"] > 0 for r in result["order_results"])
+        total_late = sum(r["days_late"] for r in result["order_results"])
+        return late, total_late
+
+    # OF02 delay=0, PO01=2026-11-17 → same as stage 1 base
+    def test_alt_buy_delay0_po17(self):
+        late, total = self._run("ALT_BUY",
+                                of02_delay=0,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (3, 5))
+
+    def test_hybrid_delay0_po17(self):
+        late, total = self._run("HYBRID",
+                                of02_delay=0,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (1, 2))
+
+    # OF02 delay=1, PO01=2026-11-17
+    def test_alt_buy_delay1_po17(self):
+        late, total = self._run("ALT_BUY",
+                                of02_delay=1,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (5, 8))
+
+    def test_hybrid_delay1_po17(self):
+        late, total = self._run("HYBRID",
+                                of02_delay=1,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (2, 3))
+
+    # LN01=3, LN02=5, PO01=2026-11-17
+    def test_transfer_ln01_3_ln02_5_po17(self):
+        late, total = self._run("TRANSFER",
+                                ln01_lead=3,
+                                ln02_lead=5,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (6, 14))
+
+    def test_hybrid_ln01_3_ln02_5_po17(self):
+        late, total = self._run("HYBRID",
+                                ln01_lead=3,
+                                ln02_lead=5,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (2, 3))
+
+    # OF02 delay=1, LN01=3, LN02=5, PO01=2026-11-17
+    def test_alt_buy_delay1_lanes_po17(self):
+        late, total = self._run("ALT_BUY",
+                                of02_delay=1,
+                                ln01_lead=3,
+                                ln02_lead=5,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (5, 8))
+
+    def test_hybrid_delay1_lanes_po17(self):
+        late, total = self._run("HYBRID",
+                                of02_delay=1,
+                                ln01_lead=3,
+                                ln02_lead=5,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (3, 4))
+
+    def test_transfer_delay1_lanes_po17(self):
+        late, total = self._run("TRANSFER",
+                                of02_delay=1,
+                                ln01_lead=3,
+                                ln02_lead=5,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (6, 14))
+
+    def test_wait_delay1_lanes_po17(self):
+        late, total = self._run("WAIT",
+                                of02_delay=1,
+                                ln01_lead=3,
+                                ln02_lead=5,
+                                po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (7, 27))
+
+
+# ---------------------------------------------------------------------------
+# PART B – purchase ordered 2026-11-13, PO01 2026-11-17
+# ---------------------------------------------------------------------------
+
+class TestSimulatePurchaseDate1113(unittest.TestCase):
+    """Purchase of 65 from OF02 ordered 2026-11-13, PO01 2026-11-17.
+
+    delay=0 → receipt 2026-11-16 → late_orders 7, total days late 22
+    delay=2 → receipt 2026-11-18 → 7, 27
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = load_all()
+
+    def _run(self, of02_delay, po01_receipt):
+        # Build a custom ALT_BUY action with action_date 2026-11-13
+        overrides = {
+            ("purchase_order", "PO01", "receipt_date"): po01_receipt,
+            ("offer", "OF02", "delay_business_days"): of02_delay,
+        }
+        db_w = apply_world(self.db, {"overrides": overrides})
+        actions = [{
+            "type": "purchase",
+            "offer_id": "OF02",
+            "warehouse_id": "WH01",
+            "action_date": "2026-11-13",
+            "qty": 65,
+        }]
+        result = simulate(actions, "D01", db_w)
+        late = sum(r["days_late"] > 0 for r in result["order_results"])
+        total_late = sum(r["days_late"] for r in result["order_results"])
+        return late, total_late
+
+    def test_delay0_receipt_nov16(self):
+        # delay=0: promised=11-16, receipt=11-16
+        cal = BusinessCalendar()
+        offer = {"lead_days": 3, "delay_business_days": 0}
+        receipt = offer_receipt_date(date(2026, 11, 13), offer, cal)
+        self.assertEqual(receipt, date(2026, 11, 16))
+
+    def test_delay2_receipt_nov18(self):
+        cal = BusinessCalendar()
+        offer = {"lead_days": 3, "delay_business_days": 2}
+        receipt = offer_receipt_date(date(2026, 11, 13), offer, cal)
+        self.assertEqual(receipt, date(2026, 11, 18))
+
+    def test_delay0_simulation(self):
+        late, total = self._run(of02_delay=0, po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (7, 22))
+
+    def test_delay2_simulation(self):
+        late, total = self._run(of02_delay=2, po01_receipt=date(2026, 11, 17))
+        self.assertEqual((late, total), (7, 27))
+
+
+# ---------------------------------------------------------------------------
+# PART A – repo load unchanged
+# ---------------------------------------------------------------------------
+
+class TestRepoLoadUnchanged(unittest.TestCase):
+    """Existing worlds.csv (purchase_order only) still loads and results match."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = load_all()
+
+    def test_sim_end_unchanged(self):
+        self.assertEqual(self.db["SIM_END"], date(2026, 11, 23))
+
+    def test_world_tags_empty_for_repo_worlds(self):
+        for w in self.db["worlds"]:
+            with self.subTest(world_id=w["world_id"]):
+                self.assertEqual(w["tags"], {})
+
+    def test_scenario_results_unchanged(self):
+        """Stage 1 scenario results must be identical with the new code.
+
+        Values at PO01 receipt 2026-11-17 (announced date), no offer/lane
+        world overrides.  Numbers verified against tests/test_step3.py and
+        the spec.
+        """
+        expected = {
+            "NORMAL":   (0, 0),
+            "WAIT":     (7, 27),
+            "TRANSFER": (4, 12),
+            "ALT_BUY":  (3, 5),
+            "HYBRID":   (1, 2),
+        }
+        for sid, (exp_late, exp_total) in expected.items():
+            with self.subTest(scenario=sid):
+                # Use the announced receipt date (2026-11-17) as the world
+                world = {
+                    "overrides": {
+                        ("purchase_order", "PO01", "receipt_date"): date(2026, 11, 17)
+                    }
+                }
+                db_w = apply_world(self.db, world)
+                actions, dis_id = build_scenario_actions(sid, self.db)
+                result = simulate(actions, dis_id, db_w)
+                late = sum(r["days_late"] > 0 for r in result["order_results"])
+                total = sum(r["days_late"] for r in result["order_results"])
+                self.assertEqual((late, total), (exp_late, exp_total),
+                                 msg=f"{sid}: got ({late}, {total})")
+
+
+if __name__ == "__main__":
+    unittest.main()

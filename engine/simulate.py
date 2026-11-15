@@ -1,6 +1,6 @@
 """Core day-forward supply chain simulation engine."""
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 
 
 def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
@@ -38,6 +38,7 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
     DAY0 = db["DAY0"]
     HORIZON = db["HORIZON"]
     SIM_END = db["SIM_END"]
+    SAMPLING_CAP = DAY0 + timedelta(days=365)
     products = db["products"]
     warehouses = db["warehouses"]
     offers = db["offers"]
@@ -62,9 +63,10 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
     transfer_cost = 0
 
     def schedule(when, kind, wid, cid, qty, ref):
-        if not (DAY0 <= when <= SIM_END):
+        if not (DAY0 <= when <= SAMPLING_CAP):
             raise ValueError(
-                f"Event date {when} outside simulation window [{DAY0}, {SIM_END}]"
+                f"Event date {when} outside allowed range "
+                f"[{DAY0}, {SAMPLING_CAP}]"
             )
         events[when].append((kind, wid, cid, qty, ref))
 
@@ -83,6 +85,7 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
                  offer["component_id"], po["qty"], po_id)
 
     # ── schedule recovery actions ─────────────────────────────────────────────
+    calendar = db.get("calendar")
     moved_by_lane: Counter = Counter()
     for action in actions:
         atype = action.get("type")
@@ -97,7 +100,7 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
             qty = int(action["qty"])
             _validate_offer_qty(offer, qty)
             action_date = _parse_date(action["action_date"])
-            receipt_date = action_date + timedelta(days=offer["lead_days"])
+            receipt_date = offer_receipt_date(action_date, offer, calendar)
             schedule(receipt_date, "ALT_RECEIPT", wid, offer["component_id"], qty, offer_id)
             purchase_cost += qty * offer["unit_cost_usd"] + offer["fixed_fee_usd"]
 
@@ -169,10 +172,18 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
         })
 
     # ── main simulation loop ──────────────────────────────────────────────────
+    # Extend the loop end if events were scheduled beyond SIM_END.
+    max_prod_days = max(p["production_days"] for p in products.values())
+    if events:
+        latest_event = max(events.keys())
+        loop_end = max(SIM_END, latest_event + timedelta(days=max_prod_days))
+    else:
+        loop_end = SIM_END
+
     starts: dict[str, object] = {}  # order_id -> date
     next_order = 0
 
-    for offset in range((SIM_END - DAY0).days + 1):
+    for offset in range((loop_end - DAY0).days + 1):
         today = DAY0 + timedelta(days=offset)
         # Process all events for today: sort by qty descending (largest first)
         for kind, wid, cid, qty, ref in sorted(
@@ -259,6 +270,30 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def offer_receipt_date(action_date: date, offer: dict, calendar) -> date:
+    """Return the receipt date for a purchase of *offer* placed on *action_date*.
+
+    If the offer has no "delay_business_days" key (stage 1 / no world column):
+        receipt = action_date + lead_days  (calendar days, unchanged)
+
+    Otherwise (stage 2 offer kind):
+        promised = next_business_day(action_date + lead_days)
+        receipt  = add_business_days(promised, delay)
+        If receipt <= action_date, receipt = next_business_day(action_date + 1 day)
+
+    *calendar* may be None; in that case the stage-1 path is always used.
+    """
+    lead = offer["lead_days"]
+    delay = offer.get("delay_business_days")
+    if delay is None or calendar is None:
+        return action_date + timedelta(days=lead)
+    promised = calendar.next_business_day(action_date + timedelta(days=lead))
+    receipt = calendar.add_business_days(promised, delay)
+    if receipt <= action_date:
+        receipt = calendar.next_business_day(action_date + timedelta(days=1))
+    return receipt
+
 
 def _parse_date(value: str):
     from datetime import date
