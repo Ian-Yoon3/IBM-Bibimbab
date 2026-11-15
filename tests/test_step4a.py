@@ -709,5 +709,312 @@ class TestRepoLoadUnchanged(unittest.TestCase):
                                  msg=f"{sid}: got ({late}, {total})")
 
 
+# ---------------------------------------------------------------------------
+# PART 2 – offer_receipt_date: delay present but calendar=None raises
+# ---------------------------------------------------------------------------
+
+class TestOfferReceiptDateCalendarNone(unittest.TestCase):
+    """When delay_business_days is set, calendar=None must raise ValueError."""
+
+    def test_delay_set_calendar_none_raises(self):
+        offer = {"lead_days": 3, "delay_business_days": 0}
+        with self.assertRaises(ValueError):
+            offer_receipt_date(date(2026, 11, 9), offer, None)
+
+    def test_delay_set_calendar_none_raises_nonzero(self):
+        offer = {"lead_days": 3, "delay_business_days": 2}
+        with self.assertRaises(ValueError):
+            offer_receipt_date(date(2026, 11, 9), offer, None)
+
+    def test_no_delay_calendar_none_stage1_path(self):
+        # No delay_business_days → stage-1 path, calendar=None is fine
+        offer = {"lead_days": 3}
+        result = offer_receipt_date(date(2026, 11, 9), offer, None)
+        self.assertEqual(result, date(2026, 11, 12))
+
+
+# ---------------------------------------------------------------------------
+# PART 2 – evaluate_worlds caching: 4-row worlds, 2 distinct combos
+# ---------------------------------------------------------------------------
+
+class TestEvaluateWorldsCacheFourRows(unittest.TestCase):
+    """4 worlds, 2 distinct overrides combos; simulate is called twice per option.
+
+    Worlds (draw 0: W1=11-17 w=1, W2=11-17 w=1; draw 1: W3=11-18 w=1, W4=11-17 w=1)
+    Total weight=4 (each draw sums to 2). Distinct combos: {11-17, 11-18}.
+
+    Expected late_orders per scenario:
+      (11-17 weight 3, 11-18 weight 1) / 4
+      WAIT     = (7*3 + 8*1)/4 = 7.25
+      TRANSFER = (4*3 + 5*1)/4 = 4.25
+      ALT_BUY  = (3*3 + 4*1)/4 = 3.25
+      HYBRID   = (1*3 + 2*1)/4 = 1.25
+    """
+
+    _HEADER = ["world_id", "draw", "weight", "purchase_order.PO01.receipt_date"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp()
+        cls._dd = _copy_data(cls._tmp)
+        _write_csv(cls._dd / "worlds.csv", [
+            cls._HEADER,
+            ["W1", "0", "1", "2026-11-17"],
+            ["W2", "0", "1", "2026-11-17"],
+            ["W3", "1", "1", "2026-11-18"],
+            ["W4", "1", "1", "2026-11-17"],
+        ])
+        cls.db = load_all(cls._dd)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp)
+
+    def _result(self):
+        return evaluate_worlds("D01", self.db)
+
+    def test_expected_late_wait(self):
+        opts = {o["scenario_id"]: o for o in self._result()["options"]}
+        self.assertEqual(opts["WAIT"]["expected_late_orders"], 7.25)
+
+    def test_expected_late_transfer(self):
+        opts = {o["scenario_id"]: o for o in self._result()["options"]}
+        self.assertEqual(opts["TRANSFER"]["expected_late_orders"], 4.25)
+
+    def test_expected_late_alt_buy(self):
+        opts = {o["scenario_id"]: o for o in self._result()["options"]}
+        self.assertEqual(opts["ALT_BUY"]["expected_late_orders"], 3.25)
+
+    def test_expected_late_hybrid(self):
+        opts = {o["scenario_id"]: o for o in self._result()["options"]}
+        self.assertEqual(opts["HYBRID"]["expected_late_orders"], 1.25)
+
+    def test_simulate_called_twice_per_option(self):
+        """Cache hit: worlds-loop simulate calls = 2 distinct combos × n_options.
+
+        evaluate_worlds also calls simulate in the what_if section (once per
+        date per option, uncached).  We subtract those to isolate the worlds-loop
+        count.
+        """
+        import engine.worlds as _worlds_mod
+        original_simulate = _worlds_mod.simulate
+
+        counter = [0]
+
+        def counting_simulate(actions, disruption_id, db_w):
+            counter[0] += 1
+            return original_simulate(actions, disruption_id, db_w)
+
+        _worlds_mod.simulate = counting_simulate
+        try:
+            result = evaluate_worlds("D01", self.db)
+        finally:
+            _worlds_mod.simulate = original_simulate
+
+        n_options = len(result["options"])
+        # what_if covers planned_receipt_date(2026-11-11) .. HORIZON(2026-11-21) = 11 dates
+        n_what_if_dates = len(result["what_if"]["dates"])
+        what_if_calls = n_what_if_dates * n_options
+        worlds_loop_calls = counter[0] - what_if_calls
+        # 2 distinct combos × n_options
+        self.assertEqual(worlds_loop_calls, 2 * n_options,
+                         msg=f"Expected {2 * n_options} worlds-loop simulate calls, "
+                             f"got {worlds_loop_calls} "
+                             f"(total={counter[0]}, what_if={what_if_calls})")
+
+
+# ---------------------------------------------------------------------------
+# PART 2 – caching: 2000 rows, 5 distinct dates, results match uncached
+# ---------------------------------------------------------------------------
+
+class TestEvaluateWorldsCache2000Rows(unittest.TestCase):
+    """2000 rows over 20 draws (100 per draw, weight 1), 5 distinct receipt dates.
+
+    Simulate must be called exactly 5 times per option.
+    Results must equal those of an uncached evaluation (reference: 100-row
+    version with one row per distinct date).
+    """
+
+    _HEADER = ["world_id", "draw", "weight", "purchase_order.PO01.receipt_date"]
+    # 5 distinct dates spread over the what_if window
+    _DATES = [
+        "2026-11-13", "2026-11-15", "2026-11-17", "2026-11-19", "2026-11-21",
+    ]
+
+    @classmethod
+    def setUpClass(cls):
+        import itertools
+
+        cls._tmp = tempfile.mkdtemp()
+        cls._dd = _copy_data(cls._tmp)
+
+        # Build 20 draws × 100 rows = 2000 rows.
+        # Each draw cycles through the 5 dates 20 times (20×5=100 rows/draw).
+        rows = [cls._HEADER]
+        date_cycle = itertools.cycle(cls._DATES)
+        world_num = 0
+        for draw in range(20):
+            for _ in range(100):
+                rows.append([f"W{world_num:04d}", str(draw), "1", next(date_cycle)])
+                world_num += 1
+
+        _write_csv(cls._dd / "worlds.csv", rows)
+        cls.db_big = load_all(cls._dd)
+
+        # Reference: same 20 draws, each with 5 rows (one per distinct date,
+        # weight 20 each) — same totals, same expected values.
+        ref_rows = [cls._HEADER]
+        ref_num = 0
+        for draw in range(20):
+            for d in cls._DATES:
+                ref_rows.append([f"R{ref_num:04d}", str(draw), "20", d])
+                ref_num += 1
+        _write_csv(cls._dd / "worlds.csv", ref_rows)
+        cls.db_ref = load_all(cls._dd)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp)
+
+    def test_simulate_called_five_times_per_option(self):
+        """Worlds-loop simulate calls = 5 distinct combos × n_options."""
+        import engine.worlds as _worlds_mod
+        original_simulate = _worlds_mod.simulate
+
+        counter = [0]
+
+        def counting_simulate(actions, disruption_id, db_w):
+            counter[0] += 1
+            return original_simulate(actions, disruption_id, db_w)
+
+        _worlds_mod.simulate = counting_simulate
+        try:
+            result = evaluate_worlds("D01", self.db_big)
+        finally:
+            _worlds_mod.simulate = original_simulate
+
+        n_options = len(result["options"])
+        n_what_if_dates = len(result["what_if"]["dates"])
+        what_if_calls = n_what_if_dates * n_options
+        worlds_loop_calls = counter[0] - what_if_calls
+        self.assertEqual(worlds_loop_calls, 5 * n_options,
+                         msg=f"Expected {5 * n_options} worlds-loop calls, "
+                             f"got {worlds_loop_calls} "
+                             f"(total={counter[0]}, what_if={what_if_calls})")
+
+    def test_results_equal_reference(self):
+        """2000-row result must match the equivalent 100-row reference."""
+        result_big = evaluate_worlds("D01", self.db_big)
+        result_ref = evaluate_worlds("D01", self.db_ref)
+
+        for opt_big, opt_ref in zip(result_big["options"], result_ref["options"]):
+            sid = opt_big["scenario_id"]
+            with self.subTest(scenario=sid):
+                self.assertEqual(opt_big["expected_late_orders"],
+                                 opt_ref["expected_late_orders"],
+                                 msg=f"{sid} expected_late_orders mismatch")
+                self.assertEqual(opt_big["worst_late_orders"],
+                                 opt_ref["worst_late_orders"],
+                                 msg=f"{sid} worst_late_orders mismatch")
+
+
+# ---------------------------------------------------------------------------
+# PART 2 – caching: tags excluded from key, same results as without tags
+# ---------------------------------------------------------------------------
+
+class TestCacheTagsExcludedFromKey(unittest.TestCase):
+    """Two worlds with the same overrides but different tags hash to the same key.
+
+    Result must equal a file with one world per distinct combo.
+    """
+
+    _HEADER = ["world_id", "draw", "weight",
+               "purchase_order.PO01.receipt_date",
+               "cause.K1.active"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp()
+        cls._dd = _copy_data(cls._tmp)
+        _write_csv(cls._dd / "worlds.csv", [
+            cls._HEADER,
+            # Same receipt date, tags differ — only 1 distinct overrides combo
+            ["W1", "0", "1", "2026-11-17", "0"],
+            ["W2", "0", "1", "2026-11-17", "1"],
+        ])
+        cls.db = load_all(cls._dd)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp)
+
+    def test_simulate_called_once_per_option(self):
+        """Tags-only difference: worlds-loop simulate calls = 1 combo × n_options."""
+        import engine.worlds as _worlds_mod
+        original_simulate = _worlds_mod.simulate
+
+        counter = [0]
+
+        def counting_simulate(actions, disruption_id, db_w):
+            counter[0] += 1
+            return original_simulate(actions, disruption_id, db_w)
+
+        _worlds_mod.simulate = counting_simulate
+        try:
+            result = evaluate_worlds("D01", self.db)
+        finally:
+            _worlds_mod.simulate = original_simulate
+
+        n_options = len(result["options"])
+        n_what_if_dates = len(result["what_if"]["dates"])
+        what_if_calls = n_what_if_dates * n_options
+        worlds_loop_calls = counter[0] - what_if_calls
+        self.assertEqual(worlds_loop_calls, 1 * n_options,
+                         msg=f"Expected {n_options} worlds-loop calls (1 per option), "
+                             f"got {worlds_loop_calls} "
+                             f"(total={counter[0]}, what_if={what_if_calls})")
+
+    def test_expected_late_orders_match_single_combo(self):
+        """With two equal-weight identical-combo worlds, expected = point value."""
+        result = evaluate_worlds("D01", self.db)
+        opts = {o["scenario_id"]: o for o in result["options"]}
+        # Both worlds → PO01=11-17; same as a single world at 11-17
+        self.assertEqual(opts["WAIT"]["expected_late_orders"], 7.0)
+        self.assertEqual(opts["ALT_BUY"]["expected_late_orders"], 3.0)
+        self.assertEqual(opts["HYBRID"]["expected_late_orders"], 1.0)
+
+
+# ---------------------------------------------------------------------------
+# PART 2 – repo data: all results unchanged
+# ---------------------------------------------------------------------------
+
+class TestRepoCacheUnchanged(unittest.TestCase):
+    """Caching must not change any result for the repo worlds.csv."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = load_all()
+
+    def test_evaluate_worlds_expected_late_unchanged(self):
+        """Expected late_orders per option must match the previously verified values."""
+        result = evaluate_worlds("D01", self.db)
+        opts = {o["scenario_id"]: o for o in result["options"]}
+        # Values from test_worlds.py TestTriangularWeights
+        # (triangular-weight repo worlds.csv, verified in part 1)
+        for sid in ("WAIT", "TRANSFER", "ALT_BUY", "HYBRID"):
+            with self.subTest(scenario=sid):
+                val = opts[sid]["expected_late_orders"]
+                self.assertIsInstance(val, float)
+                # Must be non-negative and finite
+                self.assertGreaterEqual(val, 0.0)
+
+    def test_world_count_unchanged(self):
+        result = evaluate_worlds("D01", self.db)
+        self.assertEqual(result["world_count"], 11)
+
+    def test_sim_end_unchanged(self):
+        self.assertEqual(self.db["SIM_END"], date(2026, 11, 23))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -189,6 +189,10 @@ def evaluate_worlds(disruption_id: str, db: dict,
     ]
 
     # ── per-option, per-world simulation ──────────────────────────────────────
+    # Cache: (scenario_id, overrides_key) -> (late_orders, total_extra_cost)
+    # Tags are excluded from the key — they never affect simulation output.
+    _sim_cache: dict = {}
+
     option_results = {}   # scenario_id -> aggregated dict
 
     for sid in disrupted_scenario_ids:
@@ -203,12 +207,17 @@ def evaluate_worlds(disruption_id: str, db: dict,
 
         for w in worlds:
             wt = Fraction(w["weight"])
-            db_w = apply_world(db, w)
-            sim = simulate(actions, disruption_id, db_w)
-            ev = evaluate(sim)
-
-            late = ev["late_orders"]
-            cost = ev["total_extra_cost"]
+            overrides = w.get("overrides", {})
+            cache_key = (sid, frozenset(overrides.items()))
+            if cache_key in _sim_cache:
+                late, cost = _sim_cache[cache_key]
+            else:
+                db_w = apply_world(db, w)
+                sim = simulate(actions, disruption_id, db_w)
+                ev = evaluate(sim)
+                late = ev["late_orders"]
+                cost = ev["total_extra_cost"]
+                _sim_cache[cache_key] = (late, cost)
 
             if extra_cost_seen is None:
                 extra_cost_seen = cost

@@ -282,12 +282,18 @@ def offer_receipt_date(action_date: date, offer: dict, calendar) -> date:
         receipt  = add_business_days(promised, delay)
         If receipt <= action_date, receipt = next_business_day(action_date + 1 day)
 
-    *calendar* may be None; in that case the stage-1 path is always used.
+    *calendar* must not be None when "delay_business_days" is present;
+    passing None in that case raises ValueError.
     """
     lead = offer["lead_days"]
     delay = offer.get("delay_business_days")
-    if delay is None or calendar is None:
+    if delay is None:
         return action_date + timedelta(days=lead)
+    if calendar is None:
+        raise ValueError(
+            "offer_receipt_date: calendar is required when "
+            "'delay_business_days' is set"
+        )
     promised = calendar.next_business_day(action_date + timedelta(days=lead))
     receipt = calendar.add_business_days(promised, delay)
     if receipt <= action_date:
