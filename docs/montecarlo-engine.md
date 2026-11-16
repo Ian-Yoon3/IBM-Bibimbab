@@ -56,6 +56,10 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-15 | Which variable each cause can hit, and in which day unit, is data (`data/history/causes.csv`). | Section 6.1 |
 | 2026-11-14 | The threshold line uses a closed form. Each world carries a 0/1 tag per cause. | Section 7.6 |
 | 2026-11-14 | The true parameters of the synthetic world are fixed before any result is seen. | Section 6.3 |
+| 2026-11-15 | The engine must run on any data set in the schema, not only on the demo. A fixed set of variant data sets checks this in the tests. | Section 10 |
+| 2026-11-15 | The history states its observation period (`data/history/period.csv`). The episode rate uses that length, not a fixed year. | Sections 6.1 and 7.1 |
+| 2026-11-15 | A sampled value beyond the one-year cap is cut there for every kind of variable, offers included, and counted. | Section 4.7 |
+| 2026-11-15 | The demo history comes from the same model family as the estimator. Checks on it verify the code, not the fit to real data. | Section 7.4 |
 
 ## 3. Structure
 
@@ -256,7 +260,7 @@ With OF02 uncertain, ALT_BUY and TRANSFER come close in expected late orders (3.
 | Decision day | The reported date of the disruptions. All disruptions of a data set share it. | 2026-11-09 |
 | Order horizon | The latest due date in `orders.csv`. Late orders are judged against due dates, and user-facing tables run to this day. | 2026-11-21 |
 | Simulation end | The latest date the data can schedule (planned and revised receipts, recovery receipts, a purchase on the decision day at the longest lead time, dates in `worlds.csv`) plus the longest production time | 2026-11-23 |
-| Sampling cap | One year after the decision day. A sampled date beyond it is cut there and the cut share is reported. | 2027-11-09 |
+| Sampling cap | One year after the decision day. A sampled date beyond it is cut there and the cut share is reported. For an offer the deviation is cut so that an order placed on the decision day arrives by the cap. | 2027-11-09 |
 
 Every order is due by the order horizon and takes at least one day to produce.
 A receipt after the order horizon therefore saves no order.
@@ -332,11 +336,14 @@ Keeping it under the data folder lets a separate data set (stage 2-1) carry its 
 | `shipments.csv` | `shipment_id, source_id, ship_date, promised_date, receipt_date, episode_id` |
 | `episodes.csv` | `episode_id, cause_id, start_date, end_date, delay_days` |
 | `causes.csv` | `cause_id, day_unit, target_type, target_id`, one row per variable a cause can hit. `day_unit` is `business` or `calendar` |
+| `period.csv` | `start_date, end_date`, one row. The period the history covers, both days included |
 
-- `source_id` is one of OF01, OF02, LN01, LN02.
-- `cause_id` is K1 (gateway congestion) or K2 (regional transport disruption).
+- In the demo `source_id` is one of OF01, OF02, LN01, LN02, and `cause_id` is K1 (gateway congestion) or K2 (regional transport disruption). Any other ids and any number of causes are allowed.
+- Each variable appears once in `causes.csv`. A purchase order and an offer use business days, a lane uses calendar days. Anything else is an input error.
+- Several variables may share one source, for example a purchase order and the offer it was bought from. They then share its records. A source belongs to one cause only.
+- Every record lies inside the period of `period.csv`, and the period ends before the decision day.
 - `episode_id` is empty for a shipment that met no episode.
-- `end_date` is empty for an episode still open on the decision day. That cause is then certain in the window (section 4.7).
+- An episode is open on the decision day when its `end_date` is empty or not before the decision day. That cause is then certain in the window (section 4.7). An episode that starts after the decision day is an input error.
 - The history of a variable is the shipments of its source. A purchase order uses the shipments of its offer (PO01 uses OF01), an offer and a lane use their own.
 - Own delays are counted in the day unit of the cause that can hit the variable, business days for K1 and calendar days for K2.
 - The own delay of a shipment is its lateness minus the delay of its episode. In days, `receipt_date - promised_date - delay_days`, with `delay_days` taken as 0 when there is no episode.
@@ -407,13 +414,15 @@ The closed forms are ratios of gamma functions whose arguments differ by integer
 
 | Input | Model | Prior | Posterior |
 |---|---|---|---|
-| Episode rate $\lambda_k$ per year | $n$ episodes in one year, Poisson | flat | $\mathrm{Gamma}(n+1,\ 1)$ |
-| Cause active in the window | $S_k$ Bernoulli with $p_k = 1 - e^{-\lambda_k w}$ | from $\lambda_k$ | $P(S_k = 1) = 1 - (1+w)^{-(n+1)}$ |
+| Episode rate $\lambda_k$ per day | $n$ episodes in $T$ days, Poisson | flat | $\mathrm{Gamma}(n+1,\ T)$ |
+| Cause active in the window | $S_k$ Bernoulli with $p_k = 1 - e^{-\lambda_k w}$ | from $\lambda_k$ | $P(S_k = 1) = 1 - (1+w/T)^{-(n+1)}$ |
 | Severity $C_k - 1$ | Geometric($\theta_k$) | $\mathrm{Beta}(1,1)$ | $\mathrm{Beta}(n+1,\ S+1)$, $S$ = sum of observed $C_k - 1$ |
 | Own delay category (early, on time, late) | Categorical. Separating the on-time outcome from the size of a deviation follows the hurdle idea for count data (Mullahy 1986) | $\mathrm{Dirichlet}(1,1,1)$ | $\mathrm{Dirichlet}$(counts + 1) |
 | Days early minus 1, days late minus 1 | Geometric | $\mathrm{Beta}(1,1)$ | as for the severity |
 
-$w$ is the exposure window in years. It is set in Q4.
+$w$ is the exposure window and $T$ the length of the observation period, both in calendar days. $w$ is set in section 4.7, $T$ comes from `period.csv`.
+For the demo $T = 365$, which gives the values used so far.
+A history twice as long with the same episodes halves the rate, as it should. Before this was fixed, the code assumed one year, which held only for the demo.
 The three-part own delay lets $R$ come before the announced date, as stage 1 allowed.
 Every outcome keeps a positive probability even if the history never showed it (Cromwell's rule, Lindley 1985).
 
@@ -475,6 +484,11 @@ Weaknesses that no compared method removes.
 
 5. **Non-stationarity.** If the window is worse than the past year, every method covers about a quarter of the time. Assumption 5 (revised promise kept like an ordinary one) is a risk of this kind.
 6. **Dependent records.** If a source has good and bad periods, its records are not independent and every interval is too narrow.
+
+Weaknesses found when building the engine (2026-11-15).
+
+7. **Heavy tails where a category has 0 or 1 records.** With $\mathrm{Beta}(a, b)$ on $\theta$, the predictive size has a finite mean only for $a > 1$ and a finite variance only for $a > 2$. LN02 (no early records, $a = 1$) and OF02 (one early record, $a = 2$) are such cases. A few sampled values are absurd, such as an offer 409 business days late. The physical bounds keep every result finite. A lead time is at least 1 day, an offer never arrives before the day after its order, and every value is cut at one year. Cutting the tails much harder, at 15 business days and 20 days, changed no reported number at two decimals, because anything that late is late in every case.
+8. **The demo checks the code, not the model.** The demo history is generated from the same family of models the estimator assumes. Recovering its parameters shows that the code implements the model correctly. It does not show that real supply data follow the model. Real data will be converted into this schema, and weaknesses 5 and 6 are the ways such data could break it.
 
 The answer to 5 and 6 is not a different estimator. It is stating the assumptions and showing where the decision would flip (section 7.6).
 
@@ -556,6 +570,7 @@ Target is stage 2 done around 11-18. The deadline with the demo video is 11-22.
 | Stage 1 regression | Stage 1 worlds in the new format give the ADR 0002 table exactly. |
 | Error shrinks with $N$ | Standard error falls roughly as $1/\sqrt{N}$ for plain Monte Carlo. |
 | LHS against plain | Error against $N$ for both, same seed set. |
+| Any data set in the schema | A fixed set of variant data sets built from the demo in the tests. Ids renamed and dates moved two years, one cause only, a cause with no episodes, a source with no records, an open episode, a third cause, a decision day on a Saturday, a second disruption, two variables sharing a source, a history of two years. Each runs end to end and gives its precomputed values. Bad inputs (wrong day unit, a source in two causes, a repeated row, no period file) stop with an error that names the problem. |
 
 ## 11. References
 

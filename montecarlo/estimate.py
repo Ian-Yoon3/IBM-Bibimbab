@@ -5,30 +5,30 @@ estimate(data_dir) -> dict
 Reads:
   - Standard engine CSVs via engine.loader.load_all(data_dir) for DAY0,
     the business calendar, offers, lanes, purchase orders and disruptions.
-  - data/history/causes.csv, shipments.csv, episodes.csv.
+  - data/history/causes.csv, shipments.csv, episodes.csv, period.csv.
 
 Returns a dict with keys:
   "causes"    : {cause_id: cause_posterior}
-  "variables" : {source_id: variable_posterior}
+  "variables" : {"<target_type>.<target_id>": variable_posterior}
+               e.g. "purchase_order.PO01", "offer.OF02", "lane.LN01"
 
 cause_posterior keys:
-  n, S, open_on_day0, w_days, rate_shape, rate_rate,
-  p_active, severity_a, severity_b, prior_share_rate
+  n, S, open_on_day0, w_days, T_days, rate_shape, rate_rate,
+  p_active, severity_a, severity_b
 
 variable_posterior keys:
-  source_id, records,
+  cause_id, day_unit, source_id, records,
   n_early, n_ontime, n_late,
   dir_early, dir_ontime, dir_late,   (Dirichlet alpha parameters)
   early_a, early_b,                  (Beta for size-1 of early delays)
   late_a, late_b,                    (Beta for size-1 of late delays)
   prior_share
 
-Also top-level key:
-  "predictive_size_pmf": the helper function (a, b, k) -> Fraction
+predictive_size_pmf is a module-level function (not in the returned dict).
 
-Section 7.1 posteriors (uniform/Bayes-Laplace priors):
-  rate lambda:   Gamma(n+1, rate=1 per year)
-  P(active):     1 if open_on_day0 else 1-(1+w/365)^-(n+1)
+Section 7.1 posteriors (uniform/Bayes-Laplace priors), T = period length in days:
+  rate lambda:   Gamma(n+1, T)   [rate parameter T means scale = 1/T]
+  P(active):     1 if open_on_day0 else 1-(1+w/T)^-(n+1)
   severity theta: Beta(n+1, S+1)      S = sum of (delay_days - 1)
   category:      Dirichlet(counts + 1)
   size theta:    Beta(count+1, sum_of_(size-1)+1)
@@ -52,9 +52,7 @@ _SHIPMENTS_HEADER = ["shipment_id", "source_id", "ship_date",
                      "promised_date", "receipt_date", "episode_id"]
 _EPISODES_HEADER  = ["episode_id", "cause_id", "start_date",
                      "end_date", "delay_days"]
-
-# History length used for the rate posterior (1 year = 365 days)
-_HISTORY_DAYS = 365
+_PERIOD_HEADER    = ["start_date", "end_date"]
 
 
 # ---------------------------------------------------------------------------
@@ -75,42 +73,150 @@ def _read_history_csv(path: pathlib.Path, expected_header: list) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Causes loader (mirrors generator._load_causes without producing source config)
+# Period reader
 # ---------------------------------------------------------------------------
 
-def _load_causes_meta(data_dir: pathlib.Path, db: dict) -> dict:
-    """Return {cause_id: {day_unit, sources: [source_id, ...], targets: [...]}}
-    plus a reverse map {source_id: cause_id}.
+def _read_period(hist_dir: pathlib.Path) -> tuple:
+    """Read period.csv and return (period_start, period_end, T_days).
 
-    targets are raw target dicts from causes.csv.
+    Raises ValueError if file is missing or malformed.
+    """
+    fname = "data/history/period.csv"
+    path  = hist_dir / "period.csv"
+    if not path.exists():
+        raise ValueError(
+            f"{fname}: file is missing; every history must have a period.csv"
+        )
+    rows = _read_history_csv(path, _PERIOD_HEADER)
+    if len(rows) != 1:
+        raise ValueError(
+            f"{fname}: must contain exactly one data row, got {len(rows)}"
+        )
+    row = rows[0]
+    try:
+        period_start = date.fromisoformat(row["start_date"])
+        period_end   = date.fromisoformat(row["end_date"])
+    except (ValueError, KeyError) as exc:
+        raise ValueError(f"{fname}: invalid date in row {dict(row)}: {exc}") from exc
+    if period_end < period_start:
+        raise ValueError(
+            f"{fname}: end_date {period_end} is before start_date {period_start}"
+        )
+    T_days = (period_end - period_start).days + 1
+    return period_start, period_end, T_days
+
+
+# ---------------------------------------------------------------------------
+# Causes loader with full validation
+# ---------------------------------------------------------------------------
+
+def _load_causes_meta(data_dir: pathlib.Path, db: dict) -> tuple:
+    """Parse causes.csv and return three structures.
+
+    Validation rules (each raises ValueError naming the problem):
+      - header must be exactly cause_id,day_unit,target_type,target_id
+      - purchase_order and offer must use day_unit 'business'
+      - lane must use day_unit 'calendar'
+      - a (target_type, target_id) pair may not appear twice
+      - a source may belong to at most one cause
+      - all target_ids must exist in the base data
+
+    Several variables may share one source (purchase_order.PO01 and offer.OF01
+    can both use source OF01). The source_to_causes map stores all causes for a
+    source; for the single-cause constraint it checks ONLY that the same source
+    is not in TWO DIFFERENT causes (same cause is allowed).
+
+    Returns
+    -------
+    causes : dict  {cause_id: {day_unit, entries, targets}}
+    source_to_causes : dict  {source_id: set of cause_ids}
     """
     fname = "data/history/causes.csv"
     path  = data_dir / "history" / "causes.csv"
     rows  = _read_history_csv(path, _CAUSES_HEADER)
 
-    causes: dict = {}           # cause_id -> {day_unit, sources, targets}
-    source_to_cause: dict = {}  # source_id -> cause_id
+    causes: dict = {}
+    source_to_causes: dict = {}   # source_id -> set of cause_ids
+    seen_vkeys: set = set()       # (ttype, tid) pairs already seen
+
+    _REQUIRED_UNIT = {
+        "purchase_order": "business",
+        "offer":          "business",
+        "lane":           "calendar",
+    }
 
     for row in rows:
         cid   = row["cause_id"]
         dunit = row["day_unit"]
         ttype = row["target_type"]
         tid   = row["target_id"]
+        vkey  = f"{ttype}.{tid}"
 
+        # day_unit must match target_type
+        if ttype in _REQUIRED_UNIT:
+            expected_unit = _REQUIRED_UNIT[ttype]
+            if dunit != expected_unit:
+                raise ValueError(
+                    f"{fname}: target_type {ttype!r} requires day_unit "
+                    f"{expected_unit!r}, got {dunit!r} for target {tid!r} "
+                    f"(cause {cid!r})"
+                )
+        else:
+            raise ValueError(
+                f"{fname}: unknown target_type {ttype!r} in row {dict(row)}"
+            )
+
+        # (ttype, tid) must not appear twice
+        vtuple = (ttype, tid)
+        if vtuple in seen_vkeys:
+            raise ValueError(
+                f"{fname}: ({ttype!r}, {tid!r}) appears more than once"
+            )
+        seen_vkeys.add(vtuple)
+
+        # Resolve source_id and validate target exists
         if ttype == "purchase_order":
+            if tid not in db.get("purchase_orders", {}):
+                raise ValueError(
+                    f"{fname}: target_id {tid!r} is not in purchase_orders "
+                    f"(row {dict(row)})"
+                )
             source_id = db["purchase_orders"][tid]["offer_id"]
         elif ttype == "offer":
+            if tid not in db.get("offers", {}):
+                raise ValueError(
+                    f"{fname}: target_id {tid!r} is not in supplier_offers "
+                    f"(row {dict(row)})"
+                )
             source_id = tid
         else:  # lane
+            if tid not in db.get("lanes", {}):
+                raise ValueError(
+                    f"{fname}: target_id {tid!r} is not in transfer_lanes "
+                    f"(row {dict(row)})"
+                )
             source_id = tid
 
-        if cid not in causes:
-            causes[cid] = {"day_unit": dunit, "sources": [], "targets": []}
-        causes[cid]["sources"].append(source_id)
-        causes[cid]["targets"].append({"ttype": ttype, "tid": tid})
-        source_to_cause[source_id] = cid
+        # A source may belong to at most one cause
+        existing_causes = source_to_causes.get(source_id, set())
+        if existing_causes and cid not in existing_causes:
+            other = next(iter(existing_causes))
+            raise ValueError(
+                f"{fname}: source {source_id!r} is in both cause {other!r} "
+                f"and cause {cid!r}; a source may belong to one cause only"
+            )
 
-    return causes, source_to_cause
+        if cid not in causes:
+            causes[cid] = {"day_unit": dunit, "entries": [], "targets": []}
+        causes[cid]["entries"].append({"ttype": ttype, "tid": tid,
+                                       "source_id": source_id, "vkey": vkey})
+        causes[cid]["targets"].append({"ttype": ttype, "tid": tid})
+
+        if source_id not in source_to_causes:
+            source_to_causes[source_id] = set()
+        source_to_causes[source_id].add(cid)
+
+    return causes, source_to_causes
 
 
 # ---------------------------------------------------------------------------
@@ -125,13 +231,12 @@ def _exposure_days(db: dict, targets: list) -> int:
     """Return w_k in calendar days from DAY0."""
     day0 = db["DAY0"]
     cal  = db["calendar"]
-    latest = day0  # will compute latest arrival date then subtract
+    latest = day0
 
     for t in targets:
         ttype = t["ttype"]
         tid   = t["tid"]
         if ttype == "purchase_order":
-            # revised_receipt_date of the disruption affecting this PO
             for dis in db["disruptions"].values():
                 if dis["po_id"] == tid:
                     arr = dis["revised_receipt_date"]
@@ -157,19 +262,8 @@ def _exposure_days(db: dict, targets: list) -> int:
 # B(a, b) = Gamma(a)*Gamma(b)/Gamma(a+b)  (a, b positive integers)
 # ---------------------------------------------------------------------------
 
-def _log_factorial(n: int) -> float:
-    return math.lgamma(n + 1)
-
-
 def _beta_fraction(a: int, b: int) -> Fraction:
     """B(a, b) = (a-1)! * (b-1)! / (a+b-1)! as a Fraction (a, b >= 1 integers)."""
-    # numerator: prod(1..a-1) * prod(1..b-1)
-    # denominator: prod(1..a+b-1)
-    # Use Fraction arithmetic for exactness
-    result = Fraction(1)
-    # Multiply by (k / (a+b-1+... )) iteratively is fragile; just compute directly
-    # (a-1)! / (a+b-1)! = 1 / [(a) * (a+1) * ... * (a+b-1)]
-    # B(a,b) = (b-1)! / [a * (a+1) * ... * (a+b-1)]
     num = Fraction(1)
     for k in range(1, b):       # (b-1)!
         num *= k
@@ -183,11 +277,6 @@ def predictive_size_pmf(a: int, b: int, k: int) -> Fraction:
     """P(size - 1 = k) under Geometric(theta), theta ~ Beta(a, b).
 
     = B(a+1, b+k) / B(a, b)   for non-negative integer k.
-
-    Parameters
-    ----------
-    a, b : int  — Beta posterior parameters (>= 1)
-    k    : int  — value of (size - 1), i.e. 0, 1, 2, ...
     """
     return _beta_fraction(a + 1, b + k) / _beta_fraction(a, b)
 
@@ -203,11 +292,11 @@ def estimate(data_dir) -> dict:
     ----------
     data_dir : str or Path
         Base data directory.  Must contain the standard engine CSVs and
-        data/history/{causes,shipments,episodes}.csv.
+        data/history/{causes,shipments,episodes,period}.csv.
 
     Returns
     -------
-    dict with keys "causes", "variables", "predictive_size_pmf".
+    dict with keys "causes" and "variables".
     """
     data_dir = pathlib.Path(data_dir)
     db       = load_all(data_dir)
@@ -215,9 +304,17 @@ def estimate(data_dir) -> dict:
     day0     = db["DAY0"]
     hist_dir = data_dir / "history"
 
+    # 0. Read period
+    period_start, period_end, T_days = _read_period(hist_dir)
+    if period_end >= day0:
+        raise ValueError(
+            f"data/history/period.csv: period end_date {period_end} must be "
+            f"before DAY0 {day0}"
+        )
+
     # 1a. Load and validate episodes
     ep_rows = _read_history_csv(hist_dir / "episodes.csv", _EPISODES_HEADER)
-    episodes: dict = {}  # episode_id -> dict
+    episodes: dict = {}
     for row in ep_rows:
         eid = row["episode_id"]
         if not eid:
@@ -228,32 +325,68 @@ def estimate(data_dir) -> dict:
             raise ValueError(
                 f"data/history/episodes.csv: duplicate episode_id {eid!r}"
             )
+        start_d = date.fromisoformat(row["start_date"])
+        if start_d > day0:
+            raise ValueError(
+                f"data/history/episodes.csv: episode {eid!r} starts after DAY0 "
+                f"({start_d} > {day0})"
+            )
+        if start_d < period_start:
+            raise ValueError(
+                f"data/history/episodes.csv: episode {eid!r} start_date {start_d} "
+                f"is before period start {period_start}"
+            )
+        # Open on DAY0: end_date empty OR end_date >= DAY0
+        end_str = row["end_date"]
+        if end_str:
+            end_d = date.fromisoformat(end_str)
+            open_on_day0 = (end_d >= day0)
+        else:
+            open_on_day0 = True
+
         episodes[eid] = {
-            "episode_id": eid,
-            "cause_id":   row["cause_id"],
-            "start_date": row["start_date"],
-            "end_date":   row["end_date"],
-            "delay_days": int(row["delay_days"]),
+            "episode_id":    eid,
+            "cause_id":      row["cause_id"],
+            "start_date":    row["start_date"],
+            "end_date":      end_str,
+            "delay_days":    int(row["delay_days"]),
+            "open_on_day0":  open_on_day0,
         }
 
     # 1b. Load causes meta (for source->cause mapping)
-    causes_meta, source_to_cause = _load_causes_meta(data_dir, db)
+    causes_meta, source_to_causes = _load_causes_meta(data_dir, db)
+
+    # Build source_to_cause (single cause per source is validated above)
+    source_to_cause: dict = {
+        src: next(iter(cids)) for src, cids in source_to_causes.items()
+    }
 
     # 1c. Load and validate shipments
     ship_rows = _read_history_csv(hist_dir / "shipments.csv", _SHIPMENTS_HEADER)
     for row in ship_rows:
-        sid = row["shipment_id"]
-        src = row["source_id"]
-        eid = row["episode_id"]
+        sid      = row["shipment_id"]
+        src      = row["source_id"]
+        eid      = row["episode_id"]
+        ship_d   = date.fromisoformat(row["ship_date"])
+        receipt_d = date.fromisoformat(row["receipt_date"])
+
+        if ship_d < period_start or ship_d > period_end:
+            raise ValueError(
+                f"data/history/shipments.csv: shipment {sid!r} ship_date "
+                f"{ship_d} is outside the period [{period_start}, {period_end}]"
+            )
+        if receipt_d > day0:
+            raise ValueError(
+                f"data/history/shipments.csv: shipment {sid!r} receipt_date "
+                f"{receipt_d} is after DAY0 {day0}"
+            )
 
         if eid:
-            # episode_id must exist
             if eid not in episodes:
                 raise ValueError(
                     f"data/history/shipments.csv: shipment {sid!r} "
                     f"references unknown episode_id {eid!r}"
                 )
-            # cause of episode must match cause of source
             ep_cause  = episodes[eid]["cause_id"]
             src_cause = source_to_cause.get(src)
             if src_cause is None:
@@ -269,65 +402,74 @@ def estimate(data_dir) -> dict:
                 )
 
     # 2. Compute own delays and accumulate per-variable stats
-    # own delay = (receipt - promised in day unit) - episode delay_days
-    # day unit determined by source_to_cause -> causes_meta day_unit
+    # Per-variable accumulators keyed by "ttype.tid"
+    var_stats: dict = {}
+    for cid, meta in causes_meta.items():
+        for entry in meta["entries"]:
+            vkey = entry["vkey"]
+            var_stats[vkey] = {
+                "cause_id":    cid,
+                "day_unit":    meta["day_unit"],
+                "source_id":   entry["source_id"],
+                "ttype":       entry["ttype"],
+                "tid":         entry["tid"],
+                "records":     0,
+                "n_early":     0, "n_ontime": 0, "n_late": 0,
+                "early_count": 0, "early_sum": 0,
+                "late_count":  0, "late_sum":  0,
+            }
 
-    # Per-variable accumulators
-    var_stats: dict = {}  # source_id -> stats dict
-    for src_id in source_to_cause:
-        var_stats[src_id] = {
-            "source_id": src_id,
-            "records":   0,
-            "n_early":   0, "n_ontime": 0, "n_late": 0,
-            "early_count": 0, "early_sum": 0,  # count and sum of (size-1)
-            "late_count":  0, "late_sum":  0,
-        }
+    # Build source_id -> [vkeys] map (a source may appear in multiple vkeys)
+    source_to_vkeys: dict = {}
+    for vkey, st in var_stats.items():
+        src = st["source_id"]
+        if src not in source_to_vkeys:
+            source_to_vkeys[src] = []
+        source_to_vkeys[src].append(vkey)
 
     for row in ship_rows:
-        sid  = row["shipment_id"]
         src  = row["source_id"]
         prom = date.fromisoformat(row["promised_date"])
         rcpt = date.fromisoformat(row["receipt_date"])
         eid  = row["episode_id"]
         sev  = episodes[eid]["delay_days"] if eid else 0
 
-        # Day unit of this source
-        cause_id = source_to_cause[src]
-        day_unit = causes_meta[cause_id]["day_unit"]
+        # Each shipment contributes to ALL vkeys sharing this source
+        vkeys_for_src = source_to_vkeys.get(src, [])
+        for vkey in vkeys_for_src:
+            day_unit = var_stats[vkey]["day_unit"]
 
-        if day_unit == "business":
-            # Signed business days from promised to receipt
-            if rcpt > prom:
-                raw = cal.business_days_between(prom, rcpt)
-            elif rcpt < prom:
-                raw = -cal.business_days_between(rcpt, prom)
+            if day_unit == "business":
+                if rcpt > prom:
+                    raw = cal.business_days_between(prom, rcpt)
+                elif rcpt < prom:
+                    raw = -cal.business_days_between(rcpt, prom)
+                else:
+                    raw = 0
             else:
-                raw = 0
-        else:
-            raw = (rcpt - prom).days
+                raw = (rcpt - prom).days
 
-        own = raw - sev
+            own = raw - sev
+            st  = var_stats[vkey]
+            st["records"] += 1
 
-        st = var_stats[src]
-        st["records"] += 1
-
-        if own < 0:
-            st["n_early"] += 1
-            st["early_count"] += 1
-            st["early_sum"]   += (-own) - 1   # sum of (size - 1)
-        elif own == 0:
-            st["n_ontime"] += 1
-        else:
-            st["n_late"]    += 1
-            st["late_count"] += 1
-            st["late_sum"]   += own - 1        # sum of (size - 1)
+            if own < 0:
+                st["n_early"]     += 1
+                st["early_count"] += 1
+                st["early_sum"]   += (-own) - 1
+            elif own == 0:
+                st["n_ontime"] += 1
+            else:
+                st["n_late"]    += 1
+                st["late_count"] += 1
+                st["late_sum"]   += own - 1
 
     # 3. Per-cause stats
-    cause_stats: dict = {}  # cause_id -> stats
+    cause_stats: dict = {}
     for cid in causes_meta:
         cause_stats[cid] = {
-            "n":           0,
-            "S":           0,
+            "n":            0,
+            "S":            0,
             "open_on_day0": False,
         }
 
@@ -341,7 +483,7 @@ def estimate(data_dir) -> dict:
         cs = cause_stats[cid]
         cs["n"] += 1
         cs["S"] += ep["delay_days"] - 1
-        if not ep["end_date"]:
+        if ep["open_on_day0"]:
             cs["open_on_day0"] = True
 
     # 4. Exposure windows
@@ -359,14 +501,14 @@ def estimate(data_dir) -> dict:
         open_on_day0 = cs["open_on_day0"]
         w            = cs["w_days"]
 
-        rate_shape = n + 1    # Gamma(n+1, rate=1/year)
-        rate_rate  = 1        # rate parameter (inverse scale = 1 per year)
+        rate_shape = n + 1    # Gamma(n+1, T)
+        rate_rate  = T_days   # rate parameter T (scale = 1/T per day)
 
         if open_on_day0:
             p_active = 1.0
         else:
-            # P(active) = 1 - (1 + w/365)^-(n+1)
-            p_active = 1.0 - (1.0 + w / _HISTORY_DAYS) ** (-(n + 1))
+            # P(active) = 1 - (1 + w/T)^-(n+1)
+            p_active = 1.0 - (1.0 + w / T_days) ** (-(n + 1))
 
         severity_a = n + 1
         severity_b = S + 1
@@ -376,6 +518,7 @@ def estimate(data_dir) -> dict:
             "S":            S,
             "open_on_day0": open_on_day0,
             "w_days":       w,
+            "T_days":       T_days,
             "rate_shape":   rate_shape,
             "rate_rate":    rate_rate,
             "p_active":     p_active,
@@ -385,29 +528,27 @@ def estimate(data_dir) -> dict:
 
     # --- variable posteriors ---
     var_posteriors: dict = {}
-    for src_id, st in var_stats.items():
-        records = st["records"]
-
+    for vkey, st in var_stats.items():
+        records  = st["records"]
         n_early  = st["n_early"]
         n_ontime = st["n_ontime"]
         n_late   = st["n_late"]
 
-        # Dirichlet: add 1 to each count (uniform prior adds pseudo-count 1)
         dir_early  = n_early  + 1
         dir_ontime = n_ontime + 1
         dir_late   = n_late   + 1
 
-        # Size Beta posteriors (uniform Beta(1,1) prior: add 1 to both)
         early_a = st["early_count"] + 1
         early_b = st["early_sum"]   + 1
         late_a  = st["late_count"]  + 1
         late_b  = st["late_sum"]    + 1
 
-        # prior_share = 3 / (records + 3)  (3 pseudo-records from Dirichlet)
         prior_share = 3.0 / (records + 3.0)
 
-        var_posteriors[src_id] = {
-            "source_id":  src_id,
+        var_posteriors[vkey] = {
+            "cause_id":   st["cause_id"],
+            "day_unit":   st["day_unit"],
+            "source_id":  st["source_id"],
             "records":    records,
             "n_early":    n_early,
             "n_ontime":   n_ontime,
@@ -423,7 +564,6 @@ def estimate(data_dir) -> dict:
         }
 
     return {
-        "causes":              cause_posteriors,
-        "variables":           var_posteriors,
-        "predictive_size_pmf": predictive_size_pmf,
+        "causes":    cause_posteriors,
+        "variables": var_posteriors,
     }

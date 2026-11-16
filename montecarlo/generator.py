@@ -441,6 +441,12 @@ def generate_history(data_dir, out_dir, seed: int) -> dict:
         all_episodes.extend(seen_causes[cid])
     _write_episodes(all_episodes, out_dir / "episodes.csv")
 
+    # Write period.csv
+    with (out_dir / "period.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["start_date", "end_date"])
+        w.writerow([period_start.isoformat(), period_end.isoformat()])
+
     return {"own_delays": own_delays, "clamped": clamped}
 
 

@@ -13,7 +13,8 @@ import unittest
 from datetime import date, timedelta
 from fractions import Fraction
 
-from montecarlo.estimate import estimate, predictive_size_pmf
+from montecarlo.estimate import estimate
+from montecarlo.estimate import predictive_size_pmf
 
 DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
 
@@ -173,85 +174,92 @@ class TestOwnDelays(_MiniHistoryBase):
 
 class TestVariablePosteriors(_MiniHistoryBase):
 
-    def _vp(self, src):
-        return self.result["variables"][src]
+    def _vp(self, key):
+        return self.result["variables"][key]
 
     def test_poo1_dirichlet(self):
         """PO01 (source OF01): Dirichlet (2,2,2)."""
-        vp = self._vp("OF01")
+        vp = self._vp("purchase_order.PO01")
         self.assertEqual(vp["dir_early"],  2)
         self.assertEqual(vp["dir_ontime"], 2)
         self.assertEqual(vp["dir_late"],   2)
 
     def test_po01_early_beta(self):
         """PO01 early: Beta(2, 1)."""
-        vp = self._vp("OF01")
+        vp = self._vp("purchase_order.PO01")
         self.assertEqual(vp["early_a"], 2)
         self.assertEqual(vp["early_b"], 1)
 
     def test_po01_late_beta(self):
         """PO01 late: Beta(2, 3)."""
-        vp = self._vp("OF01")
+        vp = self._vp("purchase_order.PO01")
         self.assertEqual(vp["late_a"], 2)
         self.assertEqual(vp["late_b"], 3)
 
     def test_po01_prior_share(self):
         """PO01 prior_share = 0.5 (3 records, 3/(3+3))."""
-        vp = self._vp("OF01")
+        vp = self._vp("purchase_order.PO01")
         self.assertAlmostEqual(vp["prior_share"], 0.5)
+
+    def test_po01_new_fields(self):
+        """PO01 variable has cause_id, day_unit, source_id."""
+        vp = self._vp("purchase_order.PO01")
+        self.assertEqual(vp["cause_id"],  "K1")
+        self.assertEqual(vp["day_unit"],  "business")
+        self.assertEqual(vp["source_id"], "OF01")
 
     def test_of02_dirichlet(self):
         """OF02: Dirichlet (2,2,1)."""
-        vp = self._vp("OF02")
+        vp = self._vp("offer.OF02")
         self.assertEqual(vp["dir_early"],  2)
         self.assertEqual(vp["dir_ontime"], 2)
         self.assertEqual(vp["dir_late"],   1)
 
     def test_of02_early_beta(self):
         """OF02 early: Beta(2, 1)."""
-        vp = self._vp("OF02")
+        vp = self._vp("offer.OF02")
         self.assertEqual(vp["early_a"], 2)
         self.assertEqual(vp["early_b"], 1)
 
     def test_of02_late_beta(self):
         """OF02 late: Beta(1, 1)."""
-        vp = self._vp("OF02")
+        vp = self._vp("offer.OF02")
         self.assertEqual(vp["late_a"], 1)
         self.assertEqual(vp["late_b"], 1)
 
     def test_of02_prior_share(self):
         """OF02 prior_share = 0.6 (2 records)."""
-        vp = self._vp("OF02")
+        vp = self._vp("offer.OF02")
         self.assertAlmostEqual(vp["prior_share"], 0.6)
 
     def test_ln01_dirichlet(self):
         """LN01: Dirichlet (1,2,2)."""
-        vp = self._vp("LN01")
+        vp = self._vp("lane.LN01")
         self.assertEqual(vp["dir_early"],  1)
         self.assertEqual(vp["dir_ontime"], 2)
         self.assertEqual(vp["dir_late"],   2)
 
     def test_ln01_late_beta(self):
         """LN01 late: Beta(2, 2)."""
-        vp = self._vp("LN01")
+        vp = self._vp("lane.LN01")
         self.assertEqual(vp["late_a"], 2)
         self.assertEqual(vp["late_b"], 2)
 
     def test_ln01_prior_share(self):
         """LN01 prior_share = 0.6 (2 records)."""
-        vp = self._vp("LN01")
+        vp = self._vp("lane.LN01")
         self.assertAlmostEqual(vp["prior_share"], 0.6)
 
     def test_ln02_dirichlet(self):
         """LN02: Dirichlet (1,2,1)."""
-        vp = self._vp("LN02")
+        vp = self._vp("lane.LN02")
         self.assertEqual(vp["dir_early"],  1)
         self.assertEqual(vp["dir_ontime"], 2)
         self.assertEqual(vp["dir_late"],   1)
 
     def test_ln02_prior_share(self):
         """LN02 prior_share = 0.75 (1 record)."""
-        vp = self._vp("LN02")
+        vp = self._vp("lane.LN02")
         self.assertAlmostEqual(vp["prior_share"], 0.75)
 
 
@@ -271,10 +279,11 @@ class TestCausePosteriors(_MiniHistoryBase):
         self.assertEqual(cp["S"], 4)
 
     def test_k1_rate(self):
-        """K1: Gamma(shape=3, rate=1)."""
+        """K1: Gamma(shape=3, rate=T=365)."""
         cp = self._cp("K1")
         self.assertEqual(cp["rate_shape"], 3)
-        self.assertEqual(cp["rate_rate"],  1)
+        self.assertEqual(cp["rate_rate"],  365)
+        self.assertEqual(cp["T_days"],     365)
 
     def test_k1_severity(self):
         """K1: Beta(3, 5)."""
@@ -299,10 +308,11 @@ class TestCausePosteriors(_MiniHistoryBase):
         self.assertEqual(cp["S"], 0)
 
     def test_k2_rate(self):
-        """K2: Gamma(shape=2, rate=1)."""
+        """K2: Gamma(shape=2, rate=T=365)."""
         cp = self._cp("K2")
         self.assertEqual(cp["rate_shape"], 2)
-        self.assertEqual(cp["rate_rate"],  1)
+        self.assertEqual(cp["rate_rate"],  365)
+        self.assertEqual(cp["T_days"],     365)
 
     def test_k2_severity(self):
         """K2: Beta(2, 1)."""
@@ -459,9 +469,11 @@ class TestDemoHistory(unittest.TestCase):
         # Both causes present
         self.assertIn("K1", result["causes"])
         self.assertIn("K2", result["causes"])
-        # All four sources present
-        for src in ("OF01", "OF02", "LN01", "LN02"):
-            self.assertIn(src, result["variables"])
+        # All four variables present under new keys
+        expected_keys = {
+            "purchase_order.PO01", "offer.OF02", "lane.LN01", "lane.LN02"
+        }
+        self.assertEqual(set(result["variables"].keys()), expected_keys)
 
     def test_p_active_in_range(self):
         result = estimate(DATA_DIR)
