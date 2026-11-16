@@ -236,6 +236,17 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
                     revised_dates[po_id] = dis["revised_receipt_date"]
                     break
 
+    # Bounds computed once. Beyond them the result is known without walking
+    # the calendar day by day, which keeps extreme tail values fast and safe.
+    po_max_shift = {tid: cal.business_days_between(revised_dates[tid], cap)
+                    for tid in revised_dates}
+    po_min_shift = {tid: -((revised_dates[tid] - planned_dates[tid]).days + 1)
+                    for tid in revised_dates}
+    offer_caps = {}
+    for vkey, vp in est["variables"].items():
+        if vkey.startswith("offer."):
+            offer_caps[vp["source_id"]] = _offer_delay_cap(db, vp["source_id"], cap)
+
     raised_count = 0
     cut_count    = 0
     world_counter = 0
@@ -299,7 +310,15 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
                 if ttype == "purchase_order":
                     revised = revised_dates[tid]
                     planned = planned_dates[tid]
-                    receipt = cal.add_business_days(revised, E + shift)
+                    x = E + shift
+                    if x > po_max_shift[tid]:
+                        # The receipt lands after the cap.
+                        receipt = cap + timedelta(days=1)
+                    elif x <= po_min_shift[tid]:
+                        # Going back that many business days passes the planned date.
+                        receipt = planned - timedelta(days=1)
+                    else:
+                        receipt = cal.add_business_days(revised, x)
                     if receipt < planned:
                         receipt = cal.next_business_day(planned)
                         raised_count += 1
@@ -311,7 +330,7 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
                 elif ttype == "offer":
                     delay     = E + shift
                     offer_id  = est["variables"][vkey]["source_id"]
-                    delay_cap = _offer_delay_cap(db, offer_id, cap)
+                    delay_cap = offer_caps[offer_id]
                     if delay > delay_cap:
                         delay = delay_cap
                         cut_count += 1
@@ -321,7 +340,7 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
                     lid      = est_vp["source_id"]
                     base     = base_leads[lid]
                     new_lead = max(1, base + E + shift)
-                    if day0 + timedelta(days=new_lead) > cap:
+                    if new_lead > (cap - day0).days:
                         new_lead = (cap - day0).days
                         cut_count += 1
                     vals[col] = str(new_lead)

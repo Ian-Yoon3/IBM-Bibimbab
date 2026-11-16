@@ -295,6 +295,10 @@ def offer_receipt_date(action_date: date, offer: dict, calendar) -> date:
             "'delay_business_days' is set"
         )
     promised = calendar.next_business_day(action_date + timedelta(days=lead))
+    if delay < 0 and -delay >= (promised - action_date).days:
+        # Each business day back is at least one calendar day back, so the
+        # receipt would fall on or before the order date. Skip the walk.
+        return calendar.next_business_day(action_date + timedelta(days=1))
     receipt = calendar.add_business_days(promised, delay)
     if receipt <= action_date:
         receipt = calendar.next_business_day(action_date + timedelta(days=1))
