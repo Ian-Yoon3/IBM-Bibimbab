@@ -14,6 +14,7 @@ Coverage:
  6. Committed demo files (seed 20261109) match a fresh run.
  7. closed_days.csv override: a closed Monday is never a business-day date.
  8. causes.csv validation errors raise ValueError with file name.
+ 9. A shipment not yet received on DAY0 is left out of shipments.csv.
 """
 
 import csv
@@ -580,6 +581,34 @@ class TestCausesValidation(unittest.TestCase):
             "K1,business,purchase_order,PO99\n"
         )
         self._assert_raises(content)
+
+
+
+# ---------------------------------------------------------------------------
+# 9. A shipment still in transit on the decision day is left out
+# ---------------------------------------------------------------------------
+
+class TestInTransitShipments(unittest.TestCase):
+    """Seed 100035 ships OF01012 late enough that it arrives after DAY0."""
+
+    def test_in_transit_left_out_and_history_accepted(self):
+        from montecarlo.estimate import estimate
+        with tempfile.TemporaryDirectory() as td:
+            data = pathlib.Path(td) / "data"
+            shutil.copytree(DATA_DIR, data)
+            internals = generate_history(data, data / "history", 100035)
+            self.assertEqual(internals["in_transit"], ["OF01012"])
+            day0 = load_all(data)["DAY0"].isoformat()
+            with open(data / "history" / "shipments.csv", newline="") as fh:
+                rows = list(csv.DictReader(fh))
+            self.assertTrue(all(r["receipt_date"] <= day0 for r in rows))
+            self.assertNotIn("OF01012", {r["shipment_id"] for r in rows})
+            estimate(data)   # must not raise
+
+    def test_demo_seed_has_none_in_transit(self):
+        with tempfile.TemporaryDirectory() as td:
+            internals = generate_history(DATA_DIR, td, DEMO_SEED)
+            self.assertEqual(internals["in_transit"], [])
 
 
 if __name__ == "__main__":

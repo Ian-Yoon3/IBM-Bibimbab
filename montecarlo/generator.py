@@ -335,6 +335,8 @@ def generate_history(data_dir, out_dir, seed: int) -> dict:
           "own_delays"   : {shipment_id: int}  signed own delay in the
                            source's day unit (negative = early).
           "clamped"      : {shipment_id: bool}  True if receipt was clamped.
+          "in_transit"   : [shipment_id]  shipments not yet received on DAY0,
+                           left out of shipments.csv.
     """
     rng      = random.Random(seed)
     data_dir = pathlib.Path(data_dir)
@@ -370,6 +372,7 @@ def generate_history(data_dir, out_dir, seed: int) -> dict:
     all_shipments: list = []
     own_delays:    dict = {}
     clamped:       dict = {}
+    in_transit:    list = []
     shipment_index: dict[str, int] = {}   # source_id -> running counter
 
     for row in source_rows:
@@ -419,6 +422,11 @@ def generate_history(data_dir, out_dir, seed: int) -> dict:
                     receipt = ship + timedelta(days=1)
 
             sid = f"{src_id}{i:03d}"
+            if receipt > day0:
+                # Still in transit on the decision day: no receipt is known yet,
+                # so the shipment is not part of the history.
+                in_transit.append(sid)
+                continue
             all_shipments.append({
                 "shipment_id":   sid,
                 "source_id":     src_id,
@@ -447,7 +455,7 @@ def generate_history(data_dir, out_dir, seed: int) -> dict:
         w.writerow(["start_date", "end_date"])
         w.writerow([period_start.isoformat(), period_end.isoformat()])
 
-    return {"own_delays": own_delays, "clamped": clamped}
+    return {"own_delays": own_delays, "clamped": clamped, "in_transit": in_transit}
 
 
 # ---------------------------------------------------------------------------

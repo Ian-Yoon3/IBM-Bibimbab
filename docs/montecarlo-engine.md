@@ -60,6 +60,7 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-15 | The history states its observation period (`data/history/period.csv`). The episode rate uses that length, not a fixed year. | Sections 6.1 and 7.1 |
 | 2026-11-15 | A sampled value beyond the one-year cap is cut there for every kind of variable, offers included, and counted. | Section 4.7 |
 | 2026-11-15 | The demo history comes from the same model family as the estimator. Checks on it verify the code, not the fit to real data. | Section 7.4 |
+| 2026-11-18 | A shipment not yet received on the decision day is left out of the generated history, as in real records. | Section 6.3 |
 | 2026-11-17 | $M$ stays at 1000 although one error target is missed (lower interval end of WAIT, 0.061 against 0.05). The evaluation is not yet simplified, so more draws cost waiting time on every question. $M = 1600$ follows once it is. | Sections 5 and 9 |
 
 ## 3. Structure
@@ -392,6 +393,7 @@ The severity distribution of each cause rests on three to five numbers.
 | K2 regional transport | 5 | 2 | 2 days | calendar days |
 
 Days early or late and severities follow 1 plus a geometric count, as the estimator assumes. The upper challenge replaces these families in the generator.
+- **Shipments still in transit.** A shipment that has not arrived by the decision day has no receipt yet, so it is left out of the history. Real records would look the same. This removes a few of the latest late arrivals, a small bias toward earlier receipts. In 200 generated histories it happened 5 times, once each. The demo history has none. Found by the coverage check of step 5 (2026-11-18), where the estimator rightly refused such a record.
 - **Fixed seed.** The demo history is committed, so nobody needs to rerun the generator to see the demo.
 - **Upper challenge.** The generator also uses different distribution families from the estimator, and coverage (section 6.4) is checked again.
 
@@ -536,7 +538,7 @@ None for the model design. Q1 to Q5 are decided (sections 4 to 7). Questions tha
 | 3 | Dates from data and calendar | Done. Decision day, order horizon and simulation end computed from the data (section 4.7). `engine/business_calendar.py` with US federal holidays and the optional `data/closed_days.csv`. The two loader gaps of ADR 0004 closed. 551 tests. The simulation end now also counts the offer and lane columns (step 4a). |
 | 4a | Open the new kinds | Done (625 tests). Moved before the engine. `offer.<id>.delay_business_days` (converted at the order date), `lane.<id>.lead_days`, tag columns `cause.<K>.active`. Simulator window extends to the latest event it schedules. Evaluation cached per distinct world. |
 | 4b | Monte Carlo engine | Done (749 tests). Any data set in the schema runs, checked by 15 variant data sets. Package `montecarlo/`, separate from `engine/`. Part 1 generator and demo history (seed 20261109, fixed before generating). Part 2 estimator. Part 3 two-level LHS sampler, grouping, run record, command `python -m montecarlo.run`. Output goes to `runs/<name>/`, never into `data/`. The draft branch `draft/stage2-bob-run` may be reused where it meets this design. |
-| 5 | Verification | Partly done in the re-audit of 2026-11-17 (section 10). |
+| 5 | Verification | Done 2026-11-18 (section 10). Coverage over 200 histories, prior sensitivity, threshold against a direct evaluation, LHS against plain. One generator fix (in-transit shipments). |
 | 6 | Switch and view | One deliberate switch: stage 1 known-answer tests move to a test fixture, `data/worlds.csv` is replaced by a Monte Carlo run, a new real sweep is recorded under a new file name, and the UI fixtures are rebuilt from it. Then the view | The what-if table varies one variable at a time with the others at base values. The view shows intervals per draw, the tail and conditional numbers (section 4.6), the numbers with and without each cause, the assumptions and the threshold line (section 7.6). |
 | 7 | Cleanup | Delete `scripts/stage1_triangular_worlds.py` and its test, mark ADR 0002 superseded, update docs, real sweeps, fixtures. |
 
@@ -596,7 +598,47 @@ Demo run, $M = 1000$, $N = 200$, seed 20261109, evaluated by the engine.
 - The only threshold inside $[0, 1]$ is the gateway cause between TRANSFER and ALT_BUY, $p^* = 0.51$ against an estimate of 0.083.
 - Why stage 2 is later than stage 1. The PO01 record of OF01 (4 early, none on time, 8 late) moves the receipt later than the triangular stage 1 estimate (62% after the announced date against 32%), about +0.9 for every option. OF02 and the lanes, fixed in stage 1, add about +0.8 to ALT_BUY and +0.9 to TRANSFER. Parameter uncertainty and the prior tails change the point values by at most 0.02 and widen the intervals only.
 - The true synthetic parameters give values inside every interval. The rise against stage 1 comes from the synthetic supplier behaviour chosen in section 6.3. It is not a finding about real suppliers.
-- Still open in this section: coverage over 200 histories, prior sensitivity, the threshold against a direct evaluation, and the LHS against plain table.
+
+### Results of step 5 (2026-11-18)
+
+**Coverage over 200 histories.** Each history comes from the generator with its own seed. The engine estimates, samples with $M = 200$ and $N = 100$, and evaluates. The true value is the expected late orders under the true parameters of section 6.3 in the engine model, from 400,000 samples (WAIT 7.75, TRANSFER 5.45, ALT_BUY 4.90, HYBRID 3.13). The Monte Carlo error of a coverage value is about ±0.02.
+
+| Prior | Coverage of the 90% interval (WAIT, TRANSFER, ALT_BUY, HYBRID) | Bias | RMSE | Mean width | TRANSFER and ALT_BUY in the right order |
+|---|---|---|---|---|---|
+| Uniform (chosen) | 0.94, 0.94, 0.98, 0.96 | −0.10 to +0.02 | 0.41–0.47 | 1.6–1.9 | 0.94 |
+| Jeffreys | 0.92, 0.93, 0.95, 0.95 | −0.07 to +0.05 | 0.47–0.54 | 1.7–2.1 | 0.89 |
+
+- Both priors cover at least the nominal 90%. The uniform prior covers about 95%, so its intervals are somewhat wide, as section 7.4 expected for thin data. It is the more accurate of the two and orders the options correctly more often, which confirms the choice of section 7.3 on the real engine.
+- The generator is richer than the estimator (section 6.3), so the check includes that mismatch.
+- Histories like the demo, where OF01 shows no on-time record, are rare (3 of 200). Two of the three still covered, too few to judge.
+
+**Prior sensitivity on the demo history.**
+
+| Option | Uniform | Jeffreys |
+|---|---|---|
+| WAIT | 7.41 (6.29–8.32) | 7.37 (6.05–8.45) |
+| TRANSFER | 5.55 (4.49–6.49) | 5.53 (4.38–6.58) |
+| ALT_BUY | 4.74 (3.65–5.83) | 4.76 (3.63–6.02) |
+| HYBRID | 3.41 (2.54–4.32) | 3.47 (2.53–4.51) |
+
+The point values move by at most 0.06. The prior matters little for this history.
+
+**Threshold against a direct evaluation.** The chance of the gateway cause was forced to fixed values and new worlds were sampled and evaluated. TRANSFER minus ALT_BUY expected late orders: +0.198 at 0.40, +0.101 at 0.45, +0.005 at 0.50, −0.014 at 0.51, −0.112 at 0.56, −0.189 at 0.60 (standard error 0.015). The direct swap lies between 0.50 and 0.51. The closed form gives 0.506. The two agree within the Monte Carlo error.
+
+**LHS against plain.** Parameters fixed at their posterior means, 200 repetitions per size, standard deviation of each reported number.
+
+| $N$ | Expected late, plain | Expected late, LHS | P(no late), plain | P(no late), LHS | P90, plain | P90, LHS |
+|---|---|---|---|---|---|---|
+| 100 | 0.26–0.30 | 0.06–0.08 | 0.020–0.031 | 0.015–0.018 | 0.32–0.77 | 0.12–0.57 |
+| 200 | 0.19–0.22 | 0.04–0.06 | 0.014–0.023 | 0.010–0.014 | 0.27–0.60 | 0.10–0.47 |
+| 400 | 0.12–0.15 | 0.02–0.04 | 0.010–0.015 | 0.007–0.010 | 0.14–0.50 | 0.00–0.50 |
+| 1000 | 0.08–0.10 | 0.02–0.03 | 0.006–0.011 | 0.005–0.006 | 0.00–0.50 | 0.00–0.49 |
+
+- Plain Monte Carlo falls as $1/\sqrt{N}$. For WAIT, $\sqrt{N}$ times the standard deviation is 3.0, 3.1, 2.9 and 3.2 at the four sizes.
+- LHS cuts the error of expected late orders 4 to 6 times, of P(no late) 1.3 to 2 times. No estimate moved, the means agree to 0.02.
+- P90 gains least. For TRANSFER it stays near 0.5 at every size, because its 90th percentile sits on the boundary between two whole numbers and flips between them. A finer sample does not change that. WAIT has no late-free world, so its P(no late) is exactly 0 in every repetition.
+
+The scripts of steps 4 and 5 are kept outside the repository with the project notes, because they analyse the engine rather than being part of it.
 
 ## 11. References
 
