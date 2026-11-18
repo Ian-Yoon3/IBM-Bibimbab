@@ -61,6 +61,7 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-15 | A sampled value beyond the one-year cap is cut there for every kind of variable, offers included, and counted. | Section 4.7 |
 | 2026-11-15 | The demo history comes from the same model family as the estimator. Checks on it verify the code, not the fit to real data. | Section 7.4 |
 | 2026-11-18 | A shipment not yet received on the decision day is left out of the generated history, as in real records. | Section 6.3 |
+| 2026-11-18 | Exposure to a shared cause follows the overlap rule of the history format at the actual transit of each order. The worlds carry an episode timeline per cause. Built with Bob in step 6 (Q6). | Section 8 |
 | 2026-11-17 | $M$ stays at 1000 although one error target is missed (lower interval end of WAIT, 0.061 against 0.05). The evaluation is not yet simplified, so more draws cost waiting time on every question. $M = 1600$ follows once it is. | Sections 5 and 9 |
 
 ## 3. Structure
@@ -527,7 +528,7 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 
 Q1 to Q5 are decided (sections 4 to 7). Questions that arise during the build are recorded here.
 
-### Q6. One exposure window per cause or per variable (open, found 2026-11-18)
+### Q6. One exposure window per cause or per variable (decided 2026-11-18: episode timeline in the worlds, built with Bob in step 6)
 
 **Finding.** A cause is active when an episode starts between the decision day and the latest base arrival among its variables. That is 8 days for K1, ending at PO01's announced date. Every variable of the cause then takes the full shock. OF02 bought on the decision day arrives after 3 days, so an episode that starts on days 4 to 8 delays PO01 but cannot touch OF02. The same holds for LN01 (2 days) inside the 4-day window of K2. The generator follows the physical rule (a shipment is hit only by an episode that overlaps its transit), so the engine's rule is cruder than the world it is checked against.
 
@@ -544,7 +545,32 @@ The point values move by up to 0.15, well inside the intervals. The shared-cause
 
 **Why the coverage check missed it.** Its true value was computed in the engine's own model, so it shared the simplification. Against the per-variable true values, coverage of the uniform prior stays 0.94, 0.95, 0.99, 0.95. The bias of HYBRID becomes +0.17.
 
-**Proposed fix.** One more uniform number per cause gives the start of the episode inside the window, from the exact distribution of the first arrival of a Poisson process given that one arrives, $F(t) = (1 - e^{-\lambda t}) / (1 - e^{-\lambda w})$. A variable is hit when the cause is active and the start is no later than its own base arrival. The tag `cause.K.active` keeps its meaning, so the threshold formula of section 7.6 still holds. The cost is one LHS dimension per cause and a change to `montecarlo/sample.py`. Decision pending.
+**Proposed fix.** One more uniform number per cause gives the start of the episode inside the window, from the exact distribution of the first arrival of a Poisson process given that one arrives, $F(t) = (1 - e^{-\lambda t}) / (1 - e^{-\lambda w})$. A variable is hit when the cause is active and the start is no later than its own base arrival. The tag `cause.K.active` keeps its meaning, so the threshold formula of section 7.6 still holds. The cost is one LHS dimension per cause and a change to `montecarlo/sample.py`.
+
+**Why the proposed fix is not enough.** The data format allows an order after the decision day (`action_date` of a recovery action), and the loader and the simulator already accept one. For such an order the fix above still judges exposure from the decision day, and the current model does too. An episode that ended before the order can then delay it, and one that starts after the cause window cannot. That gives a wrong answer without any error. The fix is exact only when every order is placed on the decision day.
+
+**Options compared.**
+
+| Option | Orders on the decision day | Later orders | Size |
+|---|---|---|---|
+| A. Keep one window, document it | overstated | wrong | none |
+| B. Start date per cause in the sampler | exact under the overlap rule of the history format | wrong | short |
+| C. Start date stored in the worlds | exact | only the first episode | medium |
+| D. Episode timeline stored in the worlds | exact | exact | about 450 lines of code and 500 of tests, engine core touched |
+
+The overlap rule is not borrowed from the generator. It is how the history format defines `episode_id`, so the engine should follow it.
+
+**Decision.** D, built with IBM Bob as the first part of step 6. Reasons: the engine must give a correct answer for any data set in the format (decision of 2026-11-15), and core engine changes should be made in Bob. B with a refusal of later orders stays the fallback if time runs out.
+
+**Design of D (to be refined before the Bob prompts).**
+- Each world carries, per cause, the episodes that start inside the forward horizon (start, end, severity), in a fixed number of slots chosen from the data so that the chance of needing more is below one in a million. The slot count goes into the run record.
+- Variable columns carry only the own deviation.
+- PO01's transit is fixed (decision day to announced date), so its shock can stay in the sampler. Offers and lanes get their shock in the simulator from the first episode that overlaps the actual transit of each order.
+- Episode durations are estimated from `episodes.csv` with the same conjugate method.
+- The threshold is stated in episodes per year, found by evaluating at several rates.
+- The engine needs to know which cause hits which offer and lane. Where that mapping lives is an open point, since the engine does not read `data/history/`.
+- Known answers. On data where every order is on the decision day, D must give the per-variable numbers above (demo ALT_BUY 4.61, HYBRID 3.29). For later orders, the expected values come from a separate forward simulation under the overlap rule.
+- Remaining limit. Two orders of the same offer on different days share one own deviation, because the worlds hold one column per offer.
 
 ### Q7. What the view shows as the worst case (open, found 2026-11-18)
 
