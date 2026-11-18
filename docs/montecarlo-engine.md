@@ -303,7 +303,7 @@ $w_k$ runs from the decision day to the latest base arrival among the variables 
 For the current data that is 2026-11-09 to 2026-11-17 for K1 (8 days, ending at the announced date of PO01) and 2026-11-09 to 2026-11-13 for K2 (4 days, ending at the base arrival of LN02).
 If the history shows an episode of cause $k$ still open on the decision day, the manager knows it, so $S_k = 1$ and only the severity is uncertain.
 Two simplifications are stated with it.
-An episode that starts after OF02 has arrived is still treated as delaying both, which slightly overstates joint delays.
+An episode that starts after OF02 has arrived is still treated as delaying both, which overstates joint delays. The critical review of 2026-11-18 measured how much (section 8). It is not slight for the shared-cause view, and a fix is proposed there.
 The period ends at base arrival dates, not at delayed ones.
 With a true rate of 4 episodes a year, $p_1$ is about 8%, smaller than the 21% of the illustrations in section 7. The true parameters are fixed in section 6.3, and section 7.6 shows why a small $p_1$ still makes the shared cause visible.
 
@@ -525,7 +525,34 @@ The answer to 5 and 6 is not a different estimator. It is stating the assumption
 
 ## 8. Open questions
 
-None for the model design. Q1 to Q5 are decided (sections 4 to 7). Questions that arise during the build are recorded here.
+Q1 to Q5 are decided (sections 4 to 7). Questions that arise during the build are recorded here.
+
+### Q6. One exposure window per cause or per variable (open, found 2026-11-18)
+
+**Finding.** A cause is active when an episode starts between the decision day and the latest base arrival among its variables. That is 8 days for K1, ending at PO01's announced date. Every variable of the cause then takes the full shock. OF02 bought on the decision day arrives after 3 days, so an episode that starts on days 4 to 8 delays PO01 but cannot touch OF02. The same holds for LN01 (2 days) inside the 4-day window of K2. The generator follows the physical rule (a shipment is hit only by an episode that overlaps its transit), so the engine's rule is cruder than the world it is checked against.
+
+**Size.** Same random numbers, only the rule changed (expected late orders).
+
+| | WAIT | TRANSFER | ALT_BUY | HYBRID |
+|---|---|---|---|---|
+| True parameters, one window per cause | 7.75 | 5.45 | 4.90 | 3.13 |
+| True parameters, one window per variable | 7.75 | 5.41 | 4.76 | 2.98 |
+| Demo posterior, one window per cause | 7.43 | 5.57 | 4.72 | 3.41 |
+| Demo posterior, one window per variable | 7.43 | 5.53 | 4.61 | 3.29 |
+
+The point values move by up to 0.15, well inside the intervals. The shared-cause view moves much more. With the gateway cause active, ALT_BUY expects 8.17 late orders under one window and 6.87 under per-variable windows, against 7.23 and 7.19 for TRANSFER. The threshold between TRANSFER and ALT_BUY, 0.51 under one window, does not exist under per-variable windows (it would lie at 1.52). The only threshold line the view would have shown is therefore produced by the simplification.
+
+**Why the coverage check missed it.** Its true value was computed in the engine's own model, so it shared the simplification. Against the per-variable true values, coverage of the uniform prior stays 0.94, 0.95, 0.99, 0.95. The bias of HYBRID becomes +0.17.
+
+**Proposed fix.** One more uniform number per cause gives the start of the episode inside the window, from the exact distribution of the first arrival of a Poisson process given that one arrives, $F(t) = (1 - e^{-\lambda t}) / (1 - e^{-\lambda w})$. A variable is hit when the cause is active and the start is no later than its own base arrival. The tag `cause.K.active` keeps its meaning, so the threshold formula of section 7.6 still holds. The cost is one LHS dimension per cause and a change to `montecarlo/sample.py`. Decision pending.
+
+### Q7. What the view shows as the worst case (open, found 2026-11-18)
+
+`worst_late_orders` is the largest value over all worlds. With 200,000 sampled worlds and long tails it is 11, every order late, for every option. The worst case column and the "worst case +0" of the trade-off text then say nothing. Options: drop it from the stage 2 view, or replace it with a high percentile such as P99. Decision pending, for step 6.
+
+### Q8. How the interval is labelled (open, found 2026-11-18)
+
+The interval of section 7.2 is the spread of the expected value over the parameter draws. It is a statement about the average, not about one outcome. "Expected 4.74 late orders (3.65 to 5.83)" can be misread as "between 4 and 6 orders will be late". The outcome tail is P90, which already mixes both kinds of uncertainty. The label in step 6 must say which is which.
 
 ## 9. How stage 2 proceeds
 
