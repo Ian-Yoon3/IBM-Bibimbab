@@ -60,6 +60,7 @@ This document holds the structure, the equations, the decisions so far, the open
 | 2026-11-15 | The history states its observation period (`data/history/period.csv`). The episode rate uses that length, not a fixed year. | Sections 6.1 and 7.1 |
 | 2026-11-15 | A sampled value beyond the one-year cap is cut there for every kind of variable, offers included, and counted. | Section 4.7 |
 | 2026-11-15 | The demo history comes from the same model family as the estimator. Checks on it verify the code, not the fit to real data. | Section 7.4 |
+| 2026-11-17 | $M$ stays at 1000 although one error target is missed (lower interval end of WAIT, 0.061 against 0.05). The evaluation is not yet simplified, so more draws cost waiting time on every question. $M = 1600$ follows once it is. | Sections 5 and 9 |
 
 ## 3. Structure
 
@@ -312,6 +313,8 @@ With a true rate of 4 episodes a year, $p_1$ is about 8%, smaller than the 21% o
 - **Standard errors with LHS.** Points of one LHS sample are not independent, so the usual formula does not apply inside a draw. The parameter draws are independent LHS batches, and the spread across draws gives valid standard errors.
 - **Sample sizes.** $M = 1000$ parameter draws and $N = 200$ worlds per draw, 200,000 samples in all. Measured in the illustrative model, the spread of expected late orders across parameter draws is 0.40–0.65 and the spread between single worlds is 1.7–2.6.
 - **Error targets.** Monte Carlo standard error of a point value at most 0.02 late orders, about 2% of the half-width of its interval. Standard deviation of an interval end at most 0.05. Noise inside a draw at most 10% of the spread across draws, so intervals are widened by about 1%. Measured, the 5th and 95th percentile ends move by 0.13, 0.10, 0.07 and 0.05 for $M$ = 50, 100, 200 and 400.
+- **Measured on the demo run (2026-11-17).** Point standard error 0.017–0.020. Standard deviation of the interval ends 0.030–0.049, except the lower end of WAIT at 0.061. Noise inside a draw 9–10% of the spread across draws, measured with the plain Monte Carlo formula, which LHS only lowers. The lower end of WAIT is the one target missed.
+- **Why $M$ stays at 1000.** The run itself takes 2 s. The cost is in the evaluation. Every distinct world is simulated for every option, 14,907 worlds and 22 s for the demo, and the agent repeats that evaluation for every question. The work that would make it cheap (evaluation kept per data set, a simulation window per world instead of the longest one) is not done yet. More draws mean more distinct worlds and a longer wait on every answer. The interval ends are shown to one decimal, so a standard deviation of 0.061 does not change what is displayed. Once the evaluation is simplified, $M = 1600$ meets the target, since the standard deviation falls as $1/\sqrt{M}$ ($0.061 \times \sqrt{1000/1600} \approx 0.048$).
 - **LHS comparison shown.** Plain against LHS at $N$ = 100, 200, 400 and 1000, 200 repetitions each, standard deviation of each reported number.
 - **Coverage check.** 200 generated histories, each with $M = 200$ and $N = 100$. The Monte Carlo error of a coverage value is then about ±2%.
 - **Evaluation cache.** With these sizes `worlds.csv` holds over 100,000 rows, but only a few thousand distinct value combinations. Each distinct combination is simulated once per option and reused.
@@ -530,10 +533,10 @@ None for the model design. Q1 to Q5 are decided (sections 4 to 7). Questions tha
 |---|---|---|
 | 1 | Model design | Done. Q1 to Q5 decided. |
 | 2 | Format change | Done (ADR 0004). Wide single CSV with a `draw` column, loader rewritten, stage 1 results identical, 498 tests. |
-| 3 | Dates from data and calendar | Done. Decision day, order horizon and simulation end computed from the data (section 4.7). `engine/business_calendar.py` with US federal holidays and the optional `data/closed_days.csv`. The two loader gaps of ADR 0004 closed. 551 tests. Open for step 6: the simulation end must also count lead times opened as world columns (offer and lane `lead_days`). |
-| 4a | Open the new kinds | Moved before the engine. `offer.<id>.delay_business_days` (converted at the order date), `lane.<id>.lead_days`, tag columns `cause.<K>.active`. Simulator window extends to the latest event it schedules. Evaluation cached per distinct world. |
-| 4b | Monte Carlo engine | Package `montecarlo/`, separate from `engine/`. Part 1 generator and demo history (seed 20261109, fixed before generating). Part 2 estimator. Part 3 two-level LHS sampler, grouping, run record, command `python -m montecarlo.run`. Output goes to `runs/<name>/`, never into `data/`. The draft branch `draft/stage2-bob-run` may be reused where it meets this design. |
-| 5 | Verification | See section 10. |
+| 3 | Dates from data and calendar | Done. Decision day, order horizon and simulation end computed from the data (section 4.7). `engine/business_calendar.py` with US federal holidays and the optional `data/closed_days.csv`. The two loader gaps of ADR 0004 closed. 551 tests. The simulation end now also counts the offer and lane columns (step 4a). |
+| 4a | Open the new kinds | Done (625 tests). Moved before the engine. `offer.<id>.delay_business_days` (converted at the order date), `lane.<id>.lead_days`, tag columns `cause.<K>.active`. Simulator window extends to the latest event it schedules. Evaluation cached per distinct world. |
+| 4b | Monte Carlo engine | Done (749 tests). Any data set in the schema runs, checked by 15 variant data sets. Package `montecarlo/`, separate from `engine/`. Part 1 generator and demo history (seed 20261109, fixed before generating). Part 2 estimator. Part 3 two-level LHS sampler, grouping, run record, command `python -m montecarlo.run`. Output goes to `runs/<name>/`, never into `data/`. The draft branch `draft/stage2-bob-run` may be reused where it meets this design. |
+| 5 | Verification | Partly done in the re-audit of 2026-11-17 (section 10). |
 | 6 | Switch and view | One deliberate switch: stage 1 known-answer tests move to a test fixture, `data/worlds.csv` is replaced by a Monte Carlo run, a new real sweep is recorded under a new file name, and the UI fixtures are rebuilt from it. Then the view | The what-if table varies one variable at a time with the others at base values. The view shows intervals per draw, the tail and conditional numbers (section 4.6), the numbers with and without each cause, the assumptions and the threshold line (section 7.6). |
 | 7 | Cleanup | Delete `scripts/stage1_triangular_worlds.py` and its test, mark ADR 0002 superseded, update docs, real sweeps, fixtures. |
 
@@ -546,6 +549,10 @@ Target is stage 2 done around 11-18. The deadline with the demo video is 11-22.
 3. Code is written in IBM Bob, in a new Bob task for stage 2. Documents are written outside Bob.
 4. Before a commit, the change is read in the working folder and the full test suite is run.
 5. After a push, the branch is checked again on GitHub.
+
+### Future work
+
+- **$M = 1600$.** After the evaluation is simplified (kept per data set, simulation window per world), raise $M$ to meet the interval-end target for WAIT (section 5).
 
 ### Stage 2-1. Scale (optional upper challenge)
 
@@ -571,6 +578,25 @@ Target is stage 2 done around 11-18. The deadline with the demo video is 11-22.
 | Error shrinks with $N$ | Standard error falls roughly as $1/\sqrt{N}$ for plain Monte Carlo. |
 | LHS against plain | Error against $N$ for both, same seed set. |
 | Any data set in the schema | A fixed set of variant data sets built from the demo in the tests. Ids renamed and dates moved two years, one cause only, a cause with no episodes, a source with no records, an open episode, a third cause, a decision day on a Saturday, a second disruption, two variables sharing a source, a history of two years. Each runs end to end and gives its precomputed values. Bad inputs (wrong day unit, a source in two causes, a repeated row, no period file) stop with an error that names the problem. |
+
+### Results of the re-audit (2026-11-17)
+
+Demo run, $M = 1000$, $N = 200$, seed 20261109, evaluated by the engine.
+
+| Option | Stage 1 expected late | Stage 2 expected late | 90% interval over parameter draws | True parameters plugged in |
+|---|---|---|---|---|
+| WAIT | 6.53 | 7.41 | 6.29–8.32 | 7.75 |
+| TRANSFER | 3.73 | 5.55 | 4.49–6.49 | 5.45 |
+| ALT_BUY | 2.99 | 4.74 | 3.65–5.83 | 4.90 |
+| HYBRID | 1.36 | 3.41 | 2.54–4.32 | 3.13 |
+
+- The pooled distribution of every sampled column matches the exact posterior predictive (total variation 0.003–0.010). The covariance of LN01 and LN02 is 0.343 against 0.349 exact.
+- The order of the options holds in 938 of 1000 parameter draws. In the other 62 TRANSFER beats ALT_BUY.
+- With the gateway cause active, ALT_BUY goes from 4.42 to 8.19 expected late orders, because OF02 passes the same gateway. The transport cause leaves WAIT and ALT_BUY unchanged, as it should.
+- The only threshold inside $[0, 1]$ is the gateway cause between TRANSFER and ALT_BUY, $p^* = 0.51$ against an estimate of 0.083.
+- Why stage 2 is later than stage 1. The PO01 record of OF01 (4 early, none on time, 8 late) moves the receipt later than the triangular stage 1 estimate (62% after the announced date against 32%), about +0.9 for every option. OF02 and the lanes, fixed in stage 1, add about +0.8 to ALT_BUY and +0.9 to TRANSFER. Parameter uncertainty and the prior tails change the point values by at most 0.02 and widen the intervals only.
+- The true synthetic parameters give values inside every interval. The rise against stage 1 comes from the synthetic supplier behaviour chosen in section 6.3. It is not a finding about real suppliers.
+- Still open in this section: coverage over 200 histories, prior sensitivity, the threshold against a direct evaluation, and the LHS against plain table.
 
 ## 11. References
 
