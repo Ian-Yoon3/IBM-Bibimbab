@@ -116,7 +116,7 @@ class TestRule1Absent(unittest.TestCase):
             # SIM_END can legitimately differ when worlds.csv contributes dates
             # that extend the simulation window; both loads use the same base data
             # so all other keys are equal.
-            skip = {"worlds", "calendar"}
+            skip = {"worlds", "calendar", "worlds_format"}
             for key in db_with:
                 if key in skip:
                     continue

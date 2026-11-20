@@ -1,4 +1,5 @@
 import csv
+from datetime import timedelta
 from pathlib import Path
 
 _HEADER = ["cause_id", "day_unit", "target_type", "target_id"]
@@ -141,5 +142,110 @@ def load_causes(data_dir: Path, db: dict):
             "lead_days":   lead_days,
             "business":    dunit == "business",
         })
+
+    return result
+
+
+def compute_cause_horizons(causes: list, db: dict) -> dict:
+    """Compute H0 and H for each cause.
+
+    H0 of cause k = latest over its targets of:
+      - purchase order: its disruption's revised_receipt_date if disrupted,
+        else its planned_receipt_date
+      - offer: next_business_day(DAY0 + lead_days)
+      - lane: DAY0 + lead_days
+
+    H of cause k = latest of H0 and, over its targets, the promised date
+    or arrival of every row of recovery_purchases (that offer) and
+    recovery_transfers (that lane), in any scenario.
+
+    Returns {cause_id: {"H": date, "H0": date}}.
+    """
+    if not causes:
+        return {}
+
+    DAY0 = db["DAY0"]
+    if "calendar" not in db or db["calendar"] is None:
+        raise ValueError("compute_cause_horizons: calendar is required")
+    calendar = db["calendar"]
+    purchase_orders = db.get("purchase_orders", {})
+    disruptions = db.get("disruptions", {})
+    recovery_purchases = db.get("recovery_purchases", {})
+    recovery_transfers = db.get("recovery_transfers", {})
+    offers = db.get("offers", {})
+    lanes = db.get("lanes", {})
+
+    # Build a map: po_id -> revised_receipt_date (if disrupted)
+    disrupted_po: dict = {}
+    for dis in disruptions.values():
+        disrupted_po[dis["po_id"]] = dis["revised_receipt_date"]
+
+    # Collect targets by cause
+    cause_targets: dict = {}
+    for row in causes:
+        cid = row["cause_id"]
+        if cid not in cause_targets:
+            cause_targets[cid] = []
+        cause_targets[cid].append(row)
+
+    result = {}
+
+    for cid, targets in cause_targets.items():
+        h0_candidates = []
+
+        for row in targets:
+            ttype = row["target_type"]
+            tid   = row["target_id"]
+            lead  = row["lead_days"]
+
+            if ttype == "purchase_order":
+                po = purchase_orders[tid]
+                if tid in disrupted_po:
+                    base = disrupted_po[tid]
+                else:
+                    base = po["planned_receipt_date"]
+                h0_candidates.append(base)
+
+            elif ttype == "offer":
+                promised = calendar.next_business_day(
+                    DAY0 + timedelta(days=lead)
+                )
+                h0_candidates.append(promised)
+
+            else:  # lane
+                arrival = DAY0 + timedelta(days=lead)
+                h0_candidates.append(arrival)
+
+        H0 = max(h0_candidates)
+
+        # H: start from H0, extend with recovery rows
+        h_candidates = [H0]
+
+        for row in targets:
+            ttype = row["target_type"]
+            tid   = row["target_id"]
+            lead  = row["lead_days"]
+
+            if ttype == "offer" or ttype == "purchase_order":
+                # The offer id: for purchase_order target, source_id = offer_id
+                offer_id = row["source_id"]
+                for (sid, oid), rp in recovery_purchases.items():
+                    if oid == offer_id:
+                        promised = calendar.next_business_day(
+                            rp["action_date"] + timedelta(days=lead)
+                        )
+                        h_candidates.append(promised)
+
+            elif ttype == "lane":
+                lane_id = tid
+                for (sid, lid, comp_id), rt in recovery_transfers.items():
+                    if lid == lane_id:
+                        arrival = rt["action_date"] + timedelta(
+                            days=lanes[lane_id]["lead_days"]
+                        )
+                        h_candidates.append(arrival)
+
+        H = max(h_candidates)
+        result[cid] = {"H": H, "H0": H0}
 
     return result
