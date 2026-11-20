@@ -303,6 +303,17 @@ class TestCausePosteriors(_MiniHistoryBase):
         cp = self._cp("K1")
         self.assertAlmostEqual(cp["p_active"], 0.062973, places=6)
 
+    def test_k1_T_free_days(self):
+        """K1: T_free_days=360 (E1 covers 3 days, E2 covers 2 days)."""
+        cp = self._cp("K1")
+        self.assertEqual(cp["T_free_days"], 360)
+
+    def test_k1_duration(self):
+        """K1: duration_a=3, duration_b=4."""
+        cp = self._cp("K1")
+        self.assertEqual(cp["duration_a"], 3)
+        self.assertEqual(cp["duration_b"], 4)
+
     def test_k2_n_S(self):
         """K2: n=1, S=0."""
         cp = self._cp("K2")
@@ -332,6 +343,17 @@ class TestCausePosteriors(_MiniHistoryBase):
         cp = self._cp("K2")
         self.assertAlmostEqual(cp["p_active"], 0.021563, places=6)
 
+    def test_k2_T_free_days(self):
+        """K2: T_free_days=363 (E3 covers 2 days)."""
+        cp = self._cp("K2")
+        self.assertEqual(cp["T_free_days"], 363)
+
+    def test_k2_duration(self):
+        """K2: duration_a=2, duration_b=2."""
+        cp = self._cp("K2")
+        self.assertEqual(cp["duration_a"], 2)
+        self.assertEqual(cp["duration_b"], 2)
+
 
 # ---------------------------------------------------------------------------
 # Open episode makes P(active) exactly 1
@@ -360,6 +382,17 @@ class TestOpenEpisode(_MiniHistoryWithOpen):
         cp = self.result["causes"]["K2"]
         self.assertEqual(cp["open_on_day0"], True)
         self.assertEqual(cp["p_active"], 1.0)
+
+    def test_k2_open_T_free_days(self):
+        """K2 with open E4: T_free_days=359 (E3 2 days, E4 4 days in period)."""
+        cp = self.result["causes"]["K2"]
+        self.assertEqual(cp["T_free_days"], 359)
+
+    def test_k2_open_duration(self):
+        """K2 with open E4: duration_a=2, duration_b=6."""
+        cp = self.result["causes"]["K2"]
+        self.assertEqual(cp["duration_a"], 2)
+        self.assertEqual(cp["duration_b"], 6)
 
 
 # ---------------------------------------------------------------------------

@@ -113,9 +113,12 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
     cause_summary = {}
     for cid, cp in est["causes"].items():
         cause_summary[cid] = {
-            "p_active":     cp["p_active"],
-            "w_days":       cp["w_days"],
-            "open_on_day0": cp["open_on_day0"],
+            "p_active":              cp["p_active"],
+            "w_days":                cp["w_days"],
+            "open_on_day0":          cp["open_on_day0"],
+            "T_free_days":           cp["T_free_days"],
+            "duration_prior_share":  cp["duration_prior_share"],
+            "severity_prior_share":  cp["severity_prior_share"],
         }
 
     var_summary = {}

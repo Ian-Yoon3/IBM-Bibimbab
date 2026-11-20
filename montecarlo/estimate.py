@@ -15,7 +15,24 @@ Returns a dict with keys:
 
 cause_posterior keys:
   n, S, open_on_day0, w_days, T_days, rate_shape, rate_rate,
-  p_active, severity_a, severity_b
+  p_active, severity_a, severity_b,
+  T_free_days, duration_a, duration_b,
+  duration_prior_share, severity_prior_share, open_episode
+
+  n               : number of episodes of the cause with start_date >= period_start
+  S               : sum of (delay_days - 1) over episodes with a recorded delay
+  severity_a      : 1 + number of episodes with a recorded delay
+  severity_b      : 1 + S
+  T_free_days     : T_days minus days covered by the cause's episodes inside the period
+                    each episode contributes max(start,period_start)..min(end,period_end)
+                    inclusive; empty end_date taken as period_end
+  duration_a      : Beta prior (1,1) updated: +1 for each closed/announced episode
+  duration_b      : Beta prior (1,1) updated: for closed +obs days, for open (censored)
+                    +(DAY0 - obs_start) days; obs_start = max(start_date, period_start)
+  duration_prior_share  : 2 / (duration_a + duration_b)
+  severity_prior_share  : 2 / (severity_a + severity_b)
+  open_episode    : None, or dict {episode_id, start_date (date), end_date (date|None),
+                    delay_days (int|None)} for the cause's open episode on DAY0
 
 variable_posterior keys:
   cause_id, day_unit, source_id, records,
@@ -30,10 +47,15 @@ predictive_size_pmf is a module-level function (not in the returned dict).
 Section 7.1 posteriors (uniform/Bayes-Laplace priors), T = period length in days:
   rate lambda:   Gamma(n+1, T)   [rate parameter T means scale = 1/T]
   P(active):     1 if open_on_day0 else 1-(1+w/T)^-(n+1)
-  severity theta: Beta(n+1, S+1)      S = sum of (delay_days - 1)
+  severity theta: Beta(severity_a, severity_b)
+                  severity_a = 1 + (episodes with recorded delay)
+                  severity_b = 1 + S,  S = sum of (delay_days - 1)
+  duration:      Beta(duration_a, duration_b)  prior (1,1)
   category:      Dirichlet(counts + 1)
   size theta:    Beta(count+1, sum_of_(size-1)+1)
   prior_share:   3 / (records + 3)   (3 pseudo-records from Dirichlet prior)
+  duration_prior_share:  2 / (duration_a + duration_b)
+  severity_prior_share:  2 / (severity_a + severity_b)
 """
 
 import csv
@@ -250,27 +272,85 @@ def estimate(data_dir) -> dict:
                 f"data/history/episodes.csv: episode {eid!r} starts after DAY0 "
                 f"({start_d} > {day0})"
             )
-        if start_d < period_start:
-            raise ValueError(
-                f"data/history/episodes.csv: episode {eid!r} start_date {start_d} "
-                f"is before period start {period_start}"
-            )
-        # Open on DAY0: end_date empty OR end_date >= DAY0
+
         end_str = row["end_date"]
         if end_str:
             end_d = date.fromisoformat(end_str)
+            # NEW check b: end_date given and end_date < period_start
+            if end_d < period_start:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} end_date "
+                    f"{end_d} is before period_start {period_start} "
+                    f"(episode lies entirely before the period)"
+                )
+            # NEW check c: end_date given and end_date < start_date
+            if end_d < start_d:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} end_date "
+                    f"{end_d} is before start_date {start_d}"
+                )
             open_on_day0 = (end_d >= day0)
         else:
+            end_d        = None
             open_on_day0 = True
+
+        # NEW check d: delay_days validation
+        delay_str = row["delay_days"]
+        if not delay_str:
+            if not open_on_day0:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} is closed "
+                    f"but delay_days is empty"
+                )
+            delay_days = None
+        else:
+            try:
+                delay_days = int(delay_str)
+            except ValueError:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} delay_days "
+                    f"{delay_str!r} is not an integer"
+                )
+            if delay_days < 1:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} delay_days "
+                    f"{delay_days} must be >= 1"
+                )
 
         episodes[eid] = {
             "episode_id":    eid,
             "cause_id":      row["cause_id"],
-            "start_date":    row["start_date"],
-            "end_date":      end_str,
-            "delay_days":    int(row["delay_days"]),
+            "start_date":    start_d,
+            "end_date":      end_d,
+            "delay_days":    delay_days,
             "open_on_day0":  open_on_day0,
         }
+
+    # NEW check e: two episodes of the same cause must not overlap
+    # Group episodes by cause_id
+    cause_eps: dict = {}
+    for ep in episodes.values():
+        cid = ep["cause_id"]
+        if cid not in cause_eps:
+            cause_eps[cid] = []
+        cause_eps[cid].append(ep)
+
+    for cid, eps_list in cause_eps.items():
+        # Sort by start_date so we only need to check adjacent pairs after sorting
+        sorted_eps = sorted(eps_list, key=lambda e: e["start_date"])
+        for i in range(len(sorted_eps) - 1):
+            a = sorted_eps[i]
+            b = sorted_eps[i + 1]
+            # Interval end: empty end_date taken as DAY0
+            a_end = a["end_date"] if a["end_date"] is not None else day0
+            b_start = b["start_date"]
+            # Overlap when the later start is on or before the earlier end
+            if b_start <= a_end:
+                raise ValueError(
+                    f"data/history/episodes.csv: episodes "
+                    f"{b['episode_id']!r} and {a['episode_id']!r} "
+                    f"of cause {cid!r} overlap"
+                )
 
     # 1b. Build causes meta from db["causes"]
     if db["causes"] is None:
@@ -310,7 +390,14 @@ def estimate(data_dir) -> dict:
                     f"data/history/shipments.csv: shipment {sid!r} "
                     f"references unknown episode_id {eid!r}"
                 )
-            ep_cause  = episodes[eid]["cause_id"]
+            ep       = episodes[eid]
+            ep_cause = ep["cause_id"]
+            # NEW check: episode with empty delay_days cannot be referenced
+            if ep["delay_days"] is None:
+                raise ValueError(
+                    f"data/history/shipments.csv: shipment {sid!r} references "
+                    f"episode {eid!r} which has no recorded delay_days"
+                )
             src_cause = source_to_cause.get(src)
             if src_cause is None:
                 raise ValueError(
@@ -393,7 +480,12 @@ def estimate(data_dir) -> dict:
         cause_stats[cid] = {
             "n":            0,
             "S":            0,
+            "severity_obs": 0,   # number of episodes with recorded delay
             "open_on_day0": False,
+            "open_episode": None,
+            "T_free_days":  T_days,
+            "duration_a":   1,
+            "duration_b":   1,
         }
 
     for ep in episodes.values():
@@ -403,11 +495,47 @@ def estimate(data_dir) -> dict:
                 f"data/history/episodes.csv: episode {ep['episode_id']!r} "
                 f"references unknown cause {cid!r}"
             )
-        cs = cause_stats[cid]
-        cs["n"] += 1
-        cs["S"] += ep["delay_days"] - 1
+        cs         = cause_stats[cid]
+        start_d    = ep["start_date"]
+        end_d      = ep["end_date"]
+        delay_days = ep["delay_days"]
+
+        # n: only episodes with start_date >= period_start
+        if start_d >= period_start:
+            cs["n"] += 1
+
+        # severity: only episodes with a recorded delay
+        if delay_days is not None:
+            cs["S"]            += delay_days - 1
+            cs["severity_obs"] += 1
+
         if ep["open_on_day0"]:
             cs["open_on_day0"] = True
+            cs["open_episode"] = {
+                "episode_id": ep["episode_id"],
+                "start_date": start_d,
+                "end_date":   end_d,
+                "delay_days": delay_days,
+            }
+
+        # T_free_days: subtract days covered inside the period
+        obs_start = max(start_d, period_start)
+        # end for coverage: empty end_date taken as period_end
+        obs_end_cov = end_d if end_d is not None else period_end
+        obs_end_cov = min(obs_end_cov, period_end)
+        if obs_end_cov >= obs_start:
+            covered = (obs_end_cov - obs_start).days + 1
+            cs["T_free_days"] -= covered
+
+        # duration posterior update
+        obs_start_dur = max(start_d, period_start)
+        if end_d is None:
+            # open/censored: duration_b += (DAY0 - obs_start) days
+            cs["duration_b"] += (day0 - obs_start_dur).days
+        else:
+            # closed or announced: duration_a += 1, duration_b += (end - obs_start) days
+            cs["duration_a"] += 1
+            cs["duration_b"] += (end_d - obs_start_dur).days
 
     # 4. Exposure windows
     for cid, meta in causes_meta.items():
@@ -421,6 +549,7 @@ def estimate(data_dir) -> dict:
     for cid, cs in cause_stats.items():
         n            = cs["n"]
         S            = cs["S"]
+        severity_obs = cs["severity_obs"]
         open_on_day0 = cs["open_on_day0"]
         w            = cs["w_days"]
 
@@ -433,20 +562,32 @@ def estimate(data_dir) -> dict:
             # P(active) = 1 - (1 + w/T)^-(n+1)
             p_active = 1.0 - (1.0 + w / T_days) ** (-(n + 1))
 
-        severity_a = n + 1
+        severity_a = severity_obs + 1
         severity_b = S + 1
 
+        duration_a = cs["duration_a"]
+        duration_b = cs["duration_b"]
+
+        duration_prior_share = 2.0 / (duration_a + duration_b)
+        severity_prior_share = 2.0 / (severity_a + severity_b)
+
         cause_posteriors[cid] = {
-            "n":            n,
-            "S":            S,
-            "open_on_day0": open_on_day0,
-            "w_days":       w,
-            "T_days":       T_days,
-            "rate_shape":   rate_shape,
-            "rate_rate":    rate_rate,
-            "p_active":     p_active,
-            "severity_a":   severity_a,
-            "severity_b":   severity_b,
+            "n":                   n,
+            "S":                   S,
+            "open_on_day0":        open_on_day0,
+            "w_days":              w,
+            "T_days":              T_days,
+            "rate_shape":          rate_shape,
+            "rate_rate":           rate_rate,
+            "p_active":            p_active,
+            "severity_a":          severity_a,
+            "severity_b":          severity_b,
+            "T_free_days":         cs["T_free_days"],
+            "duration_a":          duration_a,
+            "duration_b":          duration_b,
+            "duration_prior_share": duration_prior_share,
+            "severity_prior_share": severity_prior_share,
+            "open_episode":        cs["open_episode"],
         }
 
     # --- variable posteriors ---
