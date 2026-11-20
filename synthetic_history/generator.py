@@ -6,7 +6,7 @@ engine.loader.load_all is used for DAY0, offer/lane lead times and the
 business calendar.  See docs/montecarlo-engine.md sections 6.1 – 6.3.
 
 generate_history(data_dir, out_dir, seed) -> dict
-    Writes data/history/shipments.csv and data/history/episodes.csv.
+    Writes shipments.csv, episodes.csv and period.csv into out_dir.
     Returns a dict of internals (own delays keyed by shipment_id) for
     testing.  The own delay of each shipment is the signed business-day
     or calendar-day distance from promised to receipt MINUS the episode
@@ -71,119 +71,6 @@ _SOURCE_PARAMS = {
     "LN01": (LN_P_EARLY,   LN_P_ONTIME,   LN_P_LATE,   LN_MEAN_SIZE,   N_LN01),
     "LN02": (LN_P_EARLY,   LN_P_ONTIME,   LN_P_LATE,   LN_MEAN_SIZE,   N_LN02),
 }
-
-# ---------------------------------------------------------------------------
-# causes.csv reader and validator
-# ---------------------------------------------------------------------------
-
-_CAUSES_HEADER = ["cause_id", "day_unit", "target_type", "target_id"]
-_VALID_DAY_UNITS = {"business", "calendar"}
-_VALID_TARGET_TYPES = {"purchase_order", "offer", "lane"}
-
-
-def _load_causes(data_dir: pathlib.Path, db: dict) -> list:
-    """Read and validate data/history/causes.csv.
-
-    Returns a list of dicts with keys:
-        cause_id, day_unit, source_id, lead_days, business (bool)
-    in the order the rows appear in the file.
-
-    Raises ValueError naming the file and the offending row for any
-    validation error.
-    """
-    fname = "data/history/causes.csv"
-    path  = data_dir / "history" / "causes.csv"
-
-    with path.open(encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh)
-        actual_header = list(reader.fieldnames or [])
-        if actual_header != _CAUSES_HEADER:
-            raise ValueError(
-                f"{fname}: header must be exactly "
-                f"{','.join(_CAUSES_HEADER)}, got {','.join(actual_header)}"
-            )
-        raw_rows = list(reader)
-
-    # Validate day_unit per cause (must be consistent across rows)
-    cause_day_unit: dict[str, str] = {}
-    result = []
-
-    for row in raw_rows:
-        cid   = row.get("cause_id", "").strip()
-        dunit = row.get("day_unit", "").strip()
-        ttype = row.get("target_type", "").strip()
-        tid   = row.get("target_id", "").strip()
-
-        # Required fields
-        for field, val in [("cause_id", cid), ("day_unit", dunit),
-                           ("target_type", ttype), ("target_id", tid)]:
-            if not val:
-                raise ValueError(
-                    f"{fname}: field '{field}' is empty in row {dict(row)}"
-                )
-
-        # day_unit must be valid
-        if dunit not in _VALID_DAY_UNITS:
-            raise ValueError(
-                f"{fname}: day_unit must be 'business' or 'calendar', "
-                f"got {dunit!r} in row {dict(row)}"
-            )
-
-        # day_unit must be consistent within a cause
-        if cid in cause_day_unit:
-            if cause_day_unit[cid] != dunit:
-                raise ValueError(
-                    f"{fname}: cause {cid!r} has conflicting day_unit values "
-                    f"({cause_day_unit[cid]!r} and {dunit!r})"
-                )
-        else:
-            cause_day_unit[cid] = dunit
-
-        # target_type must be valid
-        if ttype not in _VALID_TARGET_TYPES:
-            raise ValueError(
-                f"{fname}: target_type must be one of "
-                f"{sorted(_VALID_TARGET_TYPES)}, got {ttype!r} in row {dict(row)}"
-            )
-
-        # Resolve source_id and lead_days from the base data
-        if ttype == "purchase_order":
-            pos = db.get("purchase_orders", {})
-            if tid not in pos:
-                raise ValueError(
-                    f"{fname}: target_id {tid!r} is not in purchase_orders "
-                    f"(row {dict(row)})"
-                )
-            offer_id = pos[tid]["offer_id"]
-            source_id = offer_id
-            lead_days = db["offers"][offer_id]["lead_days"]
-        elif ttype == "offer":
-            if tid not in db.get("offers", {}):
-                raise ValueError(
-                    f"{fname}: target_id {tid!r} is not in supplier_offers "
-                    f"(row {dict(row)})"
-                )
-            source_id = tid
-            lead_days = db["offers"][tid]["lead_days"]
-        else:  # lane
-            if tid not in db.get("lanes", {}):
-                raise ValueError(
-                    f"{fname}: target_id {tid!r} is not in transfer_lanes "
-                    f"(row {dict(row)})"
-                )
-            source_id = tid
-            lead_days = db["lanes"][tid]["lead_days"]
-
-        result.append({
-            "cause_id":  cid,
-            "day_unit":  dunit,
-            "source_id": source_id,
-            "lead_days": lead_days,
-            "business":  dunit == "business",
-        })
-
-    return result
-
 
 # ---------------------------------------------------------------------------
 # Geometric on {0, 1, 2, ...} with mean m
@@ -321,10 +208,10 @@ def generate_history(data_dir, out_dir, seed: int) -> dict:
     ----------
     data_dir : str or Path
         Path to the base data directory.  Must contain the standard engine
-        CSV files (disruptions.csv etc.) and data/history/causes.csv.
+        CSV files (disruptions.csv etc.) and data/causes.csv.
         If data/closed_days.csv is present it is honoured.
     out_dir : str or Path
-        Directory to write shipments.csv and episodes.csv into.
+        Directory to write shipments.csv, episodes.csv and period.csv into.
     seed : int
         Random seed for reproducibility.
 
@@ -349,8 +236,12 @@ def generate_history(data_dir, out_dir, seed: int) -> dict:
     period_start = day0 - timedelta(days=365)
     period_end   = day0 - timedelta(days=1)
 
-    # Read causes.csv to build source config
-    source_rows = _load_causes(data_dir, db)
+    # Read causes from db["causes"]
+    if db["causes"] is None:
+        raise ValueError(
+            "data/causes.csv: file not found; the Monte Carlo run needs it"
+        )
+    source_rows = db["causes"]
 
     # Map cause_id -> (rate, sev_mean, dur_mean) from constants
     cause_params = {
@@ -373,7 +264,6 @@ def generate_history(data_dir, out_dir, seed: int) -> dict:
     own_delays:    dict = {}
     clamped:       dict = {}
     in_transit:    list = []
-    shipment_index: dict[str, int] = {}   # source_id -> running counter
 
     for row in source_rows:
         src_id   = row["source_id"]

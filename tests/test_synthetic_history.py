@@ -1,4 +1,4 @@
-"""Tests for montecarlo.generator (stage 2, step 4b part 1).
+"""Tests for synthetic_history.generator (stage 2, step 4b part 1).
 
 Coverage:
  1. Same seed → identical files; different seed → different files.
@@ -15,6 +15,7 @@ Coverage:
  7. closed_days.csv override: a closed Monday is never a business-day date.
  8. causes.csv validation errors raise ValueError with file name.
  9. A shipment not yet received on DAY0 is left out of shipments.csv.
+10. python -m synthetic_history produces output matching data/history/ files.
 """
 
 import csv
@@ -22,17 +23,19 @@ import math
 import pathlib
 import random
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import date, timedelta
 
 from engine.business_calendar import BusinessCalendar
+from engine.causes import load_causes
 from engine.loader import load_all
 
 # Module under test
-from montecarlo.generator import (
+from synthetic_history.generator import (
     generate_history,
-    _load_causes,
     _own_delay_sample,
     _geom_non_neg,
     _generate_episodes,
@@ -179,7 +182,6 @@ class TestEpisodeProperties(unittest.TestCase):
 
     def test_no_overlap_within_cause(self):
         """Episodes of the same cause must not overlap."""
-        from itertools import combinations
         cause_eps = {}
         for e in self.eps:
             cause_eps.setdefault(e["cause_id"], []).append(e)
@@ -306,11 +308,8 @@ class TestTruthRecovery(unittest.TestCase):
         cls.sev_sums   = {"K1": 0, "K2": 0}
         cls.sev_counts = {"K1": 0, "K2": 0}
 
-        source_cause = {"OF01": "K1", "OF02": "K1", "LN01": "K2", "LN02": "K2"}
-
         for seed in range(cls.N_SEEDS):
             rng = random.Random(seed)
-            cache: dict = {}
 
             k1_eps = _generate_episodes(rng, "K1", K1_RATE, K1_SEV_MEAN,
                                          K1_DUR_MEAN, PERIOD_START, PERIOD_END)
@@ -329,8 +328,6 @@ class TestTruthRecovery(unittest.TestCase):
                 cls.sev_counts["K2"] += 1
 
             # Accumulate own-delay category and size stats
-            cause_eps = {"K1": k1_eps, "K2": k2_eps}
-
             source_configs = [
                 ("OF01", N_OF01, True,  "K1",
                  OF01_P_EARLY, OF01_P_ONTIME, OF01_P_LATE, OF01_MEAN_SIZE),
@@ -514,7 +511,7 @@ class TestClosedDayOverride(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestCausesValidation(unittest.TestCase):
-    """_load_causes raises ValueError with the filename for bad causes.csv."""
+    """load_causes raises ValueError with the filename for bad causes.csv."""
 
     @classmethod
     def setUpClass(cls):
@@ -522,18 +519,16 @@ class TestCausesValidation(unittest.TestCase):
         cls.db = load_all(DATA_DIR)
 
     def _write_causes(self, tmp: pathlib.Path, content: str) -> pathlib.Path:
-        hist = tmp / "history"
-        hist.mkdir(parents=True, exist_ok=True)
-        p = hist / "causes.csv"
+        p = tmp / "causes.csv"
         p.write_text(content, encoding="utf-8")
         return tmp
 
-    def _assert_raises(self, content: str, fragment: str = "causes.csv"):
+    def _assert_raises(self, content: str, fragment: str = "data/causes.csv"):
         with tempfile.TemporaryDirectory() as td:
             td = pathlib.Path(td)
             self._write_causes(td, content)
             with self.assertRaises(ValueError) as ctx:
-                _load_causes(td, self.db)
+                load_causes(td, self.db)
             self.assertIn(fragment, str(ctx.exception))
 
     def test_bad_header_raises(self):
@@ -583,7 +578,6 @@ class TestCausesValidation(unittest.TestCase):
         self._assert_raises(content)
 
 
-
 # ---------------------------------------------------------------------------
 # 9. A shipment still in transit on the decision day is left out
 # ---------------------------------------------------------------------------
@@ -609,6 +603,42 @@ class TestInTransitShipments(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             internals = generate_history(DATA_DIR, td, DEMO_SEED)
             self.assertEqual(internals["in_transit"], [])
+
+
+# ---------------------------------------------------------------------------
+# 10. python -m synthetic_history produces output matching data/history/
+# ---------------------------------------------------------------------------
+
+class TestSubprocessCommand(unittest.TestCase):
+    """python -m synthetic_history --data data --out <tmp> --seed 20261109
+    must produce files byte-identical to data/history/ (after CRLF → LF)."""
+
+    def _normalise(self, text: str) -> str:
+        return text.replace("\r\n", "\n")
+
+    def test_subprocess_output_matches_history(self):
+        with tempfile.TemporaryDirectory() as td:
+            out_dir = pathlib.Path(td)
+            result = subprocess.run(
+                [sys.executable, "-m", "synthetic_history",
+                 "--data", str(DATA_DIR),
+                 "--out", str(out_dir),
+                 "--seed", str(DEMO_SEED)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0,
+                f"subprocess failed: {result.stderr}")
+
+            for fname in ("shipments.csv", "episodes.csv", "period.csv"):
+                expected = self._normalise(
+                    (DATA_DIR / "history" / fname).read_text(encoding="utf-8")
+                )
+                got = self._normalise(
+                    (out_dir / fname).read_text(encoding="utf-8")
+                )
+                self.assertEqual(expected, got,
+                    f"{fname} differs from data/history/{fname}")
 
 
 if __name__ == "__main__":

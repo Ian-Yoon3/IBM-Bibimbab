@@ -116,14 +116,14 @@ class TestVariantsRun(_VariantCase):
         self.assertIn("DX5", results)
 
     def test_v02_two_variables_share_one_source(self):
-        _append(self.h / "causes.csv", "K1,business,offer,OF01")
+        _append(self.d / "causes.csv", "K1,business,offer,OF01")
         est, _, _, _ = self.run_chain()
         self.assertEqual(_counts(est, "purchase_order.PO01"), (12, 4, 0, 8))
         self.assertEqual(_counts(est, "offer.OF01"), (12, 4, 0, 8))
 
     def test_v03_one_cause_only(self):
-        _write(self.h / "causes.csv",
-               [r for r in _read(self.h / "causes.csv") if r["cause_id"] == "K1"])
+        _write(self.d / "causes.csv",
+               [r for r in _read(self.d / "causes.csv") if r["cause_id"] == "K1"])
         _write(self.h / "episodes.csv",
                [r for r in _read(self.h / "episodes.csv") if r["cause_id"] == "K1"])
         _write(self.h / "shipments.csv",
@@ -168,7 +168,7 @@ class TestVariantsRun(_VariantCase):
         self._check_k2_certain()
 
     def test_v07_third_cause_on_an_unused_offer(self):
-        _append(self.h / "causes.csv", "K3,business,offer,OF03")
+        _append(self.d / "causes.csv", "K3,business,offer,OF03")
         est, _, _, _ = self.run_chain()
         # w = 2026-11-09 to 2026-11-16 (11-14 is a Saturday) = 7 days. 1 - (1 + 7/365)^-1
         self.assertAlmostEqual(est["causes"]["K3"]["p_active"], 0.018817, places=6)
@@ -182,7 +182,7 @@ class TestVariantsRun(_VariantCase):
     def test_v09_second_disruption(self):
         _append(self.d / "purchase_orders.csv", "PO02,OF03,WH01,2026-11-05,50,2026-11-10")
         _append(self.d / "disruptions.csv", "D02,PO02,2026-11-09,2026-11-13,test")
-        _append(self.h / "causes.csv", "K1,business,purchase_order,PO02")
+        _append(self.d / "causes.csv", "K1,business,purchase_order,PO02")
         _, worlds, _, results = self.run_chain()
         self.assertIn("purchase_order.PO02.receipt_date", worlds[0])
         self.assertEqual(set(results), {"D01", "D02"})
@@ -210,17 +210,17 @@ class TestVariantsReject(_VariantCase):
             self.assertIn(w, msg)
 
     def test_e1_offer_with_calendar_days(self):
-        _append(self.h / "causes.csv", "K3,calendar,offer,OF03")
+        _append(self.d / "causes.csv", "K3,calendar,offer,OF03")
         self._assert_error("business", "OF03")
 
     def test_e2_source_in_two_causes(self):
         _append(self.d / "purchase_orders.csv", "PO02,OF02,WH01,2026-11-07,20,2026-11-10")
         _append(self.d / "disruptions.csv", "D02,PO02,2026-11-09,2026-11-13,test")
-        _append(self.h / "causes.csv", "K3,business,purchase_order,PO02")
+        _append(self.d / "causes.csv", "K3,business,purchase_order,PO02")
         self._assert_error("OF02", "K1", "K3")
 
     def test_e3_repeated_row(self):
-        _append(self.h / "causes.csv", "K2,calendar,lane,LN01")
+        _append(self.d / "causes.csv", "K2,calendar,lane,LN01")
         self._assert_error("LN01", "more than once")
 
     def test_e4_no_period_file(self):

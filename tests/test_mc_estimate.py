@@ -72,9 +72,10 @@ def _make_mini_history(episodes_csv=_EPISODES_CSV) -> pathlib.Path:
     """
     tmpdir = pathlib.Path(tempfile.mkdtemp())
     shutil.copytree(DATA_DIR, tmpdir / "data", dirs_exist_ok=True)
-    hist = tmpdir / "data" / "history"
+    data = tmpdir / "data"
+    hist = data / "history"
     hist.mkdir(parents=True, exist_ok=True)
-    (hist / "causes.csv").write_text(_CAUSES_CSV, encoding="utf-8")
+    (data / "causes.csv").write_text(_CAUSES_CSV, encoding="utf-8")
     (hist / "episodes.csv").write_text(episodes_csv, encoding="utf-8")
     (hist / "shipments.csv").write_text(_SHIPMENTS_CSV, encoding="utf-8")
     return tmpdir / "data"
@@ -90,9 +91,10 @@ class _MiniHistoryBase(unittest.TestCase):
         cls._tmpdir_obj = tempfile.mkdtemp()
         cls._tmpdir = pathlib.Path(cls._tmpdir_obj)
         shutil.copytree(DATA_DIR, cls._tmpdir / "data", dirs_exist_ok=True)
-        hist = cls._tmpdir / "data" / "history"
+        data = cls._tmpdir / "data"
+        hist = data / "history"
         hist.mkdir(parents=True, exist_ok=True)
-        (hist / "causes.csv").write_text(_CAUSES_CSV, encoding="utf-8")
+        (data / "causes.csv").write_text(_CAUSES_CSV, encoding="utf-8")
         (hist / "episodes.csv").write_text(cls._EPISODES, encoding="utf-8")
         (hist / "shipments.csv").write_text(_SHIPMENTS_CSV, encoding="utf-8")
         cls.result = estimate(cls._tmpdir / "data")
@@ -408,9 +410,10 @@ class TestValidationErrors(unittest.TestCase):
     def _write_history(self, episodes_csv=_EPISODES_CSV,
                        shipments_csv=_SHIPMENTS_CSV,
                        causes_csv=_CAUSES_CSV):
-        hist = self._tmpdir / "data" / "history"
+        data = self._tmpdir / "data"
+        hist = data / "history"
         hist.mkdir(parents=True, exist_ok=True)
-        (hist / "causes.csv").write_text(causes_csv, encoding="utf-8")
+        (data / "causes.csv").write_text(causes_csv, encoding="utf-8")
         (hist / "episodes.csv").write_text(episodes_csv, encoding="utf-8")
         (hist / "shipments.csv").write_text(shipments_csv, encoding="utf-8")
 

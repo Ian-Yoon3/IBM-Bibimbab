@@ -4,8 +4,9 @@ estimate(data_dir) -> dict
 
 Reads:
   - Standard engine CSVs via engine.loader.load_all(data_dir) for DAY0,
-    the business calendar, offers, lanes, purchase orders and disruptions.
-  - data/history/causes.csv, shipments.csv, episodes.csv, period.csv.
+    the business calendar, offers, lanes, purchase orders, disruptions and
+    causes.
+  - data/history/shipments.csv, episodes.csv, period.csv.
 
 Returns a dict with keys:
   "causes"    : {cause_id: cause_posterior}
@@ -47,7 +48,6 @@ from engine.loader import load_all
 # History file headers (exact)
 # ---------------------------------------------------------------------------
 
-_CAUSES_HEADER    = ["cause_id", "day_unit", "target_type", "target_id"]
 _SHIPMENTS_HEADER = ["shipment_id", "source_id", "ship_date",
                      "promised_date", "receipt_date", "episode_id"]
 _EPISODES_HEADER  = ["episode_id", "cause_id", "start_date",
@@ -106,117 +106,36 @@ def _read_period(hist_dir: pathlib.Path) -> tuple:
     return period_start, period_end, T_days
 
 
-# ---------------------------------------------------------------------------
-# Causes loader with full validation
-# ---------------------------------------------------------------------------
-
-def _load_causes_meta(data_dir: pathlib.Path, db: dict) -> tuple:
-    """Parse causes.csv and return three structures.
-
-    Validation rules (each raises ValueError naming the problem):
-      - header must be exactly cause_id,day_unit,target_type,target_id
-      - purchase_order and offer must use day_unit 'business'
-      - lane must use day_unit 'calendar'
-      - a (target_type, target_id) pair may not appear twice
-      - a source may belong to at most one cause
-      - all target_ids must exist in the base data
-
-    Several variables may share one source (purchase_order.PO01 and offer.OF01
-    can both use source OF01). The source_to_causes map stores all causes for a
-    source; for the single-cause constraint it checks ONLY that the same source
-    is not in TWO DIFFERENT causes (same cause is allowed).
+def _build_causes_meta(causes_rows: list) -> tuple:
+    """Build causes_meta and source_to_causes from db["causes"] rows.
 
     Returns
     -------
-    causes : dict  {cause_id: {day_unit, entries, targets}}
+    causes_meta : dict  {cause_id: {day_unit, entries, targets}}
     source_to_causes : dict  {source_id: set of cause_ids}
     """
-    fname = "data/history/causes.csv"
-    path  = data_dir / "history" / "causes.csv"
-    rows  = _read_history_csv(path, _CAUSES_HEADER)
+    causes_meta: dict = {}
+    source_to_causes: dict = {}
 
-    causes: dict = {}
-    source_to_causes: dict = {}   # source_id -> set of cause_ids
-    seen_vkeys: set = set()       # (ttype, tid) pairs already seen
+    for row in causes_rows:
+        cid       = row["cause_id"]
+        dunit     = row["day_unit"]
+        ttype     = row["target_type"]
+        tid       = row["target_id"]
+        source_id = row["source_id"]
+        vkey      = f"{ttype}.{tid}"
 
-    _REQUIRED_UNIT = {
-        "purchase_order": "business",
-        "offer":          "business",
-        "lane":           "calendar",
-    }
-
-    for row in rows:
-        cid   = row["cause_id"]
-        dunit = row["day_unit"]
-        ttype = row["target_type"]
-        tid   = row["target_id"]
-        vkey  = f"{ttype}.{tid}"
-
-        # day_unit must match target_type
-        if ttype in _REQUIRED_UNIT:
-            expected_unit = _REQUIRED_UNIT[ttype]
-            if dunit != expected_unit:
-                raise ValueError(
-                    f"{fname}: target_type {ttype!r} requires day_unit "
-                    f"{expected_unit!r}, got {dunit!r} for target {tid!r} "
-                    f"(cause {cid!r})"
-                )
-        else:
-            raise ValueError(
-                f"{fname}: unknown target_type {ttype!r} in row {dict(row)}"
-            )
-
-        # (ttype, tid) must not appear twice
-        vtuple = (ttype, tid)
-        if vtuple in seen_vkeys:
-            raise ValueError(
-                f"{fname}: ({ttype!r}, {tid!r}) appears more than once"
-            )
-        seen_vkeys.add(vtuple)
-
-        # Resolve source_id and validate target exists
-        if ttype == "purchase_order":
-            if tid not in db.get("purchase_orders", {}):
-                raise ValueError(
-                    f"{fname}: target_id {tid!r} is not in purchase_orders "
-                    f"(row {dict(row)})"
-                )
-            source_id = db["purchase_orders"][tid]["offer_id"]
-        elif ttype == "offer":
-            if tid not in db.get("offers", {}):
-                raise ValueError(
-                    f"{fname}: target_id {tid!r} is not in supplier_offers "
-                    f"(row {dict(row)})"
-                )
-            source_id = tid
-        else:  # lane
-            if tid not in db.get("lanes", {}):
-                raise ValueError(
-                    f"{fname}: target_id {tid!r} is not in transfer_lanes "
-                    f"(row {dict(row)})"
-                )
-            source_id = tid
-
-        # A source may belong to at most one cause
-        existing_causes = source_to_causes.get(source_id, set())
-        if existing_causes and cid not in existing_causes:
-            other = next(iter(existing_causes))
-            raise ValueError(
-                f"{fname}: source {source_id!r} is in both cause {other!r} "
-                f"and cause {cid!r}; a source may belong to one cause only"
-            )
-
-        if cid not in causes:
-            causes[cid] = {"day_unit": dunit, "entries": [], "targets": []}
-        causes[cid]["entries"].append({"ttype": ttype, "tid": tid,
-                                       "source_id": source_id, "vkey": vkey})
-        causes[cid]["targets"].append({"ttype": ttype, "tid": tid})
+        if cid not in causes_meta:
+            causes_meta[cid] = {"day_unit": dunit, "entries": [], "targets": []}
+        causes_meta[cid]["entries"].append({"ttype": ttype, "tid": tid,
+                                            "source_id": source_id, "vkey": vkey})
+        causes_meta[cid]["targets"].append({"ttype": ttype, "tid": tid})
 
         if source_id not in source_to_causes:
             source_to_causes[source_id] = set()
         source_to_causes[source_id].add(cid)
 
-    return causes, source_to_causes
+    return causes_meta, source_to_causes
 
 
 # ---------------------------------------------------------------------------
@@ -353,8 +272,12 @@ def estimate(data_dir) -> dict:
             "open_on_day0":  open_on_day0,
         }
 
-    # 1b. Load causes meta (for source->cause mapping)
-    causes_meta, source_to_causes = _load_causes_meta(data_dir, db)
+    # 1b. Build causes meta from db["causes"]
+    if db["causes"] is None:
+        raise ValueError(
+            "data/causes.csv: file not found; the Monte Carlo run needs it"
+        )
+    causes_meta, source_to_causes = _build_causes_meta(db["causes"])
 
     # Build source_to_cause (single cause per source is validated above)
     source_to_cause: dict = {

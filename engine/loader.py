@@ -372,6 +372,14 @@ def load_all(data_dir=None) -> dict:
             "fixed_fee_usd": _int(_require(r, "fixed_fee_usd", "transfer_lanes"), "fixed_fee_usd"),
         }
 
+    # ── causes (optional, data/causes.csv) ───────────────────────────────────
+    from engine.causes import load_causes
+    _causes = load_causes(dd, {
+        "purchase_orders": purchase_orders,
+        "offers": offers,
+        "lanes": lanes,
+    })
+
     # ── worlds (optional, wide format, ADR 0004) ──────────────────────────────
     worlds_path = dd / "worlds.csv"
     overrides_path = dd / "world_overrides.csv"
@@ -825,6 +833,7 @@ def load_all(data_dir=None) -> dict:
         "purchase_orders": purchase_orders,
         "disruptions": disruptions,
         "lanes": lanes,
+        "causes": _causes,
         "scenarios": scenarios,
         "recovery_purchases": recovery_purchases,
         "recovery_transfers": recovery_transfers,
