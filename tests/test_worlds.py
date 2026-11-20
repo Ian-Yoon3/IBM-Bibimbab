@@ -23,13 +23,14 @@ from engine.worlds import (
     round_half_away,
     worlds_for,
 )
+from scripts.stage1_data import make_stage1_data_dir, use_stage1_default_data
 
 _DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
 
 
 def _copy_data(tmp):
     dest = pathlib.Path(tmp) / "data"
-    shutil.copytree(_DATA_DIR, dest)
+    make_stage1_data_dir(dest)
     return dest
 
 
@@ -247,8 +248,14 @@ _TRI_TRADEOFF = [
 class TestTriangularWeights(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._ctx = use_stage1_default_data()
+        cls._ctx.__enter__()
         cls.db = load_all()
         cls.result = evaluate_worlds("D01", cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._ctx.__exit__(None, None, None)
 
     def _opt(self, sid):
         return next(o for o in self.result["options"] if o["scenario_id"] == sid)
@@ -321,7 +328,8 @@ class TestWeightsScaling(unittest.TestCase):
                 writer.writerows(rows)
             db7 = load_all(dd)
 
-        db1 = load_all()
+        with use_stage1_default_data():
+            db1 = load_all()
         r1 = evaluate_worlds("D01", db1)
         r7 = evaluate_worlds("D01", db7)
 
@@ -340,7 +348,8 @@ class TestWeightsScaling(unittest.TestCase):
 
 class TestExpectedBounds(unittest.TestCase):
     def test_g_expected_between_min_and_worst(self):
-        db = load_all()
+        with use_stage1_default_data():
+            db = load_all()
         worlds = db["worlds"]
         scenario_ids = [sid for sid, s in db["scenarios"].items()
                         if s["disruption_id"] == "D01"]
@@ -377,8 +386,14 @@ _WHAT_IF_EXPECTED = {
 class TestWhatIf(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._ctx = use_stage1_default_data()
+        cls._ctx.__enter__()
         cls.db = load_all()
         cls.result = evaluate_worlds("D01", cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._ctx.__exit__(None, None, None)
 
     def test_h_dates(self):
         expected_dates = [
@@ -412,19 +427,19 @@ class TestWhatIf(unittest.TestCase):
 
 class TestNoMutation(unittest.TestCase):
     def test_i_db_not_mutated(self):
-        db = load_all()
-        original_revised = db["disruptions"]["D01"]["revised_receipt_date"]
+        with use_stage1_default_data():
+            db = load_all()
+            original_revised = db["disruptions"]["D01"]["revised_receipt_date"]
 
-        evaluate_worlds("D01", db)
+            evaluate_worlds("D01", db)
 
-        self.assertEqual(
-            db["disruptions"]["D01"]["revised_receipt_date"],
-            original_revised,
-        )
-        # compare_scenarios() must give the same result after evaluate_worlds
-        cs_before = compare_scenarios()
-        evaluate_worlds("D01", db)
-        cs_after = compare_scenarios()
+            self.assertEqual(
+                db["disruptions"]["D01"]["revised_receipt_date"],
+                original_revised,
+            )
+            cs_before = compare_scenarios()
+            evaluate_worlds("D01", db)
+            cs_after = compare_scenarios()
         self.assertEqual(cs_before["ranked"], cs_after["ranked"])
 
 

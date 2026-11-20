@@ -23,6 +23,22 @@ from agent.render import (
 )
 from engine.worlds import evaluate_worlds
 from engine.loader import load_all
+from scripts.stage1_data import use_stage1_default_data
+
+_stage1_ctx = None
+
+
+def setUpModule():
+    global _stage1_ctx
+    _stage1_ctx = use_stage1_default_data()
+    _stage1_ctx.__enter__()
+
+
+def tearDownModule():
+    global _stage1_ctx
+    if _stage1_ctx is not None:
+        _stage1_ctx.__exit__(None, None, None)
+        _stage1_ctx = None
 
 
 def _md_no_exp(view, disruption_id="D01"):

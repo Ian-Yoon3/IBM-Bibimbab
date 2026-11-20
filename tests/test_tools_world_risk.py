@@ -9,6 +9,7 @@ import unittest
 from engine.loader import load_all
 from engine.tools import compare_scenarios, get_disruption, get_world_risk
 from engine.worlds import evaluate_worlds
+from scripts.stage1_data import make_stage1_data_dir, use_stage1_default_data
 
 _DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
 
@@ -26,11 +27,20 @@ _SCOPE_NOTE_ANNOUNCED = (
 
 def _copy_data(tmp):
     dest = pathlib.Path(tmp) / "data"
-    shutil.copytree(_DATA_DIR, dest)
+    make_stage1_data_dir(dest)
     return dest
 
 
 class TestGetWorldRisk(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls._ctx = use_stage1_default_data()
+        cls._ctx.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._ctx.__exit__(None, None, None)
 
     # (a) Result is JSON-serialisable without a custom default.
     def test_a_json_serialisable(self):

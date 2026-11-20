@@ -15,13 +15,14 @@ from engine.evaluate import evaluate
 from engine.loader import load_all
 from engine.simulate import build_scenario_actions, simulate
 from engine.worlds import apply_world
+from scripts.stage1_data import make_stage1_data_dir
 
 _DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
 
 
 def _copy_data(tmp):
     dest = pathlib.Path(tmp) / "data"
-    shutil.copytree(_DATA_DIR, dest)
+    make_stage1_data_dir(dest)
     return dest
 
 

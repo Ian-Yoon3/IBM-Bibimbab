@@ -12,6 +12,7 @@ import unittest
 from datetime import date
 
 from engine.loader import load_all
+from scripts.stage1_data import make_stage1_data_dir, use_stage1_default_data
 
 # Path to the repo data directory
 _DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
@@ -20,7 +21,7 @@ _DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
 def _copy_data(tmp):
     """Copy the repo data directory into a temp directory and return the path."""
     dest = pathlib.Path(tmp) / "data"
-    shutil.copytree(_DATA_DIR, dest)
+    make_stage1_data_dir(dest)
     return dest
 
 
@@ -41,7 +42,13 @@ class TestLoaderWorldsRepo(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls._ctx = use_stage1_default_data()
+        cls._ctx.__enter__()
         cls.db = load_all()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._ctx.__exit__(None, None, None)
 
     def test_a_world_count(self):
         worlds = self.db["worlds"]
@@ -91,7 +98,7 @@ class TestRule1Absent(unittest.TestCase):
 
     def test_rule1_absent(self):
         from engine.business_calendar import BusinessCalendar
-        with tempfile.TemporaryDirectory() as tmp:
+        with use_stage1_default_data(), tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             (dd / "worlds.csv").unlink()
 

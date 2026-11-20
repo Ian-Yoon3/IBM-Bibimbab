@@ -22,6 +22,7 @@ from engine.loader import load_all
 from engine.simulate import offer_receipt_date, build_scenario_actions, simulate
 from engine.worlds import apply_world, evaluate_worlds
 from engine.business_calendar import BusinessCalendar
+from scripts.stage1_data import make_stage1_data_dir, use_stage1_default_data
 
 _DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
 
@@ -29,7 +30,7 @@ _DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
 def _copy_data(tmp):
     """Copy the repo data directory into a temp dir and return its path."""
     dest = pathlib.Path(tmp) / "data"
-    shutil.copytree(_DATA_DIR, dest)
+    make_stage1_data_dir(dest)
     return dest
 
 
@@ -668,7 +669,13 @@ class TestRepoLoadUnchanged(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls._ctx = use_stage1_default_data()
+        cls._ctx.__enter__()
         cls.db = load_all()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._ctx.__exit__(None, None, None)
 
     def test_sim_end_unchanged(self):
         self.assertEqual(self.db["SIM_END"], date(2026, 11, 23))
@@ -993,7 +1000,13 @@ class TestRepoCacheUnchanged(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls._ctx = use_stage1_default_data()
+        cls._ctx.__enter__()
         cls.db = load_all()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._ctx.__exit__(None, None, None)
 
     def test_evaluate_worlds_expected_late_unchanged(self):
         """Expected late_orders per option must match the previously verified values."""

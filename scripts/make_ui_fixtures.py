@@ -31,6 +31,7 @@ from pathlib import Path
 
 from agent.fake_llm import ScriptedLLM
 from agent.loop import run_agent
+from scripts.stage1_data import use_stage1_default_data
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261112_020142.json"
@@ -87,38 +88,39 @@ def _public(result: dict) -> dict:
 
 
 def build(sweep_path: Path) -> list[dict]:
-    entries = json.loads(sweep_path.read_text(encoding="utf-8"))
-    fixtures = []
-    for conv, turns in groupby(entries, key=lambda e: e["conversation"]):
-        history = None
-        for n, entry in enumerate(turns, 1):
-            result = run_agent(entry["question"], history,
-                               llm=ScriptedLLM(_script_for(entry)))
-            _check(entry, result)
-            view = result.get("view")
-            if view is None or view["type"] in ("recommendation", "comparison"):
-                # The prose comes from the real model run.
-                result["answer"] = entry["answer"]
-                if view is not None:
-                    view["markdown"] = entry["answer"]
-                result["history"][-1]["content"] = entry["answer"]
-            history = result["history"]
-            fixtures.append({
-                "conversation": conv,
-                "turn": n,
-                "question": entry["question"],
-                "model": entry["model"],
-                "result": _public(result),
-            })
+    with use_stage1_default_data():
+        entries = json.loads(sweep_path.read_text(encoding="utf-8"))
+        fixtures = []
+        for conv, turns in groupby(entries, key=lambda e: e["conversation"]):
+            history = None
+            for n, entry in enumerate(turns, 1):
+                result = run_agent(entry["question"], history,
+                                   llm=ScriptedLLM(_script_for(entry)))
+                _check(entry, result)
+                view = result.get("view")
+                if view is None or view["type"] in ("recommendation", "comparison"):
+                    # The prose comes from the real model run.
+                    result["answer"] = entry["answer"]
+                    if view is not None:
+                        view["markdown"] = entry["answer"]
+                    result["history"][-1]["content"] = entry["answer"]
+                history = result["history"]
+                fixtures.append({
+                    "conversation": conv,
+                    "turn": n,
+                    "question": entry["question"],
+                    "model": entry["model"],
+                    "result": _public(result),
+                })
 
-    q = "Our budget is 500 dollars. What should we do?"
-    fixtures.append({
-        "conversation": "error",
-        "turn": 1,
-        "question": q,
-        "model": "none (watsonx.ai unreachable)",
-        "result": _public(run_agent(q, None, llm=_FailingLLM())),
-    })
+        q = "Our budget is 500 dollars. What should we do?"
+        fixtures.append({
+            "conversation": "error",
+            "turn": 1,
+            "question": q,
+            "model": "none (watsonx.ai unreachable)",
+            "result": _public(run_agent(q, None, llm=_FailingLLM())),
+        })
     return fixtures
 
 
