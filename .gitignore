@@ -3,4 +3,6 @@ __pycache__/
 *.pyc
 /decisions/
 reference/validation/
-/runs/
+/runs/*
+!/runs/demo/
+/runs/demo/worlds.csv

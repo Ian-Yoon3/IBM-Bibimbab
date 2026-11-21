@@ -15,6 +15,7 @@ from engine.candidates import transferable_qty, purchase_qty_options
 from engine.analysis import disruption_impact, priority_view, marginal_cost
 from engine.compare import rank_options
 from engine.worlds import evaluate_worlds
+import engine.runs
 
 # ── db cache ──────────────────────────────────────────────────────────────────
 _DB_CACHE: dict = {}
@@ -601,7 +602,8 @@ def get_world_risk(disruption_id: str, data_dir=None) -> dict:
         po_id               – str, PO affected by the disruption
         announced_receipt_date – ISO date str, the disruption's revised date
         weights_source      – ``"file"`` when worlds.csv is present,
-                              ``"announced_date"`` otherwise
+                              ``"announced_date"`` otherwise,
+                              ``"run"`` when a Monte Carlo run folder is selected
         world_count         – int, number of worlds evaluated
         quantile_level      – float, 0.9 (90th percentile)
         options             – list of per-scenario dicts with:
@@ -631,8 +633,25 @@ def get_world_risk(disruption_id: str, data_dir=None) -> dict:
             " The engine does not pick an option."
         ),
     }
-    result = evaluate_worlds(disruption_id, _get_db(data_dir))
-    result["scope_note"] = _SCOPE_NOTES[result["weights_source"]]
+
+    # Resolve the data folder.
+    from pathlib import Path
+    from engine.loader import _DEFAULT_DATA_DIR
+    resolved_data_dir = Path(data_dir).resolve() if data_dir is not None else _DEFAULT_DATA_DIR
+
+    run_dir = engine.runs.selected_run_for(resolved_data_dir)
+    if run_dir is not None:
+        result = engine.runs.evaluate_run(disruption_id, _get_db(data_dir), run_dir)
+        scope_note = (
+            "Weights come from the Monte Carlo run in {run}. Each world is one"
+            " possible course of the uncertain values: the delayed PO's receipt date,"
+            " offer and lane delays and cause episodes. Time and cost are shown side"
+            " by side. The engine does not pick an option."
+        ).format(run=result["run"])
+        result["scope_note"] = scope_note
+    else:
+        result = evaluate_worlds(disruption_id, _get_db(data_dir))
+        result["scope_note"] = _SCOPE_NOTES[result["weights_source"]]
     return result
 
 

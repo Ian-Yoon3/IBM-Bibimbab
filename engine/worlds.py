@@ -163,9 +163,10 @@ def world_result(db: dict, disruption_id: str, scenario_id: str,
     return ev["late_orders"], ev["total_extra_cost"]
 
 
-def evaluate_worlds(disruption_id: str, db: dict,
-                    level: Fraction = Fraction(9, 10)) -> dict:
-    """Aggregate simulation results across worlds for all disrupted scenarios.
+def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
+                      weights_source: str, world_count: int,
+                      level: Fraction = Fraction(9, 10)) -> dict:
+    """Aggregate simulation results for all disrupted scenarios.
 
     Parameters
     ----------
@@ -173,21 +174,19 @@ def evaluate_worlds(disruption_id: str, db: dict,
         Disruption to evaluate (must exist in db["disruptions"]).
     db : dict
         Loaded database (from loader.load_all()).  Never mutated.
+    weighted_results : list of (weight: int, results: dict scenario_id -> (late_orders, total_extra_cost))
+        One entry per distinct world.
+    weights_source : str
+        Source of the weights ("file", "announced_date", or "run").
+    world_count : int
+        Total number of worlds (rows in worlds.csv).
     level : Fraction
         Quantile level for the pXX_late_orders key (default 9/10).
 
     Returns
     -------
-    JSON-serialisable dict with:
-        disruption_id, po_id, announced_receipt_date, weights_source,
-        world_count, quantile_level,
-        options (list of per-option dicts),
-        what_if (date table independent of worlds),
-        tradeoff_steps (consecutive option pairs sorted by cost).
+    JSON-serialisable dict (same keys as evaluate_worlds).
     """
-    if disruption_id not in db["disruptions"]:
-        raise ValueError(f"evaluate_worlds: unknown disruption_id {disruption_id!r}")
-
     # Validate level and derive key suffix.
     level_pct = level * 100
     if level_pct.denominator != 1:
@@ -196,8 +195,7 @@ def evaluate_worlds(disruption_id: str, db: dict,
         )
     pXX_key = f"p{int(level_pct)}_late_orders"
 
-    worlds, weights_source = worlds_for(db, disruption_id)
-    total_w = Fraction(sum(w["weight"] for w in worlds))
+    total_w = Fraction(sum(wt for wt, _ in weighted_results))
 
     dis = db["disruptions"][disruption_id]
     po_id = dis["po_id"]
@@ -210,10 +208,7 @@ def evaluate_worlds(disruption_id: str, db: dict,
         if s["disruption_id"] == disruption_id
     ]
 
-    # ── per-option, per-world simulation ──────────────────────────────────────
-    # Cache: (scenario_id, world_identity(world)) -> (late_orders, total_extra_cost)
-    _sim_cache: dict = {}
-
+    # ── per-option aggregation ─────────────────────────────────────────────────
     option_results = {}   # scenario_id -> aggregated dict
 
     for sid in disrupted_scenario_ids:
@@ -225,14 +220,9 @@ def evaluate_worlds(disruption_id: str, db: dict,
         p_no_w = Fraction(0)
         lates_and_weights = []
 
-        for w in worlds:
-            wt = Fraction(w["weight"])
-            cache_key = (sid, world_identity(w))
-            if cache_key in _sim_cache:
-                late, cost = _sim_cache[cache_key]
-            else:
-                late, cost = world_result(db, disruption_id, sid, w)
-                _sim_cache[cache_key] = (late, cost)
+        for wt, results in weighted_results:
+            wt_frac = Fraction(wt)
+            late, cost = results[sid]
 
             if extra_cost_seen is None:
                 extra_cost_seen = cost
@@ -242,11 +232,11 @@ def evaluate_worlds(disruption_id: str, db: dict,
                     "the cost axis must be extended"
                 )
 
-            exp_late += wt * Fraction(late)
+            exp_late += wt_frac * Fraction(late)
             worst = max(worst, late)
             if late == 0:
-                p_no_w += wt
-            lates_and_weights.append((late, wt))
+                p_no_w += wt_frac
+            lates_and_weights.append((late, wt_frac))
 
         exp_exact = exp_late / total_w
         p_no_exact = Fraction(100) * p_no_w / total_w
@@ -325,7 +315,7 @@ def evaluate_worlds(disruption_id: str, db: dict,
         "po_id": po_id,
         "announced_receipt_date": announced_receipt_date,
         "weights_source": weights_source,
-        "world_count": len(worlds),
+        "world_count": world_count,
         "quantile_level": float(level),
         "options": options_out,
         "what_if": {
@@ -334,3 +324,59 @@ def evaluate_worlds(disruption_id: str, db: dict,
         },
         "tradeoff_steps": tradeoff_steps,
     }
+
+
+def evaluate_worlds(disruption_id: str, db: dict,
+                    level: Fraction = Fraction(9, 10)) -> dict:
+    """Aggregate simulation results across worlds for all disrupted scenarios.
+
+    Parameters
+    ----------
+    disruption_id : str
+        Disruption to evaluate (must exist in db["disruptions"]).
+    db : dict
+        Loaded database (from loader.load_all()).  Never mutated.
+    level : Fraction
+        Quantile level for the pXX_late_orders key (default 9/10).
+
+    Returns
+    -------
+    JSON-serialisable dict with:
+        disruption_id, po_id, announced_receipt_date, weights_source,
+        world_count, quantile_level,
+        options (list of per-option dicts),
+        what_if (date table independent of worlds),
+        tradeoff_steps (consecutive option pairs sorted by cost).
+    """
+    if disruption_id not in db["disruptions"]:
+        raise ValueError(f"evaluate_worlds: unknown disruption_id {disruption_id!r}")
+
+    worlds, weights_source = worlds_for(db, disruption_id)
+
+    # Disrupted scenarios in scenarios.csv order.
+    disrupted_scenario_ids = [
+        sid for sid, s in db["scenarios"].items()
+        if s["disruption_id"] == disruption_id
+    ]
+
+    # ── per-option, per-world simulation ──────────────────────────────────────
+    # Cache: (scenario_id, world_identity(world)) -> (late_orders, total_extra_cost)
+    _sim_cache: dict = {}
+
+    # Build weighted_results: list of (weight, {sid: (late, cost)})
+    weighted_results = []
+    for w in worlds:
+        wt = w["weight"]
+        results = {}
+        for sid in disrupted_scenario_ids:
+            cache_key = (sid, world_identity(w))
+            if cache_key in _sim_cache:
+                late, cost = _sim_cache[cache_key]
+            else:
+                late, cost = world_result(db, disruption_id, sid, w)
+                _sim_cache[cache_key] = (late, cost)
+            results[sid] = (late, cost)
+        weighted_results.append((wt, results))
+
+    return aggregate_options(disruption_id, db, weighted_results, weights_source,
+                             len(worlds), level)

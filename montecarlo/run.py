@@ -181,6 +181,107 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
 
 
 # ---------------------------------------------------------------------------
+# build_run
+# ---------------------------------------------------------------------------
+
+def build_run(data_dir, out_dir, M: int = 1000, N: int = 200,
+              seed: int = 20261109, method: str = "lhs") -> dict:
+    """Generate a complete run folder with worlds.csv, result tables, and fingerprint.
+
+    Parameters
+    ----------
+    data_dir : str or Path
+    out_dir  : str or Path  — the run folder to write to
+    M        : parameter draws
+    N        : worlds per draw
+    seed     : master seed
+    method   : "lhs" or "plain"
+
+    Returns
+    -------
+    run_record dict (enriched with result_table info).
+    """
+    import shutil
+    from engine.runs import make_fingerprint, build_result_table, normalised_sha256
+    from engine.runs import OUTPUT_FILES, REPO_ROOT
+
+    data_dir = pathlib.Path(data_dir).resolve()
+    out_dir = pathlib.Path(out_dir).resolve()
+
+    # Refuse out_dir inside data_dir (same check and message as run()).
+    try:
+        out_dir.relative_to(data_dir)
+        raise ValueError(
+            f"out_dir {out_dir!r} is inside data_dir {data_dir!r}; "
+            "choose a different output directory"
+        )
+    except ValueError as exc:
+        if "inside data_dir" in str(exc):
+            raise
+        # out_dir is not relative to data_dir — that's fine
+
+    # 1. Raise ValueError if data_dir/worlds.csv exists.
+    if (data_dir / "worlds.csv").exists():
+        raise ValueError(
+            "data folder contains worlds.csv; a Monte Carlo run reads base data only"
+        )
+
+    # 2. Compute fingerprint BEFORE sampling.
+    settings = {"seed": seed, "M": M, "N": N, "method": method}
+    fingerprint = make_fingerprint(data_dir, settings)
+
+    # 3. Delete out_dir/fingerprint.json if present.
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fp_path = out_dir / "fingerprint.json"
+    if fp_path.exists():
+        fp_path.unlink()
+
+    # 4. Run sampling (writes worlds.csv and run_record.json).
+    record = run(data_dir, out_dir, M, N, seed, method)
+
+    # 5. Load a temporary copy of data_dir with the new worlds.csv.
+    worlds_path = out_dir / "worlds.csv"
+    dst_data = out_dir / "_tmp_data_build"
+    shutil.copytree(data_dir, dst_data, dirs_exist_ok=True)
+    shutil.copy(worlds_path, dst_data / "worlds.csv")
+    try:
+        from engine.loader import load_all as _load_all
+        db_with_worlds = _load_all(dst_data)
+        t_eval_start = time.monotonic()
+        rt_info = build_result_table(db_with_worlds, worlds_path, out_dir)
+        eval_time = time.monotonic() - t_eval_start
+    finally:
+        shutil.rmtree(dst_data, ignore_errors=True)
+
+    # 6. Add result_table to the record and rewrite run_record.json.
+    if rt_info["distinct_worlds"] != record["distinct_worlds"]:
+        raise ValueError(
+            f"build_run: result_table distinct_worlds {rt_info['distinct_worlds']} "
+            f"differs from run record {record['distinct_worlds']}"
+        )
+
+    record["result_table"] = {
+        "distinct_worlds": rt_info["distinct_worlds"],
+        "scenarios": rt_info["scenarios"],
+        "evaluation_time_s": round(eval_time, 3),
+    }
+
+    record_path = out_dir / "run_record.json"
+    with record_path.open("w", encoding="utf-8") as fh:
+        json.dump(record, fh, indent=2)
+
+    # 7. Write fingerprint.json LAST with output hashes.
+    fingerprint["outputs"] = {
+        name: normalised_sha256(out_dir / name)
+        for name in OUTPUT_FILES
+    }
+    with fp_path.open("w", encoding="utf-8") as fh:
+        json.dump(fingerprint, fh, indent=2, sort_keys=True)
+
+    return record
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -197,7 +298,7 @@ def main():
     args = p.parse_args()
 
     method = "plain" if args.plain else "lhs"
-    record = run(args.data, args.out, args.M, args.N, args.seed, method)
+    record = build_run(args.data, args.out, args.M, args.N, args.seed, method)
 
     print(f"Done in {record['run_time_s']:.1f}s")
     print(f"  rows={record['rows']}, distinct={record['distinct_worlds']}, "
@@ -206,6 +307,9 @@ def main():
     for cid, share in record["active_shares"].items():
         print(f"  {cid} share={share:.4f}")
     print(f"  written to {args.out}/")
+    rt = record.get("result_table", {})
+    print(f"  result_table: distinct_worlds={rt.get('distinct_worlds')}, "
+          f"evaluation_time_s={rt.get('evaluation_time_s')}")
 
 
 if __name__ == "__main__":
