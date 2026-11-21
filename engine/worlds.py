@@ -4,6 +4,7 @@ import decimal
 from datetime import timedelta
 from fractions import Fraction
 
+from engine.episodes import world_identity
 from engine.evaluate import evaluate
 from engine.simulate import build_scenario_actions, simulate
 
@@ -16,13 +17,22 @@ def apply_world(db: dict, world: dict) -> dict:
     """Return a shallow copy of db with world overrides applied.
 
     Supported override kinds:
-      ("purchase_order", po_id, "receipt_date")     – update disruption date
+      ("purchase_order", po_id, "receipt_date")          – update disruption date
       ("offer",          offer_id, "delay_business_days") – copy offer with delay
-      ("lane",           lane_id,  "lead_days")           – copy lane with lead
+      ("lane",           lane_id,  "lead_days")           – copy lane with lead (legacy)
+      ("lane",           lane_id,  "delay_days")          – copy lane with delay (new)
     db itself is never mutated.
     """
     db2 = dict(db)
     overrides = world.get("overrides", {})
+
+    # Always propagate world_episodes, even when there are no overrides.
+    episodes = world.get("episodes", {})
+    if episodes:
+        db2["world_episodes"] = episodes
+    else:
+        db2["world_episodes"] = None
+
     if not overrides:
         return db2
 
@@ -50,6 +60,12 @@ def apply_world(db: dict, world: dict) -> dict:
                 new_lanes = dict(db["lanes"])
             lane_copy = dict(new_lanes[tid])
             lane_copy["lead_days"] = value
+            new_lanes[tid] = lane_copy
+        elif ttype == "lane" and field == "delay_days":
+            if new_lanes is None:
+                new_lanes = dict(db["lanes"])
+            lane_copy = dict(new_lanes[tid])
+            lane_copy["delay_days"] = value
             new_lanes[tid] = lane_copy
         else:
             raise ValueError(
@@ -141,6 +157,19 @@ def quantile(values_and_weights: list, level: Fraction) -> int:
 # evaluate_worlds
 # ---------------------------------------------------------------------------
 
+def world_result(db: dict, disruption_id: str, scenario_id: str,
+                 world: dict) -> tuple:
+    """Run apply_world + simulate + evaluate for one (scenario, world) pair.
+
+    Returns (late_orders, total_extra_cost).
+    """
+    actions, _ = build_scenario_actions(scenario_id, db)
+    db_w = apply_world(db, world)
+    sim = simulate(actions, disruption_id, db_w)
+    ev = evaluate(sim)
+    return ev["late_orders"], ev["total_extra_cost"]
+
+
 def evaluate_worlds(disruption_id: str, db: dict,
                     level: Fraction = Fraction(9, 10)) -> dict:
     """Aggregate simulation results across worlds for all disrupted scenarios.
@@ -189,14 +218,12 @@ def evaluate_worlds(disruption_id: str, db: dict,
     ]
 
     # ── per-option, per-world simulation ──────────────────────────────────────
-    # Cache: (scenario_id, overrides_key) -> (late_orders, total_extra_cost)
-    # Tags are excluded from the key — they never affect simulation output.
+    # Cache: (scenario_id, world_identity(world)) -> (late_orders, total_extra_cost)
     _sim_cache: dict = {}
 
     option_results = {}   # scenario_id -> aggregated dict
 
     for sid in disrupted_scenario_ids:
-        actions, _ = build_scenario_actions(sid, db)
         scenario = db["scenarios"][sid]
 
         extra_cost_seen = None
@@ -207,16 +234,11 @@ def evaluate_worlds(disruption_id: str, db: dict,
 
         for w in worlds:
             wt = Fraction(w["weight"])
-            overrides = w.get("overrides", {})
-            cache_key = (sid, frozenset(overrides.items()))
+            cache_key = (sid, world_identity(w))
             if cache_key in _sim_cache:
                 late, cost = _sim_cache[cache_key]
             else:
-                db_w = apply_world(db, w)
-                sim = simulate(actions, disruption_id, db_w)
-                ev = evaluate(sim)
-                late = ev["late_orders"]
-                cost = ev["total_extra_cost"]
+                late, cost = world_result(db, disruption_id, sid, w)
                 _sim_cache[cache_key] = (late, cost)
 
             if extra_cost_seen is None:
