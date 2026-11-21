@@ -14,8 +14,8 @@ Returns a dict with keys:
                e.g. "purchase_order.PO01", "offer.OF02", "lane.LN01"
 
 cause_posterior keys:
-  n, S, open_on_day0, w_days, T_days, rate_shape, rate_rate,
-  p_active, severity_a, severity_b,
+  n, S, open_on_day0, T_days, rate_shape,
+  severity_a, severity_b,
   T_free_days, duration_a, duration_b,
   duration_prior_share, severity_prior_share, open_episode
 
@@ -46,7 +46,6 @@ predictive_size_pmf is a module-level function (not in the returned dict).
 
 Section 7.1 posteriors (uniform/Bayes-Laplace priors), T = period length in days:
   rate lambda:   Gamma(n+1, T)   [rate parameter T means scale = 1/T]
-  P(active):     1 if open_on_day0 else 1-(1+w/T)^-(n+1)
   severity theta: Beta(severity_a, severity_b)
                   severity_a = 1 + (episodes with recorded delay)
                   severity_b = 1 + S,  S = sum of (delay_days - 1)
@@ -61,7 +60,7 @@ Section 7.1 posteriors (uniform/Bayes-Laplace priors), T = period length in days
 import csv
 import math
 import pathlib
-from datetime import date, timedelta
+from datetime import date
 from fractions import Fraction
 
 from engine.loader import load_all
@@ -158,43 +157,6 @@ def _build_causes_meta(causes_rows: list) -> tuple:
         source_to_causes[source_id].add(cid)
 
     return causes_meta, source_to_causes
-
-
-# ---------------------------------------------------------------------------
-# Exposure window w_k (section 4.7)
-# purchase_order -> disruption's revised_receipt_date
-# offer          -> calendar.next_business_day(DAY0 + lead_days)
-# lane           -> DAY0 + lead_days (calendar days)
-# w = max over all targets of that cause, in calendar days from DAY0
-# ---------------------------------------------------------------------------
-
-def _exposure_days(db: dict, targets: list) -> int:
-    """Return w_k in calendar days from DAY0."""
-    day0 = db["DAY0"]
-    cal  = db["calendar"]
-    latest = day0
-
-    for t in targets:
-        ttype = t["ttype"]
-        tid   = t["tid"]
-        if ttype == "purchase_order":
-            for dis in db["disruptions"].values():
-                if dis["po_id"] == tid:
-                    arr = dis["revised_receipt_date"]
-                    break
-            else:
-                raise ValueError(f"No disruption found for purchase_order {tid!r}")
-        elif ttype == "offer":
-            lead = db["offers"][tid]["lead_days"]
-            arr  = cal.next_business_day(day0 + timedelta(days=lead))
-        else:  # lane
-            lead = db["lanes"][tid]["lead_days"]
-            arr  = day0 + timedelta(days=lead)
-
-        if arr > latest:
-            latest = arr
-
-    return (latest - day0).days
 
 
 # ---------------------------------------------------------------------------
@@ -537,12 +499,7 @@ def estimate(data_dir) -> dict:
             cs["duration_a"] += 1
             cs["duration_b"] += (end_d - obs_start_dur).days
 
-    # 4. Exposure windows
-    for cid, meta in causes_meta.items():
-        w = _exposure_days(db, meta["targets"])
-        cause_stats[cid]["w_days"] = w
-
-    # 5. Build posteriors
+    # 4. Build posteriors
 
     # --- cause posteriors ---
     cause_posteriors: dict = {}
@@ -551,16 +508,8 @@ def estimate(data_dir) -> dict:
         S            = cs["S"]
         severity_obs = cs["severity_obs"]
         open_on_day0 = cs["open_on_day0"]
-        w            = cs["w_days"]
 
         rate_shape = n + 1    # Gamma(n+1, T)
-        rate_rate  = T_days   # rate parameter T (scale = 1/T per day)
-
-        if open_on_day0:
-            p_active = 1.0
-        else:
-            # P(active) = 1 - (1 + w/T)^-(n+1)
-            p_active = 1.0 - (1.0 + w / T_days) ** (-(n + 1))
 
         severity_a = severity_obs + 1
         severity_b = S + 1
@@ -575,11 +524,8 @@ def estimate(data_dir) -> dict:
             "n":                   n,
             "S":                   S,
             "open_on_day0":        open_on_day0,
-            "w_days":              w,
             "T_days":              T_days,
             "rate_shape":          rate_shape,
-            "rate_rate":           rate_rate,
-            "p_active":            p_active,
             "severity_a":          severity_a,
             "severity_b":          severity_b,
             "T_free_days":         cs["T_free_days"],

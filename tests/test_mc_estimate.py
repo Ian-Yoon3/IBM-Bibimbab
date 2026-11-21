@@ -281,10 +281,9 @@ class TestCausePosteriors(_MiniHistoryBase):
         self.assertEqual(cp["S"], 4)
 
     def test_k1_rate(self):
-        """K1: Gamma(shape=3, rate=T=365)."""
+        """K1: Gamma(shape=3, T=365)."""
         cp = self._cp("K1")
         self.assertEqual(cp["rate_shape"], 3)
-        self.assertEqual(cp["rate_rate"],  365)
         self.assertEqual(cp["T_days"],     365)
 
     def test_k1_severity(self):
@@ -292,16 +291,6 @@ class TestCausePosteriors(_MiniHistoryBase):
         cp = self._cp("K1")
         self.assertEqual(cp["severity_a"], 3)
         self.assertEqual(cp["severity_b"], 5)
-
-    def test_k1_w_days(self):
-        """K1: w = 8 days (DAY0 2026-11-09 to revised date 2026-11-17)."""
-        cp = self._cp("K1")
-        self.assertEqual(cp["w_days"], 8)
-
-    def test_k1_p_active(self):
-        """K1: P(active) ≈ 0.062973 (6 decimal places)."""
-        cp = self._cp("K1")
-        self.assertAlmostEqual(cp["p_active"], 0.062973, places=6)
 
     def test_k1_T_free_days(self):
         """K1: T_free_days=360 (E1 covers 3 days, E2 covers 2 days)."""
@@ -321,10 +310,9 @@ class TestCausePosteriors(_MiniHistoryBase):
         self.assertEqual(cp["S"], 0)
 
     def test_k2_rate(self):
-        """K2: Gamma(shape=2, rate=T=365)."""
+        """K2: Gamma(shape=2, T=365)."""
         cp = self._cp("K2")
         self.assertEqual(cp["rate_shape"], 2)
-        self.assertEqual(cp["rate_rate"],  365)
         self.assertEqual(cp["T_days"],     365)
 
     def test_k2_severity(self):
@@ -332,16 +320,6 @@ class TestCausePosteriors(_MiniHistoryBase):
         cp = self._cp("K2")
         self.assertEqual(cp["severity_a"], 2)
         self.assertEqual(cp["severity_b"], 1)
-
-    def test_k2_w_days(self):
-        """K2: w = 4 days (DAY0+4 for LN02)."""
-        cp = self._cp("K2")
-        self.assertEqual(cp["w_days"], 4)
-
-    def test_k2_p_active(self):
-        """K2: P(active) ≈ 0.021563 (6 decimal places)."""
-        cp = self._cp("K2")
-        self.assertAlmostEqual(cp["p_active"], 0.021563, places=6)
 
     def test_k2_T_free_days(self):
         """K2: T_free_days=363 (E3 covers 2 days)."""
@@ -377,11 +355,10 @@ class TestOpenEpisode(_MiniHistoryWithOpen):
         self.assertEqual(cp["severity_a"], 3)
         self.assertEqual(cp["severity_b"], 2)
 
-    def test_k2_p_active_is_one(self):
-        """K2 with open episode: P(active) = exactly 1."""
+    def test_k2_open_on_day0(self):
+        """K2 with open episode: open_on_day0 is True."""
         cp = self.result["causes"]["K2"]
         self.assertEqual(cp["open_on_day0"], True)
-        self.assertEqual(cp["p_active"], 1.0)
 
     def test_k2_open_T_free_days(self):
         """K2 with open E4: T_free_days=359 (E3 2 days, E4 4 days in period)."""
@@ -510,15 +487,6 @@ class TestDemoHistory(unittest.TestCase):
             "purchase_order.PO01", "offer.OF02", "lane.LN01", "lane.LN02"
         }
         self.assertEqual(set(result["variables"].keys()), expected_keys)
-
-    def test_p_active_in_range(self):
-        result = estimate(DATA_DIR)
-        for cid, cp in result["causes"].items():
-            if cp["open_on_day0"]:
-                self.assertEqual(cp["p_active"], 1.0)
-            else:
-                self.assertGreater(cp["p_active"], 0.0)
-                self.assertLess(cp["p_active"], 1.0)
 
     def test_prior_shares_in_range(self):
         result = estimate(DATA_DIR)

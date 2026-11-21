@@ -153,33 +153,30 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
                     f"exceeds max_qty {lane['max_qty']}"
                 )
             action_date = _parse_date(action["action_date"])
-            if world_episodes is not None:
-                cause_k = cause_of(db, "lane", lane_id)
-                base_arrival = action_date + timedelta(days=lane["lead_days"])
-                if cause_k is not None:
-                    h_horizon = db["cause_horizons"][cause_k]["H"]
-                    if base_arrival > h_horizon:
-                        raise ValueError(
-                            f"transfer on lane {lane_id!r} placed on "
-                            f"{action_date}: base arrival {base_arrival} "
-                            f"is after cause {cause_k!r} horizon H={h_horizon}"
-                        )
-                    shock = first_overlap_delay(
-                        world_episodes.get(cause_k, []),
-                        action_date,
-                        base_arrival,
+            base_arrival = action_date + timedelta(days=lane["lead_days"])
+            cause_k = cause_of(db, "lane", lane_id)
+            if world_episodes is not None and cause_k is not None:
+                h_horizon = db["cause_horizons"][cause_k]["H"]
+                if base_arrival > h_horizon:
+                    raise ValueError(
+                        f"transfer on lane {lane_id!r} placed on "
+                        f"{action_date}: base arrival {base_arrival} "
+                        f"is after cause {cause_k!r} horizon H={h_horizon}"
                     )
-                else:
-                    shock = 0
-                own_delay = lane.get("delay_days", 0)
-                total = lane["lead_days"] + own_delay + shock
-                if total <= 0:
-                    arrival = action_date + timedelta(days=1)
-                else:
-                    arrival = action_date + timedelta(days=total)
-                receipt_date = arrival
+                shock = first_overlap_delay(
+                    world_episodes.get(cause_k, []),
+                    action_date,
+                    base_arrival,
+                )
             else:
-                receipt_date = action_date + timedelta(days=lane["lead_days"])
+                shock = 0
+            own_delay = lane.get("delay_days", 0)
+            total = lane["lead_days"] + own_delay + shock
+            if total <= 0:
+                arrival = action_date + timedelta(days=1)
+            else:
+                arrival = action_date + timedelta(days=total)
+            receipt_date = arrival
             schedule(action_date, "TRANSFER_OUT",
                      lane["from_warehouse_id"], cid, -qty, lane_id)
             schedule(receipt_date, "TRANSFER_IN",

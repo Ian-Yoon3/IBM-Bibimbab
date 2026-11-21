@@ -540,35 +540,27 @@ class TestDataRule6b(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestLegacyWorldsFormat(unittest.TestCase):
-    """A worlds.csv in the legacy sampler format loads with format='legacy'."""
+    """Legacy worlds.csv columns (lane.*.lead_days, cause.*.active) are rejected."""
 
     def test_legacy_format_detected(self):
+        """lane.LN01.lead_days raises the 'no longer supported' error."""
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
             # Remove causes.csv (legacy format doesn't require it)
             causes = dd / "causes.csv"
             if causes.exists():
                 causes.unlink()
-            # Write a legacy-format worlds.csv (lane.LN01.lead_days and
-            # cause.K1.active are legacy-kind columns)
+            # Write a legacy-format worlds.csv (lane.LN01.lead_days is a legacy column)
             hdr = (
                 "world_id,draw,weight,"
                 "purchase_order.PO01.receipt_date,"
-                "lane.LN01.lead_days,"
-                "cause.K1.active"
+                "lane.LN01.lead_days"
             )
-            row = "W1,0,1,2026-11-17,2,0"
+            row = "W1,0,1,2026-11-17,2"
             _write_worlds(dd, hdr, row)
-            db = load_all(dd)
-            self.assertEqual(db["worlds_format"], "legacy")
-            self.assertEqual(len(db["worlds"]), 1)
-            w = db["worlds"][0]
-            # Overrides contain the lane lead_days
-            self.assertIn(("lane", "LN01", "lead_days"), w["overrides"])
-            # Tags contain the cause active value
-            self.assertIn("K1", w["tags"])
-            # episodes is empty for legacy worlds
-            self.assertEqual(w["episodes"], {})
+            with self.assertRaises(ValueError) as cm:
+                load_all(dd)
+            self.assertIn("no longer supported", str(cm.exception))
 
 
 # ---------------------------------------------------------------------------

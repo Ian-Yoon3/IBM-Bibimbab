@@ -27,19 +27,11 @@ _DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # ---------------------------------------------------------------------------
 # Open kinds: the single place that maps (target_type, field) to a value parser.
-# A kind not listed here raises ValueError - nothing is silently ignored.
+# Only new-format kinds are accepted; legacy kinds raise ValueError.
 # ---------------------------------------------------------------------------
 _OPEN_KINDS = {
-    ("purchase_order", "receipt_date"): lambda v, f: _date(v, f),
+    ("purchase_order", "receipt_date"):        lambda v, f: _date(v, f),
     ("offer",          "delay_business_days"): lambda v, f: _signed_int(v, f),
-    ("lane",           "lead_days"):           lambda v, f: _pos_int(v, f),
-    ("cause",          "active"):              lambda v, f: _cause_active(v, f),
-}
-
-# Legacy-kind field names (target_type, field) — present in legacy worlds files
-_LEGACY_KINDS = {
-    ("lane",  "lead_days"),
-    ("cause", "active"),
 }
 
 # Regex for episode field names: ep<n>_start_date / ep<n>_end_date / ep<n>_delay_days
@@ -88,17 +80,6 @@ def _pos_int(value: str, field: str) -> int:
         raise ValueError(f"Field '{field}' is not an integer: {value!r}")
     if v < 1:
         raise ValueError(f"Field '{field}' must be >= 1, got {v}")
-    return v
-
-
-def _cause_active(value: str, field: str) -> int:
-    """Parse a cause tag: must be 0 or 1."""
-    try:
-        v = int(value)
-    except (ValueError, TypeError):
-        raise ValueError(f"Field '{field}' is not an integer: {value!r}")
-    if v not in (0, 1):
-        raise ValueError(f"Field '{field}' must be 0 or 1, got {v!r}")
     return v
 
 
@@ -622,201 +603,142 @@ def load_all(data_dir=None) -> dict:
         var_cols = raw_header[3:]  # variable column names
         expected_ncols = len(raw_header)
 
-        # Classify each variable column as legacy or new.
-        # A file is "legacy" if it has a legacy-kind column; "new" otherwise.
-        # A file with both is an error.
-        _has_legacy = False
-        _has_new = False
-        for _col in var_cols:
-            _parts = _col.split(".")
-            if len(_parts) == 3:
-                _tt, _ti, _ff = _parts
-                if (_tt, _ff) in _LEGACY_KINDS:
-                    _has_legacy = True
-                elif _is_new_episode_kind(_tt, _ff) or _is_new_lane_delay_kind(_tt, _ff):
-                    _has_new = True
-        if _has_legacy and _has_new:
-            raise ValueError(
-                "worlds.csv: file mixes legacy-format columns "
-                "(lane.*.lead_days, cause.*.active) with new-format columns "
-                "(cause episode columns, lane.*.delay_days); "
-                "use one format only"
-            )
-        worlds_format = "legacy" if _has_legacy else "new"
+        worlds_format = "new"
 
         # ── Validate variable column names ────────────────────────────────────
         col_kinds = {}  # col_name -> (ttype, tid, field)
-        if worlds_format == "legacy":
-            # Legacy path: existing validation rules (kind must be in _OPEN_KINDS)
-            for col in var_cols:
-                parts = col.split(".")
-                if len(parts) != 3 or any(p == "" for p in parts):
-                    raise ValueError(
-                        f"worlds.csv: variable column {col!r} must split into "
-                        "exactly 3 non-empty parts on '.'"
-                    )
-                ttype, tid, field = parts
-                kind_key = (ttype, field)
-                if kind_key not in _OPEN_KINDS:
-                    raise ValueError(
-                        f"worlds.csv: variable column {col!r}: "
-                        f"kind ({ttype!r}, {field!r}) is not supported yet"
-                    )
-                if ttype == "purchase_order":
-                    if tid not in disrupted_po_ids:
-                        raise ValueError(
-                            f"worlds.csv: variable column {col!r}: "
-                            f"target_id {tid!r} is not a PO named in disruptions"
-                        )
-                elif ttype == "offer":
-                    if tid not in offers:
-                        raise ValueError(
-                            f"worlds.csv: variable column {col!r}: "
-                            f"target_id {tid!r} is not in supplier_offers"
-                        )
-                elif ttype == "lane":
-                    if tid not in lanes:
-                        raise ValueError(
-                            f"worlds.csv: variable column {col!r}: "
-                            f"target_id {tid!r} is not in transfer_lanes"
-                        )
-                elif ttype == "cause":
-                    if field != "active":
-                        raise ValueError(
-                            f"worlds.csv: variable column {col!r}: "
-                            f"only field 'active' is allowed for target_type 'cause', "
-                            f"got {field!r}"
-                        )
-                col_kinds[col] = (ttype, tid, field)
-        else:
-            # New format: validate column names (rules 4a-4e)
-            # First pass: parse each column into (ttype, tid, field)
-            _ep_cols_by_cause: dict = {}  # cause_id -> {slot_n -> {suffix -> col}}
-            _target_var_cols: dict = {}   # (ttype, tid) -> col_name (for rule 4d)
-            for col in var_cols:
-                parts = col.split(".")
-                if len(parts) != 3 or any(p == "" for p in parts):
-                    raise ValueError(
-                        f"worlds.csv: variable column {col!r} must split into "
-                        "exactly 3 non-empty parts on '.'"
-                    )
-                ttype, tid, field = parts
-                kind_key = (ttype, field)
-                # Determine column category
-                _is_ep = _is_new_episode_kind(ttype, field)
-                _is_lane_delay = _is_new_lane_delay_kind(ttype, field)
-                # Also allow legacy non-kind columns: purchase_order receipt_date,
-                # offer delay_business_days (these are always valid in both formats)
-                _is_legacy_base = kind_key in _OPEN_KINDS and kind_key not in _LEGACY_KINDS
-                if not (_is_ep or _is_lane_delay or _is_legacy_base):
-                    raise ValueError(
-                        f"worlds.csv: variable column {col!r}: "
-                        f"kind ({ttype!r}, {field!r}) is not supported yet"
-                    )
-                # Validate target_id
-                if ttype == "purchase_order":
-                    if tid not in disrupted_po_ids:
-                        raise ValueError(
-                            f"worlds.csv: variable column {col!r}: "
-                            f"target_id {tid!r} is not a PO named in disruptions"
-                        )
-                    _target_var_cols[("purchase_order", tid)] = col
-                elif ttype == "offer":
-                    if tid not in offers:
-                        raise ValueError(
-                            f"worlds.csv: variable column {col!r}: "
-                            f"target_id {tid!r} is not in supplier_offers"
-                        )
-                    _target_var_cols[("offer", tid)] = col
-                elif ttype == "lane":
-                    if tid not in lanes:
-                        raise ValueError(
-                            f"worlds.csv: variable column {col!r}: "
-                            f"target_id {tid!r} is not in transfer_lanes"
-                        )
-                    if _is_lane_delay:
-                        _target_var_cols[("lane", tid)] = col
-                elif ttype == "cause":
-                    # Must be an episode field
-                    if not _is_ep:
-                        raise ValueError(
-                            f"worlds.csv: variable column {col!r}: "
-                            f"only episode fields are allowed for 'cause' in "
-                            f"new-format files, got field {field!r}"
-                        )
-                    m = _EP_FIELD_RE.match(field)
-                    slot_n = int(m.group(1))
-                    suffix = m.group(2)
-                    if tid not in _ep_cols_by_cause:
-                        _ep_cols_by_cause[tid] = {}
-                    _ep_cols_by_cause[tid].setdefault(slot_n, {})[suffix] = col
-                col_kinds[col] = (ttype, tid, field)
-
-            # Rule 4a: cause columns while causes is None
-            if _ep_cols_by_cause and _causes is None:
+        # New format: validate column names (rules 4a-4e)
+        # First pass: parse each column into (ttype, tid, field)
+        _ep_cols_by_cause: dict = {}  # cause_id -> {slot_n -> {suffix -> col}}
+        _target_var_cols: dict = {}   # (ttype, tid) -> col_name (for rule 4d)
+        for col in var_cols:
+            parts = col.split(".")
+            if len(parts) != 3 or any(p == "" for p in parts):
                 raise ValueError(
-                    "worlds.csv: file has cause episode columns but "
-                    "data/causes.csv is not present"
+                    f"worlds.csv: variable column {col!r} must split into "
+                    "exactly 3 non-empty parts on '.'"
                 )
+            ttype, tid, field = parts
+            kind_key = (ttype, field)
+            # Determine column category
+            _is_ep = _is_new_episode_kind(ttype, field)
+            _is_lane_delay = _is_new_lane_delay_kind(ttype, field)
+            _is_open = kind_key in _OPEN_KINDS
+            # Legacy columns (lane.*.lead_days, cause.*.active) are no longer accepted
+            if (ttype, field) in (("lane", "lead_days"), ("cause", "active")):
+                raise ValueError(
+                    f"worlds.csv: column {col!r} uses a format that is no longer "
+                    f"supported; regenerate the worlds with python -m montecarlo.run"
+                )
+            if not (_is_ep or _is_lane_delay or _is_open):
+                raise ValueError(
+                    f"worlds.csv: variable column {col!r}: "
+                    f"kind ({ttype!r}, {field!r}) is not supported yet"
+                )
+            # Validate target_id
+            if ttype == "purchase_order":
+                if tid not in disrupted_po_ids:
+                    raise ValueError(
+                        f"worlds.csv: variable column {col!r}: "
+                        f"target_id {tid!r} is not a PO named in disruptions"
+                    )
+                _target_var_cols[("purchase_order", tid)] = col
+            elif ttype == "offer":
+                if tid not in offers:
+                    raise ValueError(
+                        f"worlds.csv: variable column {col!r}: "
+                        f"target_id {tid!r} is not in supplier_offers"
+                    )
+                _target_var_cols[("offer", tid)] = col
+            elif ttype == "lane":
+                if tid not in lanes:
+                    raise ValueError(
+                        f"worlds.csv: variable column {col!r}: "
+                        f"target_id {tid!r} is not in transfer_lanes"
+                    )
+                if _is_lane_delay:
+                    _target_var_cols[("lane", tid)] = col
+            elif ttype == "cause":
+                # Must be an episode field
+                if not _is_ep:
+                    raise ValueError(
+                        f"worlds.csv: variable column {col!r}: "
+                        f"only episode fields are allowed for 'cause' in "
+                        f"new-format files, got field {field!r}"
+                    )
+                m = _EP_FIELD_RE.match(field)
+                slot_n = int(m.group(1))
+                suffix = m.group(2)
+                if tid not in _ep_cols_by_cause:
+                    _ep_cols_by_cause[tid] = {}
+                _ep_cols_by_cause[tid].setdefault(slot_n, {})[suffix] = col
+            col_kinds[col] = (ttype, tid, field)
 
-            if _causes is not None:
-                # Build set of cause_ids in causes.csv
-                _known_causes = {r["cause_id"] for r in _causes}
+        # Rule 4a: cause columns while causes is None
+        if _ep_cols_by_cause and _causes is None:
+            raise ValueError(
+                "worlds.csv: file has cause episode columns but "
+                "data/causes.csv is not present"
+            )
 
-                # Rule 4b: every cause in causes.csv must have episode columns
-                for _cid in _known_causes:
-                    if _cid not in _ep_cols_by_cause:
+        if _causes is not None:
+            # Build set of cause_ids in causes.csv
+            _known_causes = {r["cause_id"] for r in _causes}
+
+            # Rule 4b: every cause in causes.csv must have episode columns
+            for _cid in _known_causes:
+                if _cid not in _ep_cols_by_cause:
+                    raise ValueError(
+                        f"worlds.csv: cause {_cid!r} from causes.csv has no "
+                        f"episode columns in worlds.csv"
+                    )
+
+            # Rule 4c: episode columns for a cause not in causes.csv
+            for _cid in _ep_cols_by_cause:
+                if _cid not in _known_causes:
+                    raise ValueError(
+                        f"worlds.csv: episode columns for cause {_cid!r} "
+                        f"which is not in causes.csv"
+                    )
+
+            # Rule 4d: every target in causes.csv must have a variable column
+            for _cr in _causes:
+                _tt = _cr["target_type"]
+                _ti = _cr["target_id"]
+                _key = (_tt, _ti)
+                if _tt == "lane":
+                    _key = ("lane", _ti)
+                if _key not in _target_var_cols:
+                    if _tt == "purchase_order":
+                        _expected_col = f"purchase_order.{_ti}.receipt_date"
+                    elif _tt == "offer":
+                        _expected_col = f"offer.{_ti}.delay_business_days"
+                    else:
+                        _expected_col = f"lane.{_ti}.delay_days"
+                    raise ValueError(
+                        f"worlds.csv: target {_ti!r} (type {_tt!r}) from "
+                        f"causes.csv has no variable column; "
+                        f"expected column {_expected_col!r}"
+                    )
+
+            # Rule 4e: for every cause, slots 1..S with no gap; each slot
+            # has all three fields
+            for _cid, _slots in _ep_cols_by_cause.items():
+                _slot_nums = sorted(_slots.keys())
+                if _slot_nums != list(range(1, len(_slot_nums) + 1)):
+                    raise ValueError(
+                        f"worlds.csv: cause {_cid!r} episode slot numbers "
+                        f"are not contiguous from 1: {_slot_nums}"
+                    )
+                for _sn in _slot_nums:
+                    _have = set(_slots[_sn].keys())
+                    _want = {"start_date", "end_date", "delay_days"}
+                    if _have != _want:
+                        missing_f = _want - _have
                         raise ValueError(
-                            f"worlds.csv: cause {_cid!r} from causes.csv has no "
-                            f"episode columns in worlds.csv"
+                            f"worlds.csv: cause {_cid!r} slot {_sn} is "
+                            f"missing fields {sorted(missing_f)}"
                         )
-
-                # Rule 4c: episode columns for a cause not in causes.csv
-                for _cid in _ep_cols_by_cause:
-                    if _cid not in _known_causes:
-                        raise ValueError(
-                            f"worlds.csv: episode columns for cause {_cid!r} "
-                            f"which is not in causes.csv"
-                        )
-
-                # Rule 4d: every target in causes.csv must have a variable column
-                for _cr in _causes:
-                    _tt = _cr["target_type"]
-                    _ti = _cr["target_id"]
-                    _key = (_tt, _ti)
-                    if _tt == "lane":
-                        _key = ("lane", _ti)
-                    if _key not in _target_var_cols:
-                        if _tt == "purchase_order":
-                            _expected_col = f"purchase_order.{_ti}.receipt_date"
-                        elif _tt == "offer":
-                            _expected_col = f"offer.{_ti}.delay_business_days"
-                        else:
-                            _expected_col = f"lane.{_ti}.delay_days"
-                        raise ValueError(
-                            f"worlds.csv: target {_ti!r} (type {_tt!r}) from "
-                            f"causes.csv has no variable column; "
-                            f"expected column {_expected_col!r}"
-                        )
-
-                # Rule 4e: for every cause, slots 1..S with no gap; each slot
-                # has all three fields
-                for _cid, _slots in _ep_cols_by_cause.items():
-                    _slot_nums = sorted(_slots.keys())
-                    if _slot_nums != list(range(1, len(_slot_nums) + 1)):
-                        raise ValueError(
-                            f"worlds.csv: cause {_cid!r} episode slot numbers "
-                            f"are not contiguous from 1: {_slot_nums}"
-                        )
-                    for _sn in _slot_nums:
-                        _have = set(_slots[_sn].keys())
-                        _want = {"start_date", "end_date", "delay_days"}
-                        if _have != _want:
-                            missing_f = _want - _have
-                            raise ValueError(
-                                f"worlds.csv: cause {_cid!r} slot {_sn} is "
-                                f"missing fields {sorted(missing_f)}"
-                            )
 
         # Read all rows; check raw column count per row
         with worlds_path.open(encoding="utf-8", newline="") as fh:
@@ -831,414 +753,369 @@ def load_all(data_dir=None) -> dict:
         seen_world_ids = set()
         draw_totals = {}  # draw int -> total weight int
 
-        # For new format: collect episode column info per cause
+        # Collect episode column info per cause
         _new_ep_info = {}  # cause_id -> sorted list of slot_n, each with col names
-        if worlds_format == "new":
-            for col, (ttype, tid, field) in col_kinds.items():
-                if ttype == "cause":
-                    m = _EP_FIELD_RE.match(field)
-                    if m:
-                        slot_n = int(m.group(1))
-                        suffix = m.group(2)
-                        if tid not in _new_ep_info:
-                            _new_ep_info[tid] = {}
-                        _new_ep_info[tid].setdefault(slot_n, {})[suffix] = col
-            # Sort slots for each cause
-            for _cid in _new_ep_info:
-                _new_ep_info[_cid] = {
-                    sn: _new_ep_info[_cid][sn]
-                    for sn in sorted(_new_ep_info[_cid])
-                }
+        for col, (ttype, tid, field) in col_kinds.items():
+            if ttype == "cause":
+                m = _EP_FIELD_RE.match(field)
+                if m:
+                    slot_n = int(m.group(1))
+                    suffix = m.group(2)
+                    if tid not in _new_ep_info:
+                        _new_ep_info[tid] = {}
+                    _new_ep_info[tid].setdefault(slot_n, {})[suffix] = col
+        # Sort slots for each cause
+        for _cid in _new_ep_info:
+            _new_ep_info[_cid] = {
+                sn: _new_ep_info[_cid][sn]
+                for sn in sorted(_new_ep_info[_cid])
+            }
+
+        # ── Pre-compute per-column cap data (once, before the row loop) ──────
+        # cause_of_target: (ttype, tid) -> cause_id  (empty when no causes.csv)
+        _cause_of_target: dict = {}
+        if _causes is not None:
+            for _cr in _causes:
+                _cause_of_target[(_cr["target_type"], _cr["target_id"])] = _cr["cause_id"]
+
+        # room_offer[offer_id] = business_days_between(L_offer, SAMPLING_CAP)
+        # where L_offer = latest next_business_day(action_date + lead_days) across
+        # DAY0 and every recovery_purchases row for that offer.
+        _room_offer: dict = {}  # offer_id -> int
+        for col in var_cols:
+            ttype, tid, field = col_kinds[col]
+            if ttype != "offer" or field != "delay_business_days":
+                continue
+            _offer_id = tid
+            if _offer_id in _room_offer:
+                continue
+            _ld_use = offers[_offer_id]["lead_days"]
+            _L_offer = calendar.next_business_day(
+                DAY0 + timedelta(days=_ld_use)
+            )
+            for (_rp_sid, _rp_oid), _rp in recovery_purchases.items():
+                if _rp_oid == _offer_id:
+                    _rp_promised = calendar.next_business_day(
+                        _rp["action_date"] + timedelta(days=_ld_use)
+                    )
+                    if _rp_promised > _L_offer:
+                        _L_offer = _rp_promised
+            _room_offer[_offer_id] = calendar.business_days_between(
+                _L_offer, SAMPLING_CAP
+            )
+
+        # room_lane[lane_id] and L_lane[lane_id]:
+        # L_lane = latest (action_date + lead_days) across DAY0 and recovery_transfers.
+        # room_lane = (SAMPLING_CAP - L_lane).days
+        _room_lane: dict = {}  # lane_id -> int
+        _L_lane_pre: dict = {}  # lane_id -> date
+        for col in var_cols:
+            ttype, tid, field = col_kinds[col]
+            if ttype != "lane" or field != "delay_days":
+                continue
+            _lane_id = tid
+            if _lane_id in _room_lane:
+                continue
+            _lane_ld = lanes[_lane_id]["lead_days"]
+            _L = DAY0 + timedelta(days=_lane_ld)
+            for (_rt_sid, _rt_lid, _rt_cid), _rt in recovery_transfers.items():
+                if _rt_lid == _lane_id:
+                    _rt_arrival = _rt["action_date"] + timedelta(days=_lane_ld)
+                    if _rt_arrival > _L:
+                        _L = _rt_arrival
+            _L_lane_pre[_lane_id] = _L
+            _room_lane[_lane_id] = (SAMPLING_CAP - _L).days
+        # ─────────────────────────────────────────────────────────────────────
 
         for raw_row, row in zip(raw_data_rows, dict_rows):
-                ncols = len(raw_row)
+            ncols = len(raw_row)
 
-                # Rule B: row width checks
-                wid = row.get("world_id", "") or ""
-                if ncols > expected_ncols:
+            # Rule B: row width checks
+            wid = row.get("world_id", "") or ""
+            if ncols > expected_ncols:
+                raise ValueError(
+                    f"worlds.csv: world {wid!r}: row has {ncols} cells "
+                    f"but header has {expected_ncols} columns"
+                )
+            if ncols < expected_ncols:
+                # Identify the first missing column
+                missing = raw_header[ncols] if ncols < len(raw_header) else "unknown"
+                raise ValueError(
+                    f"worlds.csv: world {wid!r}: row is missing column {missing!r} "
+                    f"({ncols} cells, header has {expected_ncols})"
+                )
+
+            # Rule 5: world_id non-empty and unique
+            if not wid:
+                raise ValueError("worlds.csv: world_id must not be empty")
+            if wid in seen_world_ids:
+                raise ValueError(
+                    f"worlds.csv: duplicate world_id {wid!r}"
+                )
+            seen_world_ids.add(wid)
+
+            # Rule 5: draw is an integer >= 0
+            raw_draw = row.get("draw", "")
+            if raw_draw == "":
+                raise ValueError(
+                    f"worlds.csv: world {wid!r}: draw must not be empty"
+                )
+            try:
+                draw = _int(raw_draw, "draw")
+            except ValueError as exc:
+                raise ValueError(
+                    f"worlds.csv: world {wid!r}: {exc}"
+                ) from exc
+
+            # Rule 5: weight is an integer >= 1
+            raw_w = row.get("weight", "")
+            if raw_w == "":
+                raise ValueError(
+                    f"worlds.csv: world {wid!r}: weight must not be empty"
+                )
+            try:
+                weight = _int(raw_w, "weight")
+            except ValueError as exc:
+                raise ValueError(
+                    f"worlds.csv: world {wid!r}: {exc}"
+                ) from exc
+            if weight < 1:
+                raise ValueError(
+                    f"worlds.csv: world {wid!r}: weight must be >= 1, got {weight}"
+                )
+
+            # Row processing (new format only)
+            overrides = {}
+            episodes = {}  # cause_id -> list of {start, end, delay}
+
+            for col in var_cols:
+                raw_val = row.get(col, "")
+                ttype, tid, field = col_kinds[col]
+                kind_key = (ttype, field)
+
+                if ttype == "cause":
+                    # Episode cells may be "none" or values; handled below
+                    continue
+
+                # Non-episode columns: must not be empty
+                if raw_val == "":
                     raise ValueError(
-                        f"worlds.csv: world {wid!r}: row has {ncols} cells "
-                        f"but header has {expected_ncols} columns"
-                    )
-                if ncols < expected_ncols:
-                    # Identify the first missing column
-                    missing = raw_header[ncols] if ncols < len(raw_header) else "unknown"
-                    raise ValueError(
-                        f"worlds.csv: world {wid!r}: row is missing column {missing!r} "
-                        f"({ncols} cells, header has {expected_ncols})"
+                        f"worlds.csv: world {wid!r}: "
+                        f"column {col!r} must not be empty"
                     )
 
-                # Rule 5: world_id non-empty and unique
-                if not wid:
-                    raise ValueError("worlds.csv: world_id must not be empty")
-                if wid in seen_world_ids:
-                    raise ValueError(
-                        f"worlds.csv: duplicate world_id {wid!r}"
-                    )
-                seen_world_ids.add(wid)
+                if kind_key == ("purchase_order", "receipt_date"):
+                    try:
+                        parsed = _OPEN_KINDS[kind_key](raw_val, field)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"worlds.csv: world {wid!r}: {exc}"
+                        ) from exc
+                    po = purchase_orders[tid]
+                    lo = po["planned_receipt_date"]
+                    if parsed < lo:
+                        raise ValueError(
+                            f"worlds.csv: world {wid!r}: "
+                            f"receipt_date {parsed} is before the PO's "
+                            f"planned_receipt_date {lo}"
+                        )
+                    if parsed > SAMPLING_CAP:
+                        raise ValueError(
+                            f"worlds.csv: world {wid!r}: "
+                            f"receipt_date {parsed} is after the sampling cap "
+                            f"({SAMPLING_CAP}, one year after DAY0); "
+                            f"dates after the cap need stage 2"
+                        )
+                    overrides[("purchase_order", tid, "receipt_date")] = parsed
 
-                # Rule 5: draw is an integer >= 0
-                raw_draw = row.get("draw", "")
-                if raw_draw == "":
-                    raise ValueError(
-                        f"worlds.csv: world {wid!r}: draw must not be empty"
-                    )
-                try:
-                    draw = _int(raw_draw, "draw")
-                except ValueError as exc:
-                    raise ValueError(
-                        f"worlds.csv: world {wid!r}: {exc}"
-                    ) from exc
+                elif kind_key == ("offer", "delay_business_days"):
+                    try:
+                        parsed = _signed_int(raw_val, field)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"worlds.csv: world {wid!r}: {exc}"
+                        ) from exc
+                    overrides[("offer", tid, "delay_business_days")] = parsed
 
-                # Rule 5: weight is an integer >= 1
-                raw_w = row.get("weight", "")
-                if raw_w == "":
-                    raise ValueError(
-                        f"worlds.csv: world {wid!r}: weight must not be empty"
-                    )
-                try:
-                    weight = _int(raw_w, "weight")
-                except ValueError as exc:
-                    raise ValueError(
-                        f"worlds.csv: world {wid!r}: {exc}"
-                    ) from exc
-                if weight < 1:
-                    raise ValueError(
-                        f"worlds.csv: world {wid!r}: weight must be >= 1, got {weight}"
-                    )
+                elif kind_key == ("lane", "delay_days"):
+                    # Lane delay: signed integer
+                    try:
+                        parsed = _signed_int(raw_val, field)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"worlds.csv: world {wid!r}: {exc}"
+                        ) from exc
+                    overrides[("lane", tid, "delay_days")] = parsed
 
-                if worlds_format == "legacy":
-                    # Legacy row processing: existing rules
-                    overrides = {}
-                    tags = {}
-                    for col in var_cols:
-                        raw_val = row.get(col, "")
-                        if raw_val == "":
+            # Process episode columns per cause
+            for cause_id, slots_info in _new_ep_info.items():
+                slot_list = []
+                prev_none = False
+                for slot_n, field_cols in slots_info.items():
+                    start_col = field_cols["start_date"]
+                    end_col = field_cols["end_date"]
+                    delay_col = field_cols["delay_days"]
+                    sv = row.get(start_col, "")
+                    ev = row.get(end_col, "")
+                    dv = row.get(delay_col, "")
+
+                    # Rule 5a: all three "none" or all three values
+                    is_none_triple = (sv == "none" and ev == "none" and dv == "none")
+                    is_val_triple = (sv != "none" and ev != "none" and dv != "none")
+                    if not is_none_triple and not is_val_triple:
+                        raise ValueError(
+                            f"worlds.csv: world {wid!r}: cause {cause_id!r} "
+                            f"slot {slot_n}: cells must be all 'none' or "
+                            f"all values, got "
+                            f"start={sv!r} end={ev!r} delay={dv!r}"
+                        )
+
+                    if is_none_triple:
+                        prev_none = True
+                    else:
+                        # Rule 5b: cannot have values after a "none" slot
+                        if prev_none:
                             raise ValueError(
-                                f"worlds.csv: world {wid!r}: "
-                                f"column {col!r} must not be empty"
+                                f"worlds.csv: world {wid!r}: cause {cause_id!r} "
+                                f"slot {slot_n} has values but an earlier "
+                                f"slot was 'none'"
                             )
-                        ttype, tid, field = col_kinds[col]
-                        kind_key = (ttype, field)
+                        # Parse the values
                         try:
-                            parsed = _OPEN_KINDS[kind_key](raw_val, field)
+                            start_d = _date(sv, "start_date")
                         except ValueError as exc:
                             raise ValueError(
                                 f"worlds.csv: world {wid!r}: {exc}"
                             ) from exc
-                        # receipt_date bounds: >= PO's planned date, <= sampling cap
-                        if kind_key == ("purchase_order", "receipt_date"):
-                            po = purchase_orders[tid]
-                            lo = po["planned_receipt_date"]
-                            if parsed < lo:
-                                raise ValueError(
-                                    f"worlds.csv: world {wid!r}: "
-                                    f"receipt_date {parsed} is before the PO's "
-                                    f"planned_receipt_date {lo}"
-                                )
-                            if parsed > SAMPLING_CAP:
-                                raise ValueError(
-                                    f"worlds.csv: world {wid!r}: "
-                                    f"receipt_date {parsed} is after the sampling cap "
-                                    f"({SAMPLING_CAP}, one year after DAY0); "
-                                    f"dates after the cap need stage 2"
-                                )
-                        elif kind_key == ("offer", "delay_business_days"):
-                            pass  # checked after calendar load
-                        elif kind_key == ("lane", "lead_days"):
-                            if DAY0 + timedelta(days=parsed) > SAMPLING_CAP:
-                                raise ValueError(
-                                    f"worlds.csv: world {wid!r}: "
-                                    f"lane {tid!r} lead_days {parsed} would put "
-                                    f"DAY0 + lead_days beyond the sampling cap "
-                                    f"({SAMPLING_CAP})"
-                                )
-                        if ttype == "cause":
-                            tags[tid] = parsed
-                        else:
-                            override_key = (ttype, tid, field)
-                            overrides[override_key] = parsed
-
-                    draw_totals[draw] = draw_totals.get(draw, 0) + weight
-                    worlds_db.append({
-                        "world_id": wid,
-                        "draw": draw,
-                        "weight": weight,
-                        "overrides": overrides,
-                        "tags": tags,
-                        "episodes": {},
-                    })
-
-                else:
-                    # New format row processing
-                    overrides = {}
-                    tags = {}
-                    episodes = {}  # cause_id -> list of {start, end, delay}
-
-                    for col in var_cols:
-                        raw_val = row.get(col, "")
-                        ttype, tid, field = col_kinds[col]
-                        kind_key = (ttype, field)
-
-                        if ttype == "cause":
-                            # Episode cells may be "none" or values; handled below
-                            continue
-
-                        # Non-episode columns: must not be empty
-                        if raw_val == "":
+                        try:
+                            end_d = _date(ev, "end_date")
+                        except ValueError as exc:
                             raise ValueError(
-                                f"worlds.csv: world {wid!r}: "
-                                f"column {col!r} must not be empty"
+                                f"worlds.csv: world {wid!r}: {exc}"
+                            ) from exc
+                        try:
+                            delay_i = _signed_int(dv, "delay_days")
+                        except ValueError as exc:
+                            raise ValueError(
+                                f"worlds.csv: world {wid!r}: {exc}"
+                            ) from exc
+
+                        # Rule 5c: start <= end, delay >= 1
+                        if end_d < start_d:
+                            raise ValueError(
+                                f"worlds.csv: world {wid!r}: cause "
+                                f"{cause_id!r} slot {slot_n}: "
+                                f"end_date {end_d} is before start_date "
+                                f"{start_d}"
+                            )
+                        if delay_i < 1:
+                            raise ValueError(
+                                f"worlds.csv: world {wid!r}: cause "
+                                f"{cause_id!r} slot {slot_n}: "
+                                f"delay_days {delay_i} must be >= 1"
                             )
 
-                        if kind_key == ("purchase_order", "receipt_date"):
-                            try:
-                                parsed = _OPEN_KINDS[kind_key](raw_val, field)
-                            except ValueError as exc:
+                        # Rule 5d: next slot's start > previous end
+                        if slot_list:
+                            prev_end = slot_list[-1]["end"]
+                            if start_d <= prev_end:
                                 raise ValueError(
-                                    f"worlds.csv: world {wid!r}: {exc}"
-                                ) from exc
-                            po = purchase_orders[tid]
-                            lo = po["planned_receipt_date"]
-                            if parsed < lo:
-                                raise ValueError(
-                                    f"worlds.csv: world {wid!r}: "
-                                    f"receipt_date {parsed} is before the PO's "
-                                    f"planned_receipt_date {lo}"
-                                )
-                            if parsed > SAMPLING_CAP:
-                                raise ValueError(
-                                    f"worlds.csv: world {wid!r}: "
-                                    f"receipt_date {parsed} is after the sampling cap "
-                                    f"({SAMPLING_CAP}, one year after DAY0); "
-                                    f"dates after the cap need stage 2"
-                                )
-                            overrides[("purchase_order", tid, "receipt_date")] = parsed
-
-                        elif kind_key == ("offer", "delay_business_days"):
-                            try:
-                                parsed = _signed_int(raw_val, field)
-                            except ValueError as exc:
-                                raise ValueError(
-                                    f"worlds.csv: world {wid!r}: {exc}"
-                                ) from exc
-                            overrides[("offer", tid, "delay_business_days")] = parsed
-
-                        elif kind_key == ("lane", "delay_days"):
-                            # New lane delay kind: signed integer
-                            try:
-                                parsed = _signed_int(raw_val, field)
-                            except ValueError as exc:
-                                raise ValueError(
-                                    f"worlds.csv: world {wid!r}: {exc}"
-                                ) from exc
-                            overrides[("lane", tid, "delay_days")] = parsed
-
-                    # Process episode columns per cause
-                    for cause_id, slots_info in _new_ep_info.items():
-                        slot_list = []
-                        prev_none = False
-                        max_slot_delay = None
-                        for slot_n, field_cols in slots_info.items():
-                            start_col = field_cols["start_date"]
-                            end_col = field_cols["end_date"]
-                            delay_col = field_cols["delay_days"]
-                            sv = row.get(start_col, "")
-                            ev = row.get(end_col, "")
-                            dv = row.get(delay_col, "")
-
-                            # Rule 5a: all three "none" or all three values
-                            is_none_triple = (sv == "none" and ev == "none" and dv == "none")
-                            is_val_triple = (sv != "none" and ev != "none" and dv != "none")
-                            if not is_none_triple and not is_val_triple:
-                                raise ValueError(
-                                    f"worlds.csv: world {wid!r}: cause {cause_id!r} "
-                                    f"slot {slot_n}: cells must be all 'none' or "
-                                    f"all values, got "
-                                    f"start={sv!r} end={ev!r} delay={dv!r}"
+                                    f"worlds.csv: world {wid!r}: cause "
+                                    f"{cause_id!r} slot {slot_n}: "
+                                    f"start_date {start_d} must be after "
+                                    f"previous slot end_date {prev_end}"
                                 )
 
-                            if is_none_triple:
-                                prev_none = True
-                            else:
-                                # Rule 5b: cannot have values after a "none" slot
-                                if prev_none:
-                                    raise ValueError(
-                                        f"worlds.csv: world {wid!r}: cause {cause_id!r} "
-                                        f"slot {slot_n} has values but an earlier "
-                                        f"slot was 'none'"
-                                    )
-                                # Parse the values
-                                try:
-                                    start_d = _date(sv, "start_date")
-                                except ValueError as exc:
-                                    raise ValueError(
-                                        f"worlds.csv: world {wid!r}: {exc}"
-                                    ) from exc
-                                try:
-                                    end_d = _date(ev, "end_date")
-                                except ValueError as exc:
-                                    raise ValueError(
-                                        f"worlds.csv: world {wid!r}: {exc}"
-                                    ) from exc
-                                try:
-                                    delay_i = _signed_int(dv, "delay_days")
-                                except ValueError as exc:
-                                    raise ValueError(
-                                        f"worlds.csv: world {wid!r}: {exc}"
-                                    ) from exc
+                        # Rule 5e: start_date bounds
+                        if _cause_horizons is not None and cause_id in _cause_horizons:
+                            H = _cause_horizons[cause_id]["H"]
+                            if start_d > H:
+                                raise ValueError(
+                                    f"worlds.csv: world {wid!r}: cause "
+                                    f"{cause_id!r} slot {slot_n}: "
+                                    f"start_date {start_d} is after the "
+                                    f"cause horizon H={H}"
+                                )
+                        # start_date >= DAY0, except slot 1 may start before
+                        # DAY0 if end_date >= DAY0
+                        if slot_n == 1:
+                            if start_d < DAY0 and end_d < DAY0:
+                                raise ValueError(
+                                    f"worlds.csv: world {wid!r}: cause "
+                                    f"{cause_id!r} slot 1: start_date "
+                                    f"{start_d} is before DAY0 {DAY0} and "
+                                    f"end_date {end_d} is also before DAY0"
+                                )
+                        else:
+                            if start_d < DAY0:
+                                raise ValueError(
+                                    f"worlds.csv: world {wid!r}: cause "
+                                    f"{cause_id!r} slot {slot_n}: "
+                                    f"start_date {start_d} is before "
+                                    f"DAY0 {DAY0} (only slot 1 may)"
+                                )
 
-                                # Rule 5c: start <= end, delay >= 1
-                                if end_d < start_d:
-                                    raise ValueError(
-                                        f"worlds.csv: world {wid!r}: cause "
-                                        f"{cause_id!r} slot {slot_n}: "
-                                        f"end_date {end_d} is before start_date "
-                                        f"{start_d}"
-                                    )
-                                if delay_i < 1:
-                                    raise ValueError(
-                                        f"worlds.csv: world {wid!r}: cause "
-                                        f"{cause_id!r} slot {slot_n}: "
-                                        f"delay_days {delay_i} must be >= 1"
-                                    )
+                        slot_list.append({
+                            "start": start_d,
+                            "end": end_d,
+                            "delay": delay_i,
+                        })
 
-                                # Rule 5d: next slot's start > previous end
-                                if slot_list:
-                                    prev_end = slot_list[-1]["end"]
-                                    if start_d <= prev_end:
-                                        raise ValueError(
-                                            f"worlds.csv: world {wid!r}: cause "
-                                            f"{cause_id!r} slot {slot_n}: "
-                                            f"start_date {start_d} must be after "
-                                            f"previous slot end_date {prev_end}"
-                                        )
+                episodes[cause_id] = slot_list
 
-                                # Rule 5e: start_date bounds
-                                if _cause_horizons is not None and cause_id in _cause_horizons:
-                                    H = _cause_horizons[cause_id]["H"]
-                                    if start_d > H:
-                                        raise ValueError(
-                                            f"worlds.csv: world {wid!r}: cause "
-                                            f"{cause_id!r} slot {slot_n}: "
-                                            f"start_date {start_d} is after the "
-                                            f"cause horizon H={H}"
-                                        )
-                                # start_date >= DAY0, except slot 1 may start before
-                                # DAY0 if end_date >= DAY0
-                                if slot_n == 1:
-                                    if start_d < DAY0 and end_d < DAY0:
-                                        raise ValueError(
-                                            f"worlds.csv: world {wid!r}: cause "
-                                            f"{cause_id!r} slot 1: start_date "
-                                            f"{start_d} is before DAY0 {DAY0} and "
-                                            f"end_date {end_d} is also before DAY0"
-                                        )
-                                else:
-                                    if start_d < DAY0:
-                                        raise ValueError(
-                                            f"worlds.csv: world {wid!r}: cause "
-                                            f"{cause_id!r} slot {slot_n}: "
-                                            f"start_date {start_d} is before "
-                                            f"DAY0 {DAY0} (only slot 1 may)"
-                                        )
+            # Cap check for offer columns (all offer columns, not only cause targets)
+            # Must be after episode processing so episodes dict is populated.
+            for col in var_cols:
+                ttype, tid, field = col_kinds[col]
+                if ttype != "offer" or field != "delay_business_days":
+                    continue
+                _d_val = overrides.get(("offer", tid, "delay_business_days"), 0)
+                # largest delay among filled slots of its cause, if it is a cause target
+                _cause_max_delay = 0
+                _cause_id_for_target = _cause_of_target.get(("offer", tid))
+                if _cause_id_for_target is not None:
+                    _ep_list = episodes.get(_cause_id_for_target, [])
+                    if _ep_list:
+                        _cause_max_delay = max(ep["delay"] for ep in _ep_list)
+                _offer_id = tid
+                if _d_val + _cause_max_delay > _room_offer[_offer_id]:
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: "
+                        f"offer {_offer_id!r} "
+                        f"delay_business_days {_d_val} "
+                        f"plus cause max episode delay {_cause_max_delay} "
+                        f"exceeds room {_room_offer[_offer_id]}"
+                    )
 
-                                if max_slot_delay is None or delay_i > max_slot_delay:
-                                    max_slot_delay = delay_i
-                                slot_list.append({
-                                    "start": start_d,
-                                    "end": end_d,
-                                    "delay": delay_i,
-                                })
+            # Cap check for lane columns (all lane columns, not only cause targets)
+            for col in var_cols:
+                ttype, tid, field = col_kinds[col]
+                if ttype != "lane" or field != "delay_days":
+                    continue
+                _ld_val = overrides.get(("lane", tid, "delay_days"), 0)
+                # largest delay among filled slots of its cause, if it is a cause target
+                _cause_max_delay = 0
+                _cause_id_for_target = _cause_of_target.get(("lane", tid))
+                if _cause_id_for_target is not None:
+                    _ep_list = episodes.get(_cause_id_for_target, [])
+                    if _ep_list:
+                        _cause_max_delay = max(ep["delay"] for ep in _ep_list)
+                if _ld_val + _cause_max_delay > _room_lane[tid]:
+                    raise ValueError(
+                        f"worlds.csv: world {wid!r}: "
+                        f"lane {tid!r} delay_days {_ld_val} "
+                        f"plus cause max episode delay {_cause_max_delay} "
+                        f"exceeds room {_room_lane[tid]}"
+                    )
 
-                        episodes[cause_id] = slot_list
-
-                        # Rule 5f: cap check using room_t per target
-                        if max_slot_delay is not None and _causes is not None:
-                            for _cr in _causes:
-                                if _cr["cause_id"] != cause_id:
-                                    continue
-                                _tt = _cr["target_type"]
-                                _ti = _cr["target_id"]
-                                _ld = _cr["lead_days"]
-                                if _tt in ("offer", "purchase_order"):
-                                    if _tt == "purchase_order":
-                                        _offer_id = _cr["source_id"]
-                                        _delay_col = f"offer.{_offer_id}.delay_business_days"
-                                        _ld_use = offers[_offer_id]["lead_days"]
-                                    else:
-                                        _offer_id = _ti
-                                        _delay_col = f"offer.{_offer_id}.delay_business_days"
-                                        _ld_use = _ld
-                                    _raw_delay = row.get(_delay_col)
-                                    if _raw_delay is not None and _raw_delay != "":
-                                        try:
-                                            _d_val = _signed_int(_raw_delay, "delay_business_days")
-                                        except ValueError:
-                                            _d_val = 0
-                                        # room_t for this offer: business days from
-                                        # latest promised date (over DAY0 and all
-                                        # recovery_purchases rows) to SAMPLING_CAP
-                                        _L_offer = calendar.next_business_day(
-                                            DAY0 + timedelta(days=_ld_use)
-                                        )
-                                        for (_rp_sid, _rp_oid), _rp in recovery_purchases.items():
-                                            if _rp_oid == _offer_id:
-                                                _rp_promised = calendar.next_business_day(
-                                                    _rp["action_date"] + timedelta(days=_ld_use)
-                                                )
-                                                if _rp_promised > _L_offer:
-                                                    _L_offer = _rp_promised
-                                        _room_offer = calendar.business_days_between(
-                                            _L_offer, SAMPLING_CAP
-                                        )
-                                        if _d_val + max_slot_delay > _room_offer:
-                                            raise ValueError(
-                                                f"worlds.csv: world {wid!r}: "
-                                                f"offer {_offer_id!r} "
-                                                f"delay_business_days {_d_val} "
-                                                f"plus cause {cause_id!r} max "
-                                                f"episode delay {max_slot_delay} "
-                                                f"exceeds room {_room_offer}"
-                                            )
-                                elif _tt == "lane":
-                                    _lane_delay_col = f"lane.{_ti}.delay_days"
-                                    _raw_lane_delay = row.get(_lane_delay_col)
-                                    if _raw_lane_delay is not None and _raw_lane_delay != "":
-                                        try:
-                                            _ld_val = _signed_int(
-                                                _raw_lane_delay, "delay_days"
-                                            )
-                                        except ValueError:
-                                            _ld_val = 0
-                                        # room_t for this lane: calendar days from
-                                        # latest base arrival (over DAY0 and all
-                                        # recovery_transfers rows) to SAMPLING_CAP
-                                        _L_lane = DAY0 + timedelta(days=_ld)
-                                        for (_rt_sid, _rt_lid, _rt_cid), _rt in recovery_transfers.items():
-                                            if _rt_lid == _ti:
-                                                _rt_arrival = _rt["action_date"] + timedelta(days=_ld)
-                                                if _rt_arrival > _L_lane:
-                                                    _L_lane = _rt_arrival
-                                        _room_lane = (SAMPLING_CAP - _L_lane).days
-                                        if _ld_val + max_slot_delay > _room_lane:
-                                            raise ValueError(
-                                                f"worlds.csv: world {wid!r}: "
-                                                f"lane {_ti!r} delay_days {_ld_val} "
-                                                f"plus cause {cause_id!r} max "
-                                                f"episode delay {max_slot_delay} "
-                                                f"exceeds room {_room_lane}"
-                                            )
-
-                    draw_totals[draw] = draw_totals.get(draw, 0) + weight
-                    worlds_db.append({
-                        "world_id": wid,
-                        "draw": draw,
-                        "weight": weight,
-                        "overrides": overrides,
-                        "tags": tags,
-                        "episodes": episodes,
-                    })
+            draw_totals[draw] = draw_totals.get(draw, 0) + weight
+            worlds_db.append({
+                "world_id": wid,
+                "draw": draw,
+                "weight": weight,
+                "overrides": overrides,
+                "episodes": episodes,
+            })
 
         if not worlds_db:
             raise ValueError("worlds.csv: must contain at least one world")
@@ -1279,7 +1156,7 @@ def load_all(data_dir=None) -> dict:
     max_offer_lead = max(o["lead_days"] for o in offers.values())
     sim_end_candidates.append(DAY0 + timedelta(days=max_offer_lead))
 
-    # Worlds: receipt_date overrides, offer delay receipts (at DAY0), lane leads
+    # Worlds: receipt_date overrides, offer delay receipts (at DAY0), lane delays
     if worlds_db is not None:
         from engine.simulate import offer_receipt_date as _ord
         for w in worlds_db:
@@ -1299,8 +1176,9 @@ def load_all(data_dir=None) -> dict:
                             f"({SAMPLING_CAP}, one year after DAY0)"
                         )
                     sim_end_candidates.append(rd)
-                elif ttype == "lane" and field == "lead_days":
-                    sim_end_candidates.append(DAY0 + timedelta(days=val))
+                elif ttype == "lane" and field == "delay_days" and val > 0:
+                    # Add the latest base arrival of this lane's orders plus the delay
+                    sim_end_candidates.append(_L_lane_pre[tid] + timedelta(days=val))
 
     max_sched = max(sim_end_candidates)
     max_prod_days = max(p["production_days"] for p in products.values())

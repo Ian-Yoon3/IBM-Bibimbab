@@ -112,8 +112,6 @@ class TestVariantsRun(_VariantCase):
         self.assertEqual(_counts(est, "offer.OX9"), (6, 1, 3, 2))
         self.assertEqual(_counts(est, "lane.LZ1"), (15, 1, 10, 4))
         self.assertEqual(_counts(est, "lane.LY2"), (10, 0, 6, 4))
-        self.assertAlmostEqual(est["causes"]["GATE"]["p_active"], 0.083070, places=6)
-        self.assertAlmostEqual(est["causes"]["ROAD"]["p_active"], 0.083501, places=6)
         self.assertIn("DX5", results)
 
     def test_v02_two_variables_share_one_source(self):
@@ -150,8 +148,9 @@ class TestVariantsRun(_VariantCase):
                 r["episode_id"] = ""
         _write(self.h / "shipments.csv", rows)
         est, _, _, _ = self.run_chain()
-        # 1 - (1 + 8/365)^-1
-        self.assertAlmostEqual(est["causes"]["K1"]["p_active"], 0.021448, places=6)
+        # With no K1 episodes: n=0, rate_shape=1
+        self.assertEqual(est["causes"]["K1"]["n"], 0)
+        self.assertEqual(est["causes"]["K1"]["rate_shape"], 1)
 
     def test_v05_source_with_no_records(self):
         _write(self.h / "shipments.csv",
@@ -162,7 +161,7 @@ class TestVariantsRun(_VariantCase):
 
     def _check_k2_certain(self):
         est, worlds, _, _ = self.run_chain()
-        self.assertEqual(est["causes"]["K2"]["p_active"], 1.0)
+        self.assertEqual(est["causes"]["K2"]["open_on_day0"], True)
         # Derived K2 tag = 1 in every world; K2 ep1_start_date = 2026-11-08, delay = 2
         db = load_all(self.d)  # worlds.csv already written by run_chain
         for w in db["worlds"]:
@@ -186,8 +185,9 @@ class TestVariantsRun(_VariantCase):
     def test_v07_third_cause_on_an_unused_offer(self):
         _append(self.d / "causes.csv", "K3,business,offer,OF03")
         est, _, _, _ = self.run_chain()
-        # w = 2026-11-09 to 2026-11-16 (11-14 is a Saturday) = 7 days. 1 - (1 + 7/365)^-1
-        self.assertAlmostEqual(est["causes"]["K3"]["p_active"], 0.018817, places=6)
+        # K3 is a new cause with 0 episodes: rate_shape=1
+        self.assertEqual(est["causes"]["K3"]["n"], 0)
+        self.assertEqual(est["causes"]["K3"]["rate_shape"], 1)
 
     def test_v08_decision_day_on_a_saturday(self):
         _map_text(self.d, _shift_dates(5))
@@ -207,9 +207,9 @@ class TestVariantsRun(_VariantCase):
         (self.h / "period.csv").write_text(
             "start_date,end_date\n2024-11-09,2026-11-08\n", encoding="utf-8")
         est, _, _, _ = self.run_chain()
-        # T = 730. 1 - (1 + 8/730)^-4 and 1 - (1 + 4/730)^-8
-        self.assertAlmostEqual(est["causes"]["K1"]["p_active"], 0.042660, places=6)
-        self.assertAlmostEqual(est["causes"]["K2"]["p_active"], 0.042774, places=6)
+        # T = 730
+        self.assertEqual(est["causes"]["K1"]["T_days"], 730)
+        self.assertEqual(est["causes"]["K2"]["T_days"], 730)
 
 
 # ---------------------------------------------------------------------------

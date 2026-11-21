@@ -521,13 +521,15 @@ class TestCacheTwoWorlds(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestHorizonCheck(unittest.TestCase):
-    """Action with promised date > H raises ValueError on new-format world; not on legacy."""
+    """Action with promised date > H raises ValueError on new-format world.
+
+    A world with no episodes (episode columns all 'none') has world_episodes=None,
+    so the H check is not done and the same action does not raise.
+    """
 
     # Explicit purchase of OF02 on 2026-11-25:
     #   promised = next_biz(2026-11-25 + 3) = next_biz(2026-11-28)
-    #   2026-11-28 is Saturday -> next_biz = 2026-12-01 (skipping Sat 29, Sun 30)
-    # Wait: Nov 28=Sat, Nov 29=Sun, Dec 1=Mon? Nov 30=Mon. Actually:
-    # Nov 28=Sat, Nov 29=Sun, Nov 30=Mon (business). next_biz(Nov 28)=Nov 30.
+    #   Nov 28=Sat, Nov 29=Sun, Nov 30=Mon (business). next_biz(Nov 28)=Nov 30.
     # K1 H in standard data = 2026-11-17. Nov 30 > Nov 17 -> ValueError.
 
     _ACTION = {
@@ -541,9 +543,6 @@ class TestHorizonCheck(unittest.TestCase):
     def _new_world_row(self):
         return "N1,0,1,2026-11-17,0,0,0,none,none,none,none,none,none"
 
-    def _legacy_world_row(self):
-        return "W1,0,1,2026-11-17,0,2,4"
-
     def test_new_format_raises_value_error(self):
         from engine.simulate import simulate
         with tempfile.TemporaryDirectory() as tmp:
@@ -554,14 +553,24 @@ class TestHorizonCheck(unittest.TestCase):
             with self.assertRaises(ValueError):
                 simulate([self._ACTION], "D01", db_w)
 
-    def test_legacy_world_no_error(self):
+    def test_no_causes_csv_world_no_error(self):
+        """Without causes.csv there are no episode columns; world_episodes=None skips H check."""
         from engine.simulate import simulate
+        _NO_CAUSE_HDR = (
+            "world_id,draw,weight,"
+            "purchase_order.PO01.receipt_date,"
+            "offer.OF02.delay_business_days,"
+            "lane.LN01.delay_days,"
+            "lane.LN02.delay_days"
+        )
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
-            _write_worlds(dd, _LEGACY_HDR, self._legacy_world_row())
+            # Remove causes.csv so episode columns are not required
+            (dd / "causes.csv").unlink(missing_ok=True)
+            _write_worlds(dd, _NO_CAUSE_HDR, "W1,0,1,2026-11-17,0,0,0")
             db = load_all(dd)
             db_w = apply_world(db, db["worlds"][0])
-            # Should not raise
+            # world_episodes is None (no episodes dict) -> no H check -> no raise
             simulate([self._ACTION], "D01", db_w)
 
 
@@ -619,11 +628,11 @@ class TestDerivedTags(unittest.TestCase):
         self.assertEqual(tags.get("K1"), 0)
         self.assertEqual(tags.get("K2"), 0)
 
-    def test_legacy_world_returns_tags(self):
-        """Legacy world (empty episodes dict) returns world.get('tags', {})."""
-        w = {"overrides": {}, "episodes": {}, "tags": {"K1": 1}}
+    def test_world_without_episodes_returns_empty(self):
+        """A world without episodes (empty dict) returns {} (legacy tags no longer used)."""
+        w = {"overrides": {}, "episodes": {}}
         tags = derived_tags(w, self.db)
-        self.assertEqual(tags, {"K1": 1})
+        self.assertEqual(tags, {})
 
 
 # ---------------------------------------------------------------------------
@@ -631,7 +640,12 @@ class TestDerivedTags(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestEquivalenceNewVsLegacy(unittest.TestCase):
-    """For N1-N7, legacy world with equivalent lead_days gives same late counts."""
+    """For N1-N7, the new-format world with equivalent delay_days gives same late counts
+    as the equivalent world computed directly (formerly compared against legacy format).
+
+    LN01 base lead=2, LN02 base lead=4.
+    old lead X -> new delay = X - base.
+    """
 
     def _late_new(self, header, new_row):
         with tempfile.TemporaryDirectory() as tmp:
@@ -640,12 +654,26 @@ class TestEquivalenceNewVsLegacy(unittest.TestCase):
             db = load_all(dd)
             return evaluate_worlds("D01", db)
 
-    def _late_legacy(self, po01_date, of02_delay, ln01_lead, ln02_lead):
-        """Build legacy world and evaluate."""
-        row = f"WL,0,1,{po01_date},{of02_delay},{ln01_lead},{ln02_lead}"
+    def _late_equiv(self, po01_date, of02_delay, ln01_delay, ln02_delay):
+        """Build new-format world with given delays (no episodes) and evaluate.
+
+        Uses _BASE_HDR but with causes.csv removed, since without causes there
+        are no episode columns required.  ln01_delay = old_lead - 2 (base LN01),
+        ln02_delay = old_lead - 4 (base LN02).
+        """
+        # Use a header without episode columns (no causes.csv)
+        _NO_CAUSE_HDR = (
+            "world_id,draw,weight,"
+            "purchase_order.PO01.receipt_date,"
+            "offer.OF02.delay_business_days,"
+            "lane.LN01.delay_days,"
+            "lane.LN02.delay_days"
+        )
+        row = f"WL,0,1,{po01_date},{of02_delay},{ln01_delay},{ln02_delay}"
         with tempfile.TemporaryDirectory() as tmp:
             dd = _copy_data(tmp)
-            _write_worlds(dd, _LEGACY_HDR, row)
+            (dd / "causes.csv").unlink(missing_ok=True)
+            _write_worlds(dd, _NO_CAUSE_HDR, row)
             db = load_all(dd)
             return evaluate_worlds("D01", db)
 
@@ -657,74 +685,74 @@ class TestEquivalenceNewVsLegacy(unittest.TestCase):
             "HYBRID": _late(result, "HYBRID"),
         }
 
-    def _check(self, header, new_row, po01_date, of02_delay, ln01_lead, ln02_lead):
+    def _check(self, header, new_row, po01_date, of02_delay, ln01_delay, ln02_delay):
         new_result = self._late_new(header, new_row)
-        leg_result = self._late_legacy(po01_date, of02_delay, ln01_lead, ln02_lead)
-        self.assertEqual(self._lates(new_result), self._lates(leg_result))
+        equiv_result = self._late_equiv(po01_date, of02_delay, ln01_delay, ln02_delay)
+        self.assertEqual(self._lates(new_result), self._lates(equiv_result))
 
     def test_n1_equiv(self):
-        """N1: no shock; OF02 delay=0, LN01 lead=2, LN02 lead=4."""
+        """N1: no shock; OF02 delay=0, LN01 delay=0 (lead 2→delay 0), LN02 delay=0 (lead 4→delay 0)."""
         self._check(
             _BASE_HDR,
             "N1,0,1,2026-11-17,0,0,0,none,none,none,none,none,none",
-            "2026-11-17", 0, 2, 4,
+            "2026-11-17", 0, 0, 0,
         )
 
     def test_n2_equiv(self):
-        """N2: K1 shock=2 for OF02; delay=0+2=2; LN1=2, LN2=4."""
+        """N2: K1 shock=2 for OF02; of02_delay=0, LN1 delay=0, LN2 delay=0."""
         self._check(
             _BASE_HDR,
             "N2,0,1,2026-11-19,0,0,0,2026-11-10,2026-11-11,2,none,none,none",
-            "2026-11-19", 2, 2, 4,
+            "2026-11-19", 2, 0, 0,
         )
 
     def test_n2b_equiv(self):
-        """N2b: K1 shock=2, own=-1; delay=-1+2=1; LN1=2, LN2=4."""
+        """N2b: K1 shock=2, own=-1; of02_delay=-1, LN1 delay=0, LN2 delay=0."""
         self._check(
             _BASE_HDR,
             "N2b,0,1,2026-11-19,-1,0,0,2026-11-10,2026-11-11,2,none,none,none",
-            "2026-11-19", 1, 2, 4,
+            "2026-11-19", 1, 0, 0,
         )
 
     def test_n3_equiv(self):
-        """N3: K1 ep no overlap for OF02; delay=0; LN1=2, LN2=4."""
+        """N3: K1 ep no overlap for OF02; delay=0; LN1 delay=0, LN2 delay=0."""
         self._check(
             _BASE_HDR,
             "N3,0,1,2026-11-19,0,0,0,2026-11-13,2026-11-14,3,none,none,none",
-            "2026-11-19", 0, 2, 4,
+            "2026-11-19", 0, 0, 0,
         )
 
     def test_n4_equiv(self):
         """N4: K2 shock=2 for LN02; LN01 no overlap.
-        LN01 lead = max(1, 2+0+0)=2; LN02 lead = max(1, 4+0+2)=6."""
+        LN01 delay=0 (lead 2→delay 0); LN02 delay=2 (lead 4+2=6→delay 2)."""
         self._check(
             _BASE_HDR,
             "N4,0,1,2026-11-17,0,0,0,none,none,none,2026-11-12,2026-11-12,2",
-            "2026-11-17", 0, 2, 6,
+            "2026-11-17", 0, 0, 2,
         )
 
     def test_n5_equiv(self):
-        """N5: LN01 own=-1, K2 shock=1; LN01 lead=max(1,2-1+1)=2; LN02 lead=max(1,4+0+1)=5."""
+        """N5: LN01 own=-1, K2 shock=1; LN01 delay=-1, LN02 delay=1."""
         self._check(
             _BASE_HDR,
             "N5,0,1,2026-11-17,0,-1,0,none,none,none,2026-11-05,2026-11-10,1",
-            "2026-11-17", 0, 2, 5,
+            "2026-11-17", 0, -1, 1,
         )
 
     def test_n6_equiv(self):
-        """N6: LN01 own=-5, no shock; lead=max(1,2-5+0)=1; LN02 lead=4."""
+        """N6: LN01 own=-5, no shock; LN01 delay=-5, LN02 delay=0."""
         self._check(
             _BASE_HDR,
             "N6,0,1,2026-11-17,0,-5,0,none,none,none,none,none,none",
-            "2026-11-17", 0, 1, 4,
+            "2026-11-17", 0, -5, 0,
         )
 
     def test_n7_equiv(self):
-        """N7: K1 ep1 overlaps OF02 (shock=1); delay=0+1=1; LN1=2, LN2=4."""
+        """N7: K1 ep1 overlaps OF02 (shock=1); delay=0+1=1; LN1 delay=0, LN2 delay=0."""
         self._check(
             _EXT_HDR,
             "N7,0,1,2026-11-17,0,0,0,2026-11-09,2026-11-09,1,2026-11-11,2026-11-12,4,none,none,none",
-            "2026-11-17", 1, 2, 4,
+            "2026-11-17", 1, 0, 0,
         )
 
 

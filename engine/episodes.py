@@ -29,13 +29,12 @@ def first_overlap_delay(episodes: list, order_date: date, promised_date: date) -
 def derived_tags(world: dict, db: dict) -> dict:
     """Return {cause_id: 0 or 1} for a world.
 
-    For a new-format world (non-empty "episodes" dict):
-        1 if any episode of the cause has start <= H0 and end >= DAY0, else 0.
-    For a legacy world return world.get("tags", {}).
+    1 if any episode of the cause has start <= H0 and end >= DAY0, else 0.
+    A world without episodes returns {}.
     """
     episodes = world.get("episodes", {})
     if not episodes:
-        return world.get("tags", {})
+        return {}
 
     cause_horizons = db.get("cause_horizons") or {}
     DAY0 = db["DAY0"]

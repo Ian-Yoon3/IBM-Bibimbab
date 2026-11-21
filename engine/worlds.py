@@ -19,8 +19,7 @@ def apply_world(db: dict, world: dict) -> dict:
     Supported override kinds:
       ("purchase_order", po_id, "receipt_date")          – update disruption date
       ("offer",          offer_id, "delay_business_days") – copy offer with delay
-      ("lane",           lane_id,  "lead_days")           – copy lane with lead (legacy)
-      ("lane",           lane_id,  "delay_days")          – copy lane with delay (new)
+      ("lane",           lane_id,  "delay_days")          – copy lane with delay
     db itself is never mutated.
     """
     db2 = dict(db)
@@ -55,12 +54,6 @@ def apply_world(db: dict, world: dict) -> dict:
             offer_copy = dict(new_offers[tid])
             offer_copy["delay_business_days"] = value
             new_offers[tid] = offer_copy
-        elif ttype == "lane" and field == "lead_days":
-            if new_lanes is None:
-                new_lanes = dict(db["lanes"])
-            lane_copy = dict(new_lanes[tid])
-            lane_copy["lead_days"] = value
-            new_lanes[tid] = lane_copy
         elif ttype == "lane" and field == "delay_days":
             if new_lanes is None:
                 new_lanes = dict(db["lanes"])
