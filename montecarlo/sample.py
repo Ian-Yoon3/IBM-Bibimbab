@@ -146,6 +146,52 @@ def _compute_slot_count(rate_shape: int, T_free_days: float,
 
 
 # ---------------------------------------------------------------------------
+# Public slot-count helpers
+# ---------------------------------------------------------------------------
+
+def slot_count_fixed_rate(lam_per_day: float, D_k: int, has_open: bool) -> int:
+    """Smallest s with P(Poisson(lam_per_day * D_k) > s) < 1e-6, plus 1 if has_open.
+
+    Returns 0 (plus 1 if has_open) when lam_per_day * D_k == 0.
+    """
+    mu = lam_per_day * D_k
+    if mu == 0.0:
+        s = 0
+    else:
+        # Poisson CDF via cumulative sum of pmf terms
+        # pmf(k) = exp(-mu) * mu^k / k!
+        import math as _math
+        log_pmf = -mu  # log pmf(0) = -mu
+        cdf = _math.exp(log_pmf)  # pmf(0)
+        s = 0
+        while True:
+            if 1.0 - cdf < 1e-6:
+                break
+            s += 1
+            log_pmf += _math.log(mu) - _math.log(s)
+            cdf += _math.exp(log_pmf)
+            if s > 100000:
+                break
+    if has_open:
+        s += 1
+    return max(s, 1) if has_open else max(s, 0)
+
+
+def slot_count_posterior(rate_shape: int, T_free_days: float, D_k: int,
+                         has_open: bool, scale: float = 1.0) -> int:
+    """Slot count using the posterior rule with T_free_days / scale.
+
+    scale 0 -> 0 slots (plus 1 if has_open). scale 1.0 == _compute_slot_count.
+    """
+    if scale == 0.0:
+        s = 0
+        if has_open:
+            s += 1
+        return max(s, 1) if has_open else max(s, 0)
+    return _compute_slot_count(rate_shape, T_free_days / scale, D_k, has_open)
+
+
+# ---------------------------------------------------------------------------
 # Cap / room computations
 # ---------------------------------------------------------------------------
 
@@ -306,12 +352,51 @@ def _generate_episodes(cause_id: str, est_cp: dict, draw_cp: dict,
 # ---------------------------------------------------------------------------
 
 def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
-                  method: str = "lhs") -> tuple:
+                  method: str = "lhs", *,
+                  rate_fixed: "dict | None" = None,
+                  rate_scale: "float | None" = None,
+                  slot_counts: "dict | None" = None) -> tuple:
     """Sample M*N worlds using two-level parameter sampling.
+
+    Parameters
+    ----------
+    rate_fixed : dict cause_id -> lambda per day, optional
+        Replace the drawn lambda for each listed cause after drawing.
+    rate_scale : float, optional
+        Multiply every cause's drawn lambda by this factor after drawing.
+        Cannot be combined with rate_fixed.
+    slot_counts : dict cause_id -> int, optional
+        Override the computed slot counts.
 
     Returns (worlds, meta) where worlds is a list of dicts and meta contains
     raised_count, cut_count, slot_counts, overflow_counts.
     """
+    import math as _math
+
+    # ── Validate rate_fixed / rate_scale args ─────────────────────────────────
+    if rate_fixed is not None and rate_scale is not None:
+        raise ValueError(
+            "sample_worlds: rate_fixed and rate_scale cannot be used together"
+        )
+    if rate_fixed is not None:
+        cause_ids_set = set(est["causes"].keys())
+        for cid, lam in rate_fixed.items():
+            if cid not in cause_ids_set:
+                raise ValueError(
+                    f"sample_worlds: rate_fixed cause_id {cid!r} is not in est"
+                )
+            if not (_math.isfinite(lam) and lam >= 0):
+                raise ValueError(
+                    f"sample_worlds: rate_fixed[{cid!r}] = {lam!r} "
+                    "must be a finite float >= 0"
+                )
+    if rate_scale is not None:
+        if not (_math.isfinite(rate_scale) and rate_scale >= 0):
+            raise ValueError(
+                f"sample_worlds: rate_scale = {rate_scale!r} "
+                "must be a finite float >= 0"
+            )
+
     rng  = random.Random(seed)
     cal  = db["calendar"]
     day0 = db["DAY0"]
@@ -323,7 +408,7 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
 
     # ── Slot counts per cause ─────────────────────────────────────────────────
     cause_horizons = db.get("cause_horizons") or {}
-    slot_counts: dict = {}
+    _computed_slot_counts: dict = {}
     for cid in cause_ids:
         cp = est["causes"][cid]
         H_k = cause_horizons.get(cid, {}).get("H")
@@ -335,7 +420,32 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
         S_k = _compute_slot_count(
             cp["rate_shape"], cp["T_free_days"], D_k, has_open
         )
-        slot_counts[cid] = S_k
+        _computed_slot_counts[cid] = S_k
+
+    # Apply slot_counts override (or use computed)
+    if slot_counts is not None:
+        _override_sc = slot_counts
+        # Validate override values
+        for cid, sc in _override_sc.items():
+            if cid not in set(cause_ids):
+                raise ValueError(
+                    f"sample_worlds: slot_counts cause_id {cid!r} is not in est"
+                )
+            if not isinstance(sc, int) or sc < 0:
+                raise ValueError(
+                    f"sample_worlds: slot_counts[{cid!r}] = {sc!r} must be int >= 0"
+                )
+            cp = est["causes"][cid]
+            has_open = cp.get("open_episode") is not None
+            if has_open and sc < 1:
+                raise ValueError(
+                    f"sample_worlds: slot_counts[{cid!r}] = {sc!r} "
+                    "must be >= 1 for a cause with an open episode"
+                )
+        slot_counts = dict(_computed_slot_counts)
+        slot_counts.update(_override_sc)
+    else:
+        slot_counts = _computed_slot_counts
 
     # Total LHS dimensions
     d = n_vars + sum(3 * slot_counts[cid] for cid in cause_ids)
@@ -440,6 +550,14 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
 
     for m in range(M):
         draw_params = _draw_parameters(est, rng)
+
+        # Apply rate override AFTER drawing (so rng stream is unchanged)
+        if rate_fixed is not None:
+            for cid, lam in rate_fixed.items():
+                draw_params["causes"][cid]["lambda"] = lam
+        elif rate_scale is not None:
+            for cid in cause_ids:
+                draw_params["causes"][cid]["lambda"] *= rate_scale
 
         if method == "lhs":
             uniforms = lhs_uniforms(N, d, rng)

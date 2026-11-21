@@ -47,6 +47,9 @@ INPUT_FILES = {
 
 OUTPUT_FILES = ["results.csv", "row_map.csv", "run_record.json"]
 
+# grid.json is optional — listed in OUTPUT_FILES only when built
+_GRID_FILE = "grid.json"
+
 
 # ---------------------------------------------------------------------------
 # 1. normalised_sha256
@@ -350,6 +353,28 @@ def check_run(run_dir, data_dir) -> dict:
             if got != expected:
                 diffs.append(("changed", name))
 
+    # Check for a grid.json that exists but is not covered by the fingerprint.
+    grid_path = run_dir / _GRID_FILE
+    if grid_path.exists() and _GRID_FILE not in fp_outputs:
+        # Format --out: POSIX-relative to REPO_ROOT if inside it, else absolute.
+        try:
+            out_posix = run_dir.relative_to(REPO_ROOT).as_posix()
+        except ValueError:
+            out_posix = str(run_dir)
+        rerun = (
+            f"python -m montecarlo.run"
+            f" --data {fp['data_dir']}"
+            f" --out {out_posix}"
+            f" --M {settings['M']}"
+            f" --N {settings['N']}"
+            f" --seed {settings['seed']}"
+        )
+        if settings.get("method") == "plain":
+            rerun += " --plain"
+        raise ValueError(
+            f"grid.json is not covered by the fingerprint\n{rerun}"
+        )
+
     if diffs:
         changed = sorted(f for cat, f in diffs if cat == "changed")
         added = sorted(f for cat, f in diffs if cat == "added")
@@ -386,7 +411,44 @@ def check_run(run_dir, data_dir) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 7. evaluate_run
+# 7. grid_status and load_grid
+# ---------------------------------------------------------------------------
+
+def grid_status(run_dir) -> str:
+    """Return "present" or "absent" based on fingerprint outputs."""
+    run_dir = Path(run_dir).resolve()
+    fp_path = run_dir / "fingerprint.json"
+    if not fp_path.exists():
+        return "absent"
+    with fp_path.open(encoding="utf-8") as fh:
+        fp = json.load(fh)
+    if _GRID_FILE in fp.get("outputs", {}):
+        return "present"
+    return "absent"
+
+
+def load_grid(run_dir, data_dir) -> dict:
+    """Load grid.json from run_dir.
+
+    Calls check_run first (raises ValueError if fingerprint invalid).
+    Raises ValueError if grid.json is not listed in fingerprint outputs.
+    Returns the parsed grid dict.
+    """
+    run_dir = Path(run_dir).resolve()
+    data_dir = Path(data_dir).resolve()
+    fp = check_run(run_dir, data_dir)
+    if _GRID_FILE not in fp.get("outputs", {}):
+        raise ValueError(
+            f"run folder {run_dir} has no grid.json in its fingerprint outputs; "
+            "run with --grid to build it"
+        )
+    grid_path = run_dir / _GRID_FILE
+    with grid_path.open(encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+# ---------------------------------------------------------------------------
+# 8. evaluate_run
 # ---------------------------------------------------------------------------
 
 # Cache for parsed result tables: (resolved_run_dir_str, results_hash, row_map_hash) -> parsed data
@@ -592,6 +654,8 @@ def main():
     except ValueError:
         run_display = str(run_dir)
     print(f"run {run_display}: inputs, code and outputs match")
+    gs = grid_status(run_dir)
+    print(f"grid: {gs}")
     sys.exit(0)
 
 
