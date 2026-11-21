@@ -13,6 +13,7 @@ Usage:
 import argparse
 import csv
 import json
+import os
 import pathlib
 import time
 from datetime import date, datetime
@@ -200,7 +201,7 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
 def build_run(data_dir, out_dir, M: int = 1000, N: int = 200,
               seed: int = 20261109, method: str = "lhs",
               grid: bool = False, target_se: float = 0.02,
-              pilot_M: int = 100, max_M: int = 2000) -> dict:
+              pilot_M: int = 100, max_M: int = 2000, workers: int = 1) -> dict:
     """Generate a complete run folder with worlds.csv, result tables, and fingerprint.
 
     Parameters
@@ -296,7 +297,8 @@ def build_run(data_dir, out_dir, M: int = 1000, N: int = 200,
     if grid:
         from montecarlo.grid import build_grid
         build_grid(data_dir, out_dir, N=N, seed=seed, method=method,
-                   target_se=target_se, pilot_M=pilot_M, max_M=max_M)
+                   target_se=target_se, pilot_M=pilot_M, max_M=max_M,
+                   workers=workers)
 
     # 8. Write fingerprint.json LAST with output hashes.
     output_names = list(OUTPUT_FILES)
@@ -317,7 +319,7 @@ def build_run(data_dir, out_dir, M: int = 1000, N: int = 200,
 # ---------------------------------------------------------------------------
 
 def grid_only(data_dir, out_dir, target_se: float = 0.02,
-              pilot_M: int = 100, max_M: int = 2000) -> dict:
+              pilot_M: int = 100, max_M: int = 2000, workers: int = 1) -> dict:
     """Build (or rebuild) grid.json for an existing run folder.
 
     1. Reads fingerprint.json; verifies inputs, code and the three main outputs.
@@ -390,7 +392,8 @@ def grid_only(data_dir, out_dir, target_se: float = 0.02,
 
     from montecarlo.grid import build_grid
     grid_dict = build_grid(data_dir, out_dir, N=N, seed=seed, method=method,
-                           target_se=target_se, pilot_M=pilot_M, max_M=max_M)
+                           target_se=target_se, pilot_M=pilot_M, max_M=max_M,
+                           workers=workers)
 
     # Add "grid.json" to fingerprint["outputs"] and rewrite.
     fp_no_grid["outputs"]["grid.json"] = normalised_sha256(out_dir / "grid.json")
@@ -423,6 +426,9 @@ def main():
                    help="pilot draws for grid analysis (default 100)")
     p.add_argument("--max-M", type=int, default=2000,
                    help="max draws for grid analysis (default 2000)")
+    p.add_argument("--workers", type=int, default=os.cpu_count() or 1,
+                   help="worker processes for the grid (default: all cores; "
+                        "results are identical for any value)")
     args = p.parse_args()
 
     if args.grid_only and args.no_grid:
@@ -435,17 +441,20 @@ def main():
         grid_dict = grid_only(args.data, args.out,
                               target_se=args.target_se,
                               pilot_M=args.pilot_M,
-                              max_M=args.max_M)
+                              max_M=args.max_M,
+                              workers=args.workers)
         elapsed = time.monotonic() - t0
         _print_grid_summary(grid_dict, elapsed)
         return
 
     do_grid = not args.no_grid
+    t0 = time.monotonic()
     record = build_run(args.data, args.out, args.M, args.N, args.seed, method,
                        grid=do_grid,
                        target_se=args.target_se,
                        pilot_M=args.pilot_M,
-                       max_M=args.max_M)
+                       max_M=args.max_M,
+                       workers=args.workers)
 
     print(f"Done in {record['run_time_s']:.1f}s")
     print(f"  rows={record['rows']}, distinct={record['distinct_worlds']}, "
@@ -457,6 +466,9 @@ def main():
     rt = record.get("result_table", {})
     print(f"  result_table: distinct_worlds={rt.get('distinct_worlds')}, "
           f"evaluation_time_s={rt.get('evaluation_time_s')}")
+    if do_grid:
+        with (pathlib.Path(args.out) / "grid.json").open(encoding="utf-8") as fh:
+            _print_grid_summary(json.load(fh), time.monotonic() - t0)
 
 
 def _print_grid_summary(grid_dict: dict, total_time: float):

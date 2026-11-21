@@ -609,6 +609,146 @@ class TestGridBuild(unittest.TestCase):
         self.assertGreater(len(m1_check), 0, "m1_check should have at least one entry")
 
 
+
+# ---------------------------------------------------------------------------
+# P5b-2: parallel workers, base-database evaluation, regression tests
+# (written without Bob; see the Bob record)
+# ---------------------------------------------------------------------------
+
+_TINY = dict(target_se=0.5, pilot_M=4, max_M=8)
+
+
+class TestGridParallelAndRegressions(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from montecarlo.run import build_run
+        cls._tmp_dir = tempfile.mkdtemp()
+        cls._base = pathlib.Path(cls._tmp_dir)
+        cls.data_copy = cls._base / "data"
+        _copy_data(cls.data_copy)
+        cls.run_dir = cls._base / "runs" / "main"
+        build_run(cls.data_copy, cls.run_dir, M=10, N=5, seed=7, grid=False)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp_dir, ignore_errors=True)
+
+    def _copy_run(self, name):
+        dst = self._base / "runs" / name
+        shutil.copytree(self.run_dir, dst)
+        return dst
+
+    def test_parallel_equals_serial(self):
+        """grid.json is byte-identical for workers=1 and workers=2."""
+        from montecarlo.grid import build_grid
+        r1, r2 = self._copy_run("w1"), self._copy_run("w2")
+        build_grid(self.data_copy, r1, N=5, seed=7, method="lhs",
+                   families=["K1"], workers=1, **_TINY)
+        build_grid(self.data_copy, r2, N=5, seed=7, method="lhs",
+                   families=["K1"], workers=2, **_TINY)
+        self.assertEqual((r1 / "grid.json").read_bytes(),
+                         (r2 / "grid.json").read_bytes())
+
+    def test_parallel_without_cache_equals_serial_with_cache(self):
+        from montecarlo.grid import build_grid
+        r1, r2 = self._copy_run("c1"), self._copy_run("c2")
+        build_grid(self.data_copy, r1, N=5, seed=7, method="lhs",
+                   families=["K2"], workers=1, use_cache=True, **_TINY)
+        build_grid(self.data_copy, r2, N=5, seed=7, method="lhs",
+                   families=["K2"], workers=2, use_cache=False, **_TINY)
+        self.assertEqual((r1 / "grid.json").read_bytes(),
+                         (r2 / "grid.json").read_bytes())
+
+    def test_workers_invalid(self):
+        from montecarlo.grid import build_grid
+        for bad in (0, -1, 1.5):
+            with self.assertRaises(ValueError):
+                build_grid(self.data_copy, self._copy_run(f"bad{bad}"), N=5, seed=7,
+                           method="lhs", families=["K1"], workers=bad, **_TINY)
+
+    def test_base_db_equals_world_db(self):
+        """world_result on the base database equals the database loaded with the
+        worlds file (wider SIM_END) for every world of a small run."""
+        from engine.loader import load_all
+        from engine.worlds import world_result
+        d2 = self._base / "data_with_worlds"
+        _copy_data(d2)
+        shutil.copy(self.run_dir / "worlds.csv", d2 / "worlds.csv")
+        dbw, dbb = load_all(d2), load_all(self.data_copy)
+        sids = [s for s, x in dbb["scenarios"].items() if x["disruption_id"] == "D01"]
+        for w in dbw["worlds"]:
+            for sid in sids:
+                self.assertEqual(world_result(dbb, "D01", sid, w),
+                                 world_result(dbw, "D01", sid, w))
+
+    def test_grid_only_twice_and_failed_check_changes_nothing(self):
+        from engine.runs import check_run
+        from montecarlo.run import grid_only
+        run = self._copy_run("go")
+        data = self._base / "data_go"
+        _copy_data(data)
+        # the copied run was built from data_copy; rebuild it from data_go
+        from montecarlo.run import build_run
+        build_run(data, run, M=10, N=5, seed=7, grid=False)
+        grid_only(data, run, **_TINY)
+        check_run(run, data)
+        grid_only(data, run, **_TINY)
+        check_run(run, data)
+        g0 = (run / "grid.json").read_bytes()
+        f0 = (run / "fingerprint.json").read_bytes()
+        with open(data / "orders.csv", "a", encoding="utf-8", newline="") as fh:
+            fh.write("SO_X,P01,WH01,2026-11-09,1,2026-11-21,1\n")
+        with self.assertRaises(ValueError) as ctx:
+            grid_only(data, run, **_TINY)
+        self.assertIn("orders.csv", str(ctx.exception))
+        self.assertEqual((run / "grid.json").read_bytes(), g0)
+        self.assertEqual((run / "fingerprint.json").read_bytes(), f0)
+
+    def test_pairs_only_within_a_disruption(self):
+        from montecarlo.grid import _make_pair_keys
+        keys = _make_pair_keys([("D01", "A"), ("D02", "C"), ("D01", "B"),
+                                ("D02", "D"), ("D02", "E")])
+        self.assertEqual(keys, ["A|B", "C|D", "C|E", "D|E"])
+
+    def test_family_crossings_use_find_crossings(self):
+        from montecarlo.grid import P_GRID, _compute_crossings, find_crossings
+        f = {"A|B": lambda p: 0.43 - p, "C|D": lambda p: 1 - p}
+
+        def res(p):
+            return ({}, {}, {k: g(p) for k, g in f.items()},
+                    {k: 0.01 for k in f}, {}, {})
+        full = [{"kind": "grid", "p": p} for p in P_GRID]
+        rec = {p: (res(p)[2], res(p)[3]) for p in P_GRID}
+        _, crossings = _compute_crossings(
+            full, rec, list(f), P_GRID, 10, eval_at_p=res,
+            make_pt=lambda p, r: {"p": p})
+        expected = find_crossings(f["A|B"], P_GRID)
+        self.assertEqual(len(crossings), 1)
+        self.assertEqual(crossings[0]["pair"], ["A", "B"])
+        self.assertEqual((crossings[0]["p_lo"], crossings[0]["p_hi"],
+                          crossings[0]["diff_lo"], crossings[0]["diff_hi"]),
+                         expected[0])
+
+    def test_m1_check_keeps_entry_when_se_is_zero(self):
+        from montecarlo.grid import _build_m1_check
+        point = {"kind": "m1", "expected_late": {"WAIT": 1.0}, "se": {"WAIT": 0.0}}
+        out = _build_m1_check(self.run_dir,
+                              [{"family": "scale", "points": [point]}], ["WAIT"])
+        self.assertIn("WAIT", out)
+        self.assertIsNone(out["WAIT"]["z"])
+
+    def test_common_random_numbers_k2_family(self):
+        """WAIT and ALT_BUY do not use the K2 lanes: identical at every K2 point."""
+        from montecarlo.grid import build_grid
+        r = self._copy_run("crn")
+        g = build_grid(self.data_copy, r, N=5, seed=7, method="lhs",
+                       families=["K2"], **_TINY)
+        pts = [p for p in g["families"][0]["points"] if p["kind"] == "grid"]
+        for sid in ("WAIT", "ALT_BUY"):
+            self.assertEqual(len({p["expected_late"][sid] for p in pts}), 1, sid)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
