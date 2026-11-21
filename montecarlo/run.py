@@ -15,6 +15,7 @@ import pathlib
 import time
 from datetime import date, datetime
 
+from engine.episodes import derived_tags
 from engine.loader import load_all
 from montecarlo.estimate import estimate
 from montecarlo.sample import sample_worlds
@@ -64,9 +65,8 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
 
     elapsed = time.monotonic() - t0
 
-    # Build column order from est: variable columns then cause tag columns
-    var_cols   = []
-    cause_tags = []
+    # Build column order from est: variable columns then episode columns
+    var_cols = []
     for vkey in est["variables"]:
         ttype, tid = vkey.split(".", 1)
         if ttype == "purchase_order":
@@ -74,11 +74,17 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
         elif ttype == "offer":
             var_cols.append(f"offer.{tid}.delay_business_days")
         else:
-            var_cols.append(f"lane.{tid}.lead_days")
-    for cid in est["causes"]:
-        cause_tags.append(f"cause.{cid}.active")
+            var_cols.append(f"lane.{tid}.delay_days")
 
-    all_cols = _WORLDS_HEADER_FIXED + var_cols + cause_tags
+    slot_counts = meta["slot_counts"]
+    ep_cols = []
+    for cid in est["causes"]:
+        for j in range(1, slot_counts.get(cid, 0) + 1):
+            ep_cols.append(f"cause.{cid}.ep{j}_start_date")
+            ep_cols.append(f"cause.{cid}.ep{j}_end_date")
+            ep_cols.append(f"cause.{cid}.ep{j}_delay_days")
+
+    all_cols = _WORLDS_HEADER_FIXED + var_cols + ep_cols
 
     # Write worlds.csv
     worlds_path = out_dir / "worlds.csv"
@@ -89,36 +95,48 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
             w.writerow(row)
 
     # Count distinct worlds: distinct value combinations across ALL draws
-    # (exclude world_id, draw, weight, and cause.*.active tag columns)
-    value_cols = var_cols   # only the non-tag variable columns
+    value_cols = var_cols + ep_cols
     distinct_values: set = set()
     for row in worlds:
         key = tuple(row[c] for c in value_cols)
         distinct_values.add(key)
     distinct = len(distinct_values)
 
-    # Collect tag shares
-    tag_totals:  dict = {t: 0 for t in cause_tags}
-    weight_total = 0
-    for row in worlds:
-        wt = row["weight"]
-        weight_total += wt
-        for t in cause_tags:
-            if row[t] == "1":
-                tag_totals[t] += wt
+    # Collect active_shares using derived_tags
+    # Load worlds.csv back into db to use derived_tags
+    dst_data = out_dir / "_tmp_data"
+    import shutil
+    shutil.copytree(data_dir, dst_data, dirs_exist_ok=True)
+    shutil.copy(worlds_path, dst_data / "worlds.csv")
+    db2 = load_all(dst_data)
+    shutil.rmtree(dst_data, ignore_errors=True)
 
-    tag_shares = {t: tag_totals[t] / weight_total for t in cause_tags}
+    cause_ids = list(est["causes"].keys())
+    active_totals: dict = {cid: 0 for cid in cause_ids}
+    weight_total = 0
+    for w_row in db2["worlds"]:
+        wt = w_row["weight"]
+        weight_total += wt
+        tags = derived_tags(w_row, db2)
+        for cid in cause_ids:
+            if tags.get(cid, 0) == 1:
+                active_totals[cid] += wt
+
+    active_shares = {
+        cid: active_totals[cid] / weight_total for cid in cause_ids
+    }
 
     # Build per-cause and per-variable summaries for the record
     cause_summary = {}
     for cid, cp in est["causes"].items():
         cause_summary[cid] = {
             "p_active":              cp["p_active"],
-            "w_days":                cp["w_days"],
             "open_on_day0":          cp["open_on_day0"],
             "T_free_days":           cp["T_free_days"],
             "duration_prior_share":  cp["duration_prior_share"],
             "severity_prior_share":  cp["severity_prior_share"],
+            "slots":                 slot_counts.get(cid, 0),
+            "overflow":              meta["overflow_counts"].get(cid, 0),
         }
 
     var_summary = {}
@@ -131,7 +149,7 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
     n_episodes  = 0
     if (hist_dir / "shipments.csv").exists():
         with (hist_dir / "shipments.csv").open(encoding="utf-8") as fh:
-            n_shipments = sum(1 for _ in fh) - 1  # subtract header
+            n_shipments = sum(1 for _ in fh) - 1
     if (hist_dir / "episodes.csv").exists():
         with (hist_dir / "episodes.csv").open(encoding="utf-8") as fh:
             n_episodes = sum(1 for _ in fh) - 1
@@ -150,7 +168,7 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
         "variables":       var_summary,
         "raised_count":    meta["raised_count"],
         "cut_count":       meta["cut_count"],
-        "tag_shares":      tag_shares,
+        "active_shares":   active_shares,
         "history_shipments": n_shipments,
         "history_episodes":  n_episodes,
         "created_at":      datetime.now(tz=__import__("datetime").timezone.utc).isoformat(),
@@ -186,7 +204,7 @@ def main():
     print(f"  rows={record['rows']}, distinct={record['distinct_worlds']}, "
           f"total_samples={record['total_samples']}")
     print(f"  raised={record['raised_count']}, cut={record['cut_count']}")
-    for cid, share in record["tag_shares"].items():
+    for cid, share in record["active_shares"].items():
         print(f"  {cid} share={share:.4f}")
     print(f"  written to {args.out}/")
 

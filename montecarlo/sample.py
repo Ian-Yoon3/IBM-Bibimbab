@@ -1,16 +1,16 @@
-"""Two-level LHS sampler for the stage 2 Monte Carlo engine.
+"""Two-level LHS sampler for the stage 2 Monte Carlo engine (new episode format).
 
-sample_worlds(est, db, M, N, seed, method) -> list of world dicts
+sample_worlds(est, db, M, N, seed, method) -> (worlds, meta)
 
 Outer level (M parameter draws from posteriors):
-  per cause: lambda = Gamma(n+1, 365/T); p = 1 if open else 1-exp(-lambda*w/365);
-             severity theta = Beta(a, b).
+  per cause: lambda_k ~ Gamma(rate_shape, 1/T_free_days) per day;
+             phi_k ~ Beta(duration_a, duration_b);
+             theta_k ~ Beta(severity_a, severity_b).
   per variable: category probs = Dirichlet; size theta_e, theta_l = Beta.
 
 Inner level (N worlds per draw via LHS or plain MC):
-  Dimensions: one per variable (own delay) + 2 per cause (active, severity),
-  ordered as [var_0, var_1, ..., cause_0_active, cause_0_sev, cause_1_active, cause_1_sev, ...]
-  in causes.csv order.
+  Dimensions: one per variable (own delay), then for each cause in causes.csv
+  order, for each slot j = 1..S_k, three dimensions: gap, duration, severity.
 
 Inverse CDFs (monotone):
   own delay E(u; pe, po, pl, theta_e, theta_l):
@@ -19,15 +19,16 @@ Inverse CDFs (monotone):
     else v=(u-pe-po)/pl, E = 1 + floor(log(1-v) / log(1-theta_l))
     theta=1 gives size=1 (special case).
   severity C(u; theta) = 1 + floor(log(1-u) / log(1-theta)); theta=1 -> 1.
-  active S(u; p) = 1 if u < p else 0.
 
-World values (section 4.3 / 4.7):
-  purchase_order: receipt = add_business_days(revised_date, E + S*C)
-  offer:          column offer.<id>.delay_business_days = E + S*C
-  lane:           column lane.<id>.lead_days = max(1, base_lead + E + S*C)
-  Tags:           cause.<K>.active = S
+Episode timeline (alternating renewal process):
+  Slot 1 (open episode): start = open_episode.start_date; fill from data or samples.
+  Remaining slots: exponential gap then geometric duration and severity.
 
-Sampling cap: DAY0 + 365 days. Values beyond the cap are cut to the cap.
+World columns:
+  purchase_order: receipt_date = add_business_days(revised, E + shock)
+  offer:          delay_business_days = own deviation E only
+  lane:           delay_days = own deviation E only (new format, no lower clamp)
+  cause:          ep<n>_start_date, ep<n>_end_date, ep<n>_delay_days (or "none")
 """
 
 import math
@@ -46,25 +47,13 @@ def lhs_uniforms(n: int, d: int, rng: random.Random) -> list:
 
     Every column j has exactly one value in each stratum [k/n, (k+1)/n).
     The rows are paired at random across columns.
-
-    Parameters
-    ----------
-    n   : number of samples
-    d   : number of dimensions
-    rng : random.Random instance
-
-    Returns
-    -------
-    list of n rows, each a list of d floats in [0, 1).
     """
-    # Build each column independently then zip into rows
     cols = []
     for _ in range(d):
         perm = list(range(n))
         rng.shuffle(perm)
         col = [(perm[i] + rng.random()) / n for i in range(n)]
         cols.append(col)
-    # Transpose: rows[i] = [cols[j][i] for j in range(d)]
     return [[cols[j][i] for j in range(d)] for i in range(n)]
 
 
@@ -74,12 +63,8 @@ def lhs_uniforms(n: int, d: int, rng: random.Random) -> list:
 
 def _inv_own_delay(u: float, pe: float, po: float, pl: float,
                    theta_e: float, theta_l: float) -> int:
-    """Monotone inverse CDF for own delay E.
-
-    Returns a signed integer (negative=early, 0=on-time, positive=late).
-    """
+    """Monotone inverse CDF for own delay E."""
     if u < pe:
-        # Early: size = 1 + floor(log(u/pe) / log(1-theta_e))
         if theta_e >= 1.0:
             return -1
         log_q = math.log(1.0 - theta_e)
@@ -91,14 +76,12 @@ def _inv_own_delay(u: float, pe: float, po: float, pl: float,
     elif u < pe + po:
         return 0
     else:
-        # Late: v = (u - pe - po) / pl
         v = (u - pe - po) / pl
         if v >= 1.0:
             v = 1.0 - 1e-15
         if theta_l >= 1.0:
             return 1
         log_q = math.log(1.0 - theta_l)
-        # size = 1 + floor(log(1-v) / log(1-theta_l))
         w = 1.0 - v
         if w <= 0.0:
             w = 1e-300
@@ -107,10 +90,7 @@ def _inv_own_delay(u: float, pe: float, po: float, pl: float,
 
 
 def _inv_severity(u: float, theta: float) -> int:
-    """Monotone inverse CDF for severity C = 1 + Geometric({0,1,...}, theta).
-
-    C = 1 + floor(log(1-u) / log(1-theta)).
-    """
+    """Monotone inverse CDF for C = 1 + Geometric({0,1,...}, theta)."""
     if theta >= 1.0:
         return 1
     w = 1.0 - u
@@ -121,46 +101,118 @@ def _inv_severity(u: float, theta: float) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Parameter draw from posteriors (outer level)
+# Slot count computation
 # ---------------------------------------------------------------------------
 
-def _offer_delay_cap(db: dict, offer_id: str, cap: date) -> int:
-    """Maximum business-day delay for an offer so its receipt at DAY0 <= cap.
+def _nb_cdf_term(j: int, r: int, p: float, q: float) -> float:
+    """Compute C(j+r-1, j) * p^r * q^j."""
+    # log binomial coefficient: log C(j+r-1, j)
+    log_bc = 0.0
+    for k in range(j):
+        log_bc += math.log(r + k) - math.log(k + 1)
+    log_term = log_bc + r * math.log(p) + j * math.log(q) if q > 0 else (
+        log_bc + r * math.log(p) if j == 0 else -math.inf
+    )
+    return math.exp(log_term)
 
-    promised = cal.next_business_day(DAY0 + lead_days)
-    return cal.business_days_between(promised, cap)
-    """
-    cal  = db["calendar"]
+
+def _compute_slot_count(rate_shape: int, T_free_days: float,
+                        D_k: int, has_open: bool) -> int:
+    """Smallest s with 1 - NB_CDF(s; r, T/(T+D)) < 1e-6, plus 1 if open_episode."""
+    r = rate_shape
+    T = T_free_days
+    D = D_k
+    if D <= 0:
+        s = 0
+    elif T <= 0:
+        # Almost certain to have events; set a generous count
+        s = 20
+    else:
+        p = T / (T + D)
+        q = D / (T + D)
+        # Sum from j=0 until 1 - cdf < 1e-6 (i.e., cdf >= 1 - 1e-6)
+        cdf = 0.0
+        s = 0
+        while True:
+            cdf += _nb_cdf_term(s, r, p, q)
+            if 1.0 - cdf < 1e-6:
+                break
+            s += 1
+            if s > 10000:
+                break
+    if has_open:
+        s += 1
+    return max(s, 1) if has_open else max(s, 0)
+
+
+# ---------------------------------------------------------------------------
+# Cap / room computations
+# ---------------------------------------------------------------------------
+
+def _compute_room_offer(db: dict, offer_id: str, cap: date) -> int:
+    """Business-day room from latest promised date of offer to cap."""
+    cal = db["calendar"]
     day0 = db["DAY0"]
-    lead = db["offers"][offer_id]["lead_days"]
-    promised = cal.next_business_day(day0 + timedelta(days=lead))
-    return cal.business_days_between(promised, cap)
+    offer = db["offers"][offer_id]
+    lead = offer["lead_days"]
+    # Base: promise on DAY0
+    L = cal.next_business_day(day0 + timedelta(days=lead))
+    # Recovery purchases for this offer
+    for (sid, oid), rp in db["recovery_purchases"].items():
+        if oid == offer_id:
+            promised = cal.next_business_day(
+                rp["action_date"] + timedelta(days=lead)
+            )
+            if promised > L:
+                L = promised
+    return cal.business_days_between(L, cap)
 
+
+def _compute_room_lane(db: dict, lane_id: str, cap: date) -> int:
+    """Calendar-day room from latest base arrival of lane to cap."""
+    day0 = db["DAY0"]
+    lane = db["lanes"][lane_id]
+    lead = lane["lead_days"]
+    L = day0 + timedelta(days=lead)
+    for (sid, lid, cid), rt in db["recovery_transfers"].items():
+        if lid == lane_id:
+            arrival = rt["action_date"] + timedelta(days=lead)
+            if arrival > L:
+                L = arrival
+    return (cap - L).days
+
+
+def _compute_room_po(db: dict, po_id: str, cap: date) -> int:
+    """Business-day room from revised receipt date of PO to cap."""
+    cal = db["calendar"]
+    for dis in db["disruptions"].values():
+        if dis["po_id"] == po_id:
+            return cal.business_days_between(dis["revised_receipt_date"], cap)
+    # No disruption: use planned date
+    return cal.business_days_between(
+        db["purchase_orders"][po_id]["planned_receipt_date"], cap
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parameter draw (outer level)
+# ---------------------------------------------------------------------------
 
 def _draw_parameters(est: dict, rng: random.Random) -> dict:
-    """Sample one parameter set from the posteriors.
-
-    Returns a dict with cause params and variable params.
-    """
+    """Sample one parameter set from the posteriors."""
     params = {"causes": {}, "variables": {}}
 
     for cid, cp in est["causes"].items():
-        # Rate: Gamma(shape=n+1, scale=365/T) so lambda is per year
-        T_days = cp["T_days"]
-        lam = rng.gammavariate(cp["rate_shape"], 365.0 / T_days)
-        if cp["open_on_day0"]:
-            p = 1.0
-        else:
-            w = cp["w_days"]
-            p = 1.0 - math.exp(-lam * w / 365.0)
-        # Severity theta: Beta(severity_a, severity_b)
+        lam = rng.gammavariate(cp["rate_shape"], 1.0 / cp["T_free_days"])
+        phi = rng.betavariate(cp["duration_a"], cp["duration_b"])
         theta_sev = rng.betavariate(cp["severity_a"], cp["severity_b"])
         params["causes"][cid] = {
-            "lambda": lam, "p": p, "theta_sev": theta_sev,
+            "lambda": lam,
+            "phi": phi,
+            "theta_sev": theta_sev,
         }
 
     for vkey, vp in est["variables"].items():
-        # Category: Dirichlet via normalised gammavariates
         g_e = rng.gammavariate(vp["dir_early"],  1.0)
         g_o = rng.gammavariate(vp["dir_ontime"], 1.0)
         g_l = rng.gammavariate(vp["dir_late"],   1.0)
@@ -168,7 +220,6 @@ def _draw_parameters(est: dict, rng: random.Random) -> dict:
         pe = g_e / total
         po = g_o / total
         pl = g_l / total
-        # Size thetas
         theta_e = rng.betavariate(vp["early_a"], vp["early_b"])
         theta_l = rng.betavariate(vp["late_a"],  vp["late_b"])
         params["variables"][vkey] = {
@@ -180,6 +231,77 @@ def _draw_parameters(est: dict, rng: random.Random) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Episode generation for one cause in one world
+# ---------------------------------------------------------------------------
+
+def _generate_episodes(cause_id: str, est_cp: dict, draw_cp: dict,
+                       slot_uniforms: list, H_k: date, day0: date) -> list:
+    """Generate episode list for one cause in one world.
+
+    slot_uniforms: list of S_k triples (u_gap, u_dur, u_sev).
+    Returns list of dicts {start, end, delay} for filled slots (empty = "none").
+    """
+    lam   = draw_cp["lambda"]
+    phi   = draw_cp["phi"]
+    theta = draw_cp["theta_sev"]
+
+    open_ep = est_cp.get("open_episode")
+    S_k = len(slot_uniforms)
+    episodes = []
+
+    slot_idx = 0
+    t = day0  # current time pointer
+
+    if open_ep is not None:
+        # Slot 1: open episode
+        u_gap, u_dur, u_sev = slot_uniforms[slot_idx]
+        slot_idx += 1
+
+        start = open_ep["start_date"]
+        # end
+        if open_ep["end_date"] is not None:
+            end = open_ep["end_date"]
+        else:
+            dur = _inv_severity(u_dur, phi)
+            dur_capped = min(dur - 1, 10**6)
+            end = day0 + timedelta(days=dur_capped)
+        # delay
+        if open_ep["delay_days"] is not None:
+            delay = open_ep["delay_days"]
+        else:
+            delay = _inv_severity(u_sev, theta)
+            # capping happens later
+        episodes.append({"start": start, "end": end, "delay": delay})
+        t = end + timedelta(days=1)
+
+    # Remaining slots (or all slots if no open episode)
+    for si in range(slot_idx, S_k):
+        u_gap, u_dur, u_sev = slot_uniforms[si]
+        if lam <= 0.0:
+            gap = 10**9
+        else:
+            w = 1.0 - u_gap
+            if w <= 0.0:
+                w = 1e-300
+            gap = int(math.floor(-math.log(w) / lam))
+        start_days = gap
+        if start_days > 10**6:
+            break
+        start = t + timedelta(days=start_days)
+        if start > H_k:
+            # This slot and all later are "none"
+            break
+        dur = _inv_severity(u_dur, phi)
+        dur_capped = min(dur - 1, 10**6)
+        end = start + timedelta(days=dur_capped)
+        delay = _inv_severity(u_sev, theta)
+        episodes.append({"start": start, "end": end, "delay": delay})
+        t = end + timedelta(days=1)
+
+    return episodes
+
+
+# ---------------------------------------------------------------------------
 # Main sample_worlds function
 # ---------------------------------------------------------------------------
 
@@ -187,85 +309,134 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
                   method: str = "lhs") -> tuple:
     """Sample M*N worlds using two-level parameter sampling.
 
-    Parameters
-    ----------
-    est    : output of estimate(data_dir)
-    db     : output of load_all(data_dir)
-    M      : number of parameter draws
-    N      : number of worlds per draw
-    seed   : master random seed
-    method : "lhs" (default) or "plain"
-
-    Returns
-    -------
-    (worlds, meta) where:
-      worlds : list of dicts with keys world_id, draw, weight, <columns>
-      meta   : dict with raised_count, cut_count
+    Returns (worlds, meta) where worlds is a list of dicts and meta contains
+    raised_count, cut_count, slot_counts, overflow_counts.
     """
     rng  = random.Random(seed)
     cal  = db["calendar"]
     day0 = db["DAY0"]
     cap  = day0 + timedelta(days=365)
 
-    # Build ordered lists from est (preserving causes.csv order)
-    var_keys   = list(est["variables"].keys())   # ordered variable keys
-    cause_ids  = list(est["causes"].keys())       # ordered cause ids
+    var_keys   = list(est["variables"].keys())
+    cause_ids  = list(est["causes"].keys())
+    n_vars     = len(var_keys)
 
-    # Number of uniform dimensions: 1 per variable + 2 per cause
-    n_vars   = len(var_keys)
-    n_causes = len(cause_ids)
-    d = n_vars + 2 * n_causes
+    # ── Slot counts per cause ─────────────────────────────────────────────────
+    cause_horizons = db.get("cause_horizons") or {}
+    slot_counts: dict = {}
+    for cid in cause_ids:
+        cp = est["causes"][cid]
+        H_k = cause_horizons.get(cid, {}).get("H")
+        if H_k is None:
+            D_k = 0
+        else:
+            D_k = (H_k - day0).days + 1
+        has_open = cp.get("open_episode") is not None
+        S_k = _compute_slot_count(
+            cp["rate_shape"], cp["T_free_days"], D_k, has_open
+        )
+        slot_counts[cid] = S_k
 
-    # Base lead days per lane (for lead_days column)
-    base_leads = {}
-    for vkey, vp in est["variables"].items():
-        if vkey.startswith("lane."):
-            lid = vp["source_id"]
-            base_leads[lid] = db["lanes"][lid]["lead_days"]
+    # Total LHS dimensions
+    d = n_vars + sum(3 * slot_counts[cid] for cid in cause_ids)
 
-    # Revised receipt dates for purchase_order targets
-    revised_dates = {}
-    planned_dates = {}
-    for vkey, vp in est["variables"].items():
-        if vkey.startswith("purchase_order."):
-            po_id = vkey.split(".")[1]  # e.g. "PO01"
-            po    = db["purchase_orders"][po_id]
-            planned_dates[po_id] = po["planned_receipt_date"]
-            for dis in db["disruptions"].values():
-                if dis["po_id"] == po_id:
-                    revised_dates[po_id] = dis["revised_receipt_date"]
-                    break
+    # ── Room and cause caps ───────────────────────────────────────────────────
+    # room per (ttype, tid): business days or calendar days to cap
+    room_by_target: dict = {}  # (ttype, tid) -> room_t
+    for cid in cause_ids:
+        for cr in (db.get("causes") or []):
+            if cr["cause_id"] != cid:
+                continue
+            ttype = cr["target_type"]
+            tid   = cr["target_id"]
+            if ttype == "offer":
+                room_by_target[(ttype, tid)] = _compute_room_offer(db, tid, cap)
+            elif ttype == "lane":
+                room_by_target[(ttype, tid)] = _compute_room_lane(db, tid, cap)
+            elif ttype == "purchase_order":
+                room_by_target[(ttype, tid)] = _compute_room_po(db, tid, cap)
 
-    # Bounds computed once. Beyond them the result is known without walking
-    # the calendar day by day, which keeps extreme tail values fast and safe.
-    po_max_shift = {tid: cal.business_days_between(revised_dates[tid], cap)
-                    for tid in revised_dates}
-    po_min_shift = {tid: -((revised_dates[tid] - planned_dates[tid]).days + 1)
-                    for tid in revised_dates}
-    offer_caps = {}
-    for vkey, vp in est["variables"].items():
-        if vkey.startswith("offer."):
-            offer_caps[vp["source_id"]] = _offer_delay_cap(db, vp["source_id"], cap)
+    # C_k = min room over all targets of cause k
+    cause_caps: dict = {}
+    for cid in cause_ids:
+        rooms = []
+        for cr in (db.get("causes") or []):
+            if cr["cause_id"] != cid:
+                continue
+            ttype = cr["target_type"]
+            tid   = cr["target_id"]
+            key   = (ttype, tid)
+            if key in room_by_target:
+                rooms.append(room_by_target[key])
+        cause_caps[cid] = min(rooms) if rooms else 0
 
-    raised_count = 0
-    cut_count    = 0
-    world_counter = 0
-    all_worlds   = []
+    # ── Cause-to-variables mapping ────────────────────────────────────────────
+    # For each cause: which offer/lane/po targets exist
+    cause_targets_map: dict = {}  # cid -> list of (ttype, tid)
+    for cid in cause_ids:
+        cause_targets_map[cid] = []
+        for cr in (db.get("causes") or []):
+            if cr["cause_id"] == cid:
+                cause_targets_map[cid].append(
+                    (cr["target_type"], cr["target_id"])
+                )
 
-    # Column names for the output
-    var_col_names   = []  # list of (vkey, col_name) for variable columns
-    cause_col_names = []  # list of (cid, col_active, col_sev) for cause tags
-    for vkey, vp in est["variables"].items():
+    # variable key -> cause_id
+    vkey_cause: dict = {}
+    for vkey in var_keys:
+        vkey_cause[vkey] = est["variables"][vkey]["cause_id"]
+
+    # ── Purchase order info ───────────────────────────────────────────────────
+    revised_dates: dict = {}
+    planned_dates: dict = {}
+    po_max_shift:  dict = {}
+    po_min_shift:  dict = {}
+    for vkey in var_keys:
+        if not vkey.startswith("purchase_order."):
+            continue
+        po_id = vkey.split(".")[1]
+        po    = db["purchase_orders"][po_id]
+        planned_dates[po_id] = po["planned_receipt_date"]
+        for dis in db["disruptions"].values():
+            if dis["po_id"] == po_id:
+                revised_dates[po_id] = dis["revised_receipt_date"]
+                break
+        po_max_shift[po_id] = cal.business_days_between(
+            revised_dates[po_id], cap
+        )
+        po_min_shift[po_id] = -(
+            (revised_dates[po_id] - planned_dates[po_id]).days + 1
+        )
+
+    # ── Build ordered column names ────────────────────────────────────────────
+    var_col_names = []  # list of (vkey, col_name)
+    for vkey in var_keys:
         ttype, tid = vkey.split(".", 1)
         if ttype == "purchase_order":
             col = f"purchase_order.{tid}.receipt_date"
         elif ttype == "offer":
             col = f"offer.{tid}.delay_business_days"
-        else:  # lane
-            col = f"lane.{tid}.lead_days"
+        else:
+            col = f"lane.{tid}.delay_days"
         var_col_names.append((vkey, col))
+
+    # Episode column names per cause (slot 1..S_k)
+    ep_col_names: dict = {}  # cid -> list of (start_col, end_col, delay_col)
     for cid in cause_ids:
-        cause_col_names.append((cid, f"cause.{cid}.active"))
+        ep_col_names[cid] = []
+        for j in range(1, slot_counts[cid] + 1):
+            ep_col_names[cid].append((
+                f"cause.{cid}.ep{j}_start_date",
+                f"cause.{cid}.ep{j}_end_date",
+                f"cause.{cid}.ep{j}_delay_days",
+            ))
+
+    # ── Tracking ──────────────────────────────────────────────────────────────
+    raised_count  = 0
+    cut_count     = 0
+    overflow_counts: dict = {cid: 0 for cid in cause_ids}
+    world_counter = 0
+    all_worlds    = []
 
     for m in range(M):
         draw_params = _draw_parameters(est, rng)
@@ -275,47 +446,125 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
         else:
             uniforms = [[rng.random() for _ in range(d)] for _ in range(N)]
 
-        # Group worlds within this draw: value_tuple -> count
         draw_groups: dict = {}
 
         for i in range(N):
             row_u = uniforms[i]
             vals: dict = {}
 
-            # Cause dimensions: active and severity (positioned after var dims)
-            cause_vals = {}  # cid -> (S, C)
-            for ci, cid in enumerate(cause_ids):
-                u_active = row_u[n_vars + 2 * ci]
-                u_sev    = row_u[n_vars + 2 * ci + 1]
-                cp       = draw_params["causes"][cid]
-                S = 1 if u_active < cp["p"] else 0
-                C = _inv_severity(u_sev, cp["theta_sev"])
-                cause_vals[cid] = (S, C)
+            # ── Dimension index layout ────────────────────────────────────────
+            # [0 .. n_vars-1]: one per variable
+            # [n_vars ..]: per cause in order, 3*S_k per cause
+            cause_dim_start: dict = {}
+            idx = n_vars
+            for cid in cause_ids:
+                cause_dim_start[cid] = idx
+                idx += 3 * slot_counts[cid]
 
-            # Variable dimensions
+            # ── Generate episode timelines for each cause ─────────────────────
+            cause_episodes: dict = {}  # cid -> list of {start, end, delay} (filled)
+            cause_max_delay: dict = {}  # cid -> max delay among filled slots (or 0)
+            overflow_this_world: dict = {}  # cid -> 0 or 1
+
+            for ci, cid in enumerate(cause_ids):
+                S_k = slot_counts[cid]
+                H_k = cause_horizons.get(cid, {}).get("H")
+                est_cp = est["causes"][cid]
+                draw_cp = draw_params["causes"][cid]
+                C_k = cause_caps[cid]
+
+                # Collect slot uniforms
+                base = cause_dim_start[cid]
+                slot_uniforms = []
+                for j in range(S_k):
+                    slot_uniforms.append((
+                        row_u[base + 3*j],
+                        row_u[base + 3*j + 1],
+                        row_u[base + 3*j + 2],
+                    ))
+
+                if H_k is None or S_k == 0:
+                    episodes = []
+                    overflow_this_world[cid] = 0
+                else:
+                    episodes = _generate_episodes(
+                        cid, est_cp, draw_cp, slot_uniforms, H_k, day0
+                    )
+
+                    # Cap episode delays to C_k
+                    for ep in episodes:
+                        if ep["delay"] > C_k:
+                            ep["delay"] = C_k
+                            cut_count += 1
+
+                    # Overflow check: only when all S_k slots are filled
+                    ov = 0
+                    if len(episodes) == S_k:
+                        t_overflow = episodes[-1]["end"] + timedelta(days=1)
+                        if t_overflow <= H_k:
+                            lam = draw_cp["lambda"]
+                            u_extra = rng.random()
+                            if lam > 0:
+                                w = 1.0 - u_extra
+                                if w <= 0.0:
+                                    w = 1e-300
+                                gap_extra = int(math.floor(-math.log(w) / lam))
+                            else:
+                                gap_extra = 10**9
+                            if t_overflow + timedelta(days=gap_extra) <= H_k:
+                                ov = 1
+                    overflow_this_world[cid] = ov
+
+                cause_episodes[cid] = episodes
+                max_d = max((ep["delay"] for ep in episodes), default=0)
+                cause_max_delay[cid] = max_d
+
+            # ── Accumulate overflow counts ─────────────────────────────────────
+            for cid in cause_ids:
+                overflow_counts[cid] += overflow_this_world[cid]
+
+            # ── Write episode columns ─────────────────────────────────────────
+            for cid in cause_ids:
+                episodes = cause_episodes[cid]
+                for slot_j, (sc, ec, dc) in enumerate(ep_col_names[cid]):
+                    if slot_j < len(episodes):
+                        ep = episodes[slot_j]
+                        vals[sc] = ep["start"].isoformat()
+                        vals[ec] = ep["end"].isoformat()
+                        vals[dc] = str(ep["delay"])
+                    else:
+                        vals[sc] = "none"
+                        vals[ec] = "none"
+                        vals[dc] = "none"
+
+            # ── Variable columns ──────────────────────────────────────────────
             for vi, (vkey, col) in enumerate(var_col_names):
                 u_own = row_u[vi]
                 vp    = draw_params["variables"][vkey]
                 E = _inv_own_delay(u_own, vp["pe"], vp["po"], vp["pl"],
                                    vp["theta_e"], vp["theta_l"])
 
-                est_vp = est["variables"][vkey]
-                cid    = est_vp["cause_id"]
-                S, C   = cause_vals[cid]
-                shift  = S * C
-
-                ttype  = vkey.split(".")[0]
-                tid    = vkey.split(".", 1)[1]
+                ttype = vkey.split(".")[0]
+                tid   = vkey.split(".", 1)[1]
+                cid   = vkey_cause[vkey]
 
                 if ttype == "purchase_order":
-                    revised = revised_dates[tid]
-                    planned = planned_dates[tid]
-                    x = E + shift
-                    if x > po_max_shift[tid]:
-                        # The receipt lands after the cap.
+                    # shock = delay of first episode with overlap
+                    po_id    = tid
+                    revised  = revised_dates[po_id]
+                    planned  = planned_dates[po_id]
+                    offer_id = db["purchase_orders"][po_id]["offer_id"]
+                    lead_days = db["offers"][offer_id]["lead_days"]
+                    min_end  = max(day0, revised - timedelta(days=lead_days))
+                    shock = 0
+                    for ep in cause_episodes[cid]:
+                        if ep["start"] <= revised and ep["end"] >= min_end:
+                            shock = ep["delay"]
+                            break
+                    x = E + shock
+                    if x > po_max_shift[po_id]:
                         receipt = cap + timedelta(days=1)
-                    elif x <= po_min_shift[tid]:
-                        # Going back that many business days passes the planned date.
+                    elif x <= po_min_shift[po_id]:
                         receipt = planned - timedelta(days=1)
                     else:
                         receipt = cal.add_business_days(revised, x)
@@ -328,46 +577,57 @@ def sample_worlds(est: dict, db: dict, M: int, N: int, seed: int,
                     vals[col] = receipt.isoformat()
 
                 elif ttype == "offer":
-                    delay     = E + shift
-                    offer_id  = est["variables"][vkey]["source_id"]
-                    delay_cap = offer_caps[offer_id]
-                    if delay > delay_cap:
-                        delay = delay_cap
+                    offer_id = est["variables"][vkey]["source_id"]
+                    room_t   = room_by_target.get(("offer", offer_id), 0)
+                    max_delay = cause_max_delay[cid]
+                    effective_room = room_t - max_delay
+                    if E > effective_room:
+                        E = effective_room
                         cut_count += 1
-                    vals[col] = str(delay)
+                    vals[col] = str(E)
 
-                else:  # lane (calendar days)
-                    lid      = est_vp["source_id"]
-                    base     = base_leads[lid]
-                    new_lead = max(1, base + E + shift)
-                    if new_lead > (cap - day0).days:
-                        new_lead = (cap - day0).days
+                else:  # lane
+                    lid    = est["variables"][vkey]["source_id"]
+                    room_t = room_by_target.get(("lane", lid), 0)
+                    max_delay = cause_max_delay[cid]
+                    effective_room = room_t - max_delay
+                    if E > effective_room:
+                        E = effective_room
                         cut_count += 1
-                    vals[col] = str(new_lead)
-
-            # Cause tag columns
-            for cid, col_active in cause_col_names:
-                S, _ = cause_vals[cid]
-                vals[col_active] = str(S)
+                    vals[col] = str(E)
 
             # Group by all column values
-            key = tuple(vals[c] for _, c in var_col_names) + \
-                  tuple(vals[col_active] for _, col_active in cause_col_names)
+            key = tuple(
+                vals[c] for _, c in var_col_names
+            ) + tuple(
+                vals[cn]
+                for cid in cause_ids
+                for cols_triple in ep_col_names[cid]
+                for cn in cols_triple
+            )
             draw_groups[key] = draw_groups.get(key, 0) + 1
 
         # Emit worlds for this draw
         for key, count in draw_groups.items():
             world_counter += 1
-            wid   = f"W{world_counter:06d}"
-            # Reconstruct vals dict from key
-            all_cols = [c for _, c in var_col_names] + \
-                       [col_active for _, col_active in cause_col_names]
+            wid = f"W{world_counter:06d}"
+            all_cols = (
+                [c for _, c in var_col_names] +
+                [cn for cid in cause_ids
+                 for cols_triple in ep_col_names[cid]
+                 for cn in cols_triple]
+            )
             row = {"world_id": wid, "draw": m, "weight": count}
             for col, val in zip(all_cols, key):
                 row[col] = val
             all_worlds.append(row)
 
-    meta = {"raised_count": raised_count, "cut_count": cut_count}
+    meta = {
+        "raised_count":    raised_count,
+        "cut_count":       cut_count,
+        "slot_counts":     slot_counts,
+        "overflow_counts": overflow_counts,
+    }
     return all_worlds, meta
 
 

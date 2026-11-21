@@ -1153,7 +1153,7 @@ def load_all(data_dir=None) -> dict:
 
                         episodes[cause_id] = slot_list
 
-                        # Rule 5f: cap check
+                        # Rule 5f: cap check using room_t per target
                         if max_slot_delay is not None and _causes is not None:
                             for _cr in _causes:
                                 if _cr["cause_id"] != cause_id:
@@ -1176,26 +1176,30 @@ def load_all(data_dir=None) -> dict:
                                             _d_val = _signed_int(_raw_delay, "delay_business_days")
                                         except ValueError:
                                             _d_val = 0
-                                        _offered_on_day0 = calendar.next_business_day(
+                                        # room_t for this offer: business days from
+                                        # latest promised date (over DAY0 and all
+                                        # recovery_purchases rows) to SAMPLING_CAP
+                                        _L_offer = calendar.next_business_day(
                                             DAY0 + timedelta(days=_ld_use)
                                         )
-                                        _total_delay = _d_val + max_slot_delay
-                                        if _total_delay > 0:
-                                            _receipt = calendar.add_business_days(
-                                                _offered_on_day0, _total_delay
-                                            )
-                                        else:
-                                            _receipt = _offered_on_day0
-                                        if _receipt > SAMPLING_CAP:
+                                        for (_rp_sid, _rp_oid), _rp in recovery_purchases.items():
+                                            if _rp_oid == _offer_id:
+                                                _rp_promised = calendar.next_business_day(
+                                                    _rp["action_date"] + timedelta(days=_ld_use)
+                                                )
+                                                if _rp_promised > _L_offer:
+                                                    _L_offer = _rp_promised
+                                        _room_offer = calendar.business_days_between(
+                                            _L_offer, SAMPLING_CAP
+                                        )
+                                        if _d_val + max_slot_delay > _room_offer:
                                             raise ValueError(
                                                 f"worlds.csv: world {wid!r}: "
                                                 f"offer {_offer_id!r} "
                                                 f"delay_business_days {_d_val} "
                                                 f"plus cause {cause_id!r} max "
                                                 f"episode delay {max_slot_delay} "
-                                                f"would put receipt {_receipt} "
-                                                f"after the sampling cap "
-                                                f"({SAMPLING_CAP})"
+                                                f"exceeds room {_room_offer}"
                                             )
                                 elif _tt == "lane":
                                     _lane_delay_col = f"lane.{_ti}.delay_days"
@@ -1207,21 +1211,23 @@ def load_all(data_dir=None) -> dict:
                                             )
                                         except ValueError:
                                             _ld_val = 0
-                                        _arrival = (
-                                            DAY0
-                                            + timedelta(days=_ld)
-                                            + timedelta(days=_ld_val)
-                                            + timedelta(days=max_slot_delay)
-                                        )
-                                        if _arrival > SAMPLING_CAP:
+                                        # room_t for this lane: calendar days from
+                                        # latest base arrival (over DAY0 and all
+                                        # recovery_transfers rows) to SAMPLING_CAP
+                                        _L_lane = DAY0 + timedelta(days=_ld)
+                                        for (_rt_sid, _rt_lid, _rt_cid), _rt in recovery_transfers.items():
+                                            if _rt_lid == _ti:
+                                                _rt_arrival = _rt["action_date"] + timedelta(days=_ld)
+                                                if _rt_arrival > _L_lane:
+                                                    _L_lane = _rt_arrival
+                                        _room_lane = (SAMPLING_CAP - _L_lane).days
+                                        if _ld_val + max_slot_delay > _room_lane:
                                             raise ValueError(
                                                 f"worlds.csv: world {wid!r}: "
-                                                f"lane {_ti!r} lead_days {_ld} "
-                                                f"+ delay_days {_ld_val} + cause "
-                                                f"{cause_id!r} max episode delay "
-                                                f"{max_slot_delay} would put "
-                                                f"arrival {_arrival} after the "
-                                                f"sampling cap ({SAMPLING_CAP})"
+                                                f"lane {_ti!r} delay_days {_ld_val} "
+                                                f"plus cause {cause_id!r} max "
+                                                f"episode delay {max_slot_delay} "
+                                                f"exceeds room {_room_lane}"
                                             )
 
                     draw_totals[draw] = draw_totals.get(draw, 0) + weight

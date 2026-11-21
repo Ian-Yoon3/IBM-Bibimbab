@@ -172,9 +172,11 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
                 else:
                     shock = 0
                 own_delay = lane.get("delay_days", 0)
-                arrival = action_date + timedelta(days=lane["lead_days"]) + timedelta(days=own_delay) + timedelta(days=shock)
-                if arrival <= action_date:
+                total = lane["lead_days"] + own_delay + shock
+                if total <= 0:
                     arrival = action_date + timedelta(days=1)
+                else:
+                    arrival = action_date + timedelta(days=total)
                 receipt_date = arrival
             else:
                 receipt_date = action_date + timedelta(days=lane["lead_days"])

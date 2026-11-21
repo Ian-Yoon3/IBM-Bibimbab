@@ -11,6 +11,8 @@ from datetime import date, timedelta
 
 from engine.loader import load_all
 from montecarlo.estimate import estimate
+from engine.episodes import derived_tags
+from engine.loader import load_all as _load_all_for_tags
 from montecarlo.sample import lhs_uniforms, _inv_own_delay, _inv_severity, sample_worlds
 from montecarlo.run import run
 
@@ -181,48 +183,51 @@ class TestTagShares(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
-    def _tag_share(self, col_name):
-        with (self._out / "worlds.csv").open(encoding="utf-8", newline="") as fh:
-            rows = list(csv.DictReader(fh))
-        total_weight = sum(int(r["weight"]) for r in rows)
-        active_weight = sum(int(r["weight"]) for r in rows if r[col_name] == "1")
-        return active_weight / total_weight
+    def _derived_tag_share(self, cause_id):
+        dst = self._tmpdir / f"data_{cause_id}"
+        dst.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copytree(DATA_DIR, dst, dirs_exist_ok=True)
+        shutil.copy(self._out / "worlds.csv", dst / "worlds.csv")
+        db2 = _load_all_for_tags(dst)
+        total = sum(w["weight"] for w in db2["worlds"])
+        active = sum(w["weight"] for w in db2["worlds"]
+                     if derived_tags(w, db2).get(cause_id, 0) == 1)
+        return active / total
 
     def test_k1_tag_share(self):
-        """cause.K1.active share ≈ 0.0831 ± 0.01."""
-        share = self._tag_share("cause.K1.active")
-        self.assertAlmostEqual(share, 0.0831, delta=0.01,
-            msg=f"K1 tag share {share:.4f}")
+        """K1 derived-tag share ≈ 0.0948 ± 0.01."""
+        share = self._derived_tag_share("K1")
+        self.assertAlmostEqual(share, 0.0948, delta=0.01,
+            msg=f"K1 derived tag share {share:.4f}")
 
     def test_k2_tag_share(self):
-        """cause.K2.active share ≈ 0.0835 ± 0.01."""
-        share = self._tag_share("cause.K2.active")
-        self.assertAlmostEqual(share, 0.0835, delta=0.01,
-            msg=f"K2 tag share {share:.4f}")
+        """K2 derived-tag share ≈ 0.1067 ± 0.01."""
+        share = self._derived_tag_share("K2")
+        self.assertAlmostEqual(share, 0.1067, delta=0.01,
+            msg=f"K2 derived tag share {share:.4f}")
 
     def test_of02_delay_share_given_k1_zero(self):
-        """Among K1=0 rows, share with OF02 delay=0 ≈ 0.444 ± 0.02."""
+        """Unconditional share of OF02 own deviation=0 ≈ 0.444 ± 0.02."""
         with (self._out / "worlds.csv").open(encoding="utf-8", newline="") as fh:
             rows = list(csv.DictReader(fh))
-        k1_zero = [r for r in rows if r["cause.K1.active"] == "0"]
-        total = sum(int(r["weight"]) for r in k1_zero)
-        zero_delay = sum(int(r["weight"]) for r in k1_zero
+        total = sum(int(r["weight"]) for r in rows)
+        zero_delay = sum(int(r["weight"]) for r in rows
                          if r["offer.OF02.delay_business_days"] == "0")
         share = zero_delay / total
         self.assertAlmostEqual(share, 0.444, delta=0.02,
-            msg=f"OF02 delay=0 share among K1=0 rows: {share:.4f}")
+            msg=f"OF02 delay=0 unconditional share: {share:.4f}")
 
     def test_ln02_lead_share_given_k2_zero(self):
-        """Among K2=0 rows, share with LN02 lead=4 ≈ 0.538 ± 0.02."""
+        """Unconditional share of LN02 delay_days=0 ≈ 0.538 ± 0.02."""
         with (self._out / "worlds.csv").open(encoding="utf-8", newline="") as fh:
             rows = list(csv.DictReader(fh))
-        k2_zero = [r for r in rows if r["cause.K2.active"] == "0"]
-        total = sum(int(r["weight"]) for r in k2_zero)
-        base4  = sum(int(r["weight"]) for r in k2_zero
-                     if r["lane.LN02.lead_days"] == "4")
-        share = base4 / total
+        total = sum(int(r["weight"]) for r in rows)
+        zero_delay = sum(int(r["weight"]) for r in rows
+                         if r["lane.LN02.delay_days"] == "0")
+        share = zero_delay / total
         self.assertAlmostEqual(share, 0.538, delta=0.02,
-            msg=f"LN02 lead=4 share among K2=0 rows: {share:.4f}")
+            msg=f"LN02 delay=0 unconditional share: {share:.4f}")
 
 
 # ---------------------------------------------------------------------------
@@ -233,57 +238,50 @@ class TestLhsVsPlain(unittest.TestCase):
     """LHS should give a smaller standard deviation of per-draw mean OF02 delay."""
 
     def _per_draw_means(self, method, n_reps=100, N=200):
-        """Run n_reps independent inner-level samples with fixed draw params."""
+        """Run n_reps independent inner-level samples with fixed draw params.
+
+        Measures the OF02 own deviation only (new dimension layout).
+        """
         est = estimate(DATA_DIR)
         db  = load_all(DATA_DIR)
-        from montecarlo.sample import _draw_parameters, lhs_uniforms
+        from montecarlo.sample import _draw_parameters, lhs_uniforms, _compute_slot_count
+        from engine.loader import load_all as _la
         # Fix one parameter draw
         rng_params = random.Random(0)
         draw_params = _draw_parameters(est, rng_params)
-        col = "offer.OF02.delay_business_days"
+
+        cause_ids = list(est["causes"].keys())
+        cause_horizons = db.get("cause_horizons") or {}
+        n_vars = len(est["variables"])
+        d = n_vars + sum(
+            3 * _compute_slot_count(
+                est["causes"][cid]["rate_shape"],
+                est["causes"][cid]["T_free_days"],
+                (cause_horizons[cid]["H"] - db["DAY0"]).days + 1
+                if cid in cause_horizons else 0,
+                est["causes"][cid].get("open_episode") is not None,
+            )
+            for cid in cause_ids
+        )
+
+        var_keys = list(est["variables"].keys())
+        vi_of02 = next(vi for vi, vkey in enumerate(var_keys) if vkey == "offer.OF02")
+        vp = draw_params["variables"]["offer.OF02"]
 
         means = []
         for rep in range(n_reps):
             rng_inner = random.Random(rep + 1000)
             if method == "lhs":
-                # Build d to match sample_worlds dimension layout
-                n_vars   = len(est["variables"])
-                n_causes = len(est["causes"])
-                d = n_vars + 2 * n_causes
                 uniforms = lhs_uniforms(N, d, rng_inner)
             else:
-                n_vars   = len(est["variables"])
-                n_causes = len(est["causes"])
-                d = n_vars + 2 * n_causes
                 uniforms = [[rng_inner.random() for _ in range(d)]
                             for _ in range(N)]
 
-            # Collect OF02 delays from this batch
-            var_keys = list(est["variables"].keys())
-            vi_of02  = None
-            for vi, vkey in enumerate(var_keys):
-                if vkey == "offer.OF02":
-                    vi_of02 = vi
-                    break
-            self.assertIsNotNone(vi_of02)
-
-            vp = draw_params["variables"]["offer.OF02"]
-            cause_ids = list(est["causes"].keys())
-            # Find K1 position
-            ci_k1 = cause_ids.index("K1")
-            n_vars_count = len(var_keys)
-            cp_k1 = draw_params["causes"]["K1"]
-
             delays = []
             for row_u in uniforms:
-                u_active = row_u[n_vars_count + 2 * ci_k1]
-                u_sev    = row_u[n_vars_count + 2 * ci_k1 + 1]
-                S = 1 if u_active < cp_k1["p"] else 0
-                from montecarlo.sample import _inv_severity, _inv_own_delay
-                C = _inv_severity(u_sev, cp_k1["theta_sev"])
                 E = _inv_own_delay(row_u[vi_of02], vp["pe"], vp["po"], vp["pl"],
                                    vp["theta_e"], vp["theta_l"])
-                delays.append(E + S * C)
+                delays.append(E)
             means.append(sum(delays) / len(delays))
         return means
 
@@ -335,20 +333,20 @@ class TestDemoRun(unittest.TestCase):
         shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
     def test_cut_count(self):
-        """Demo run: cut_count == 2."""
-        self.assertEqual(self._record["cut_count"], 2)
+        """Demo run: cut_count == 0."""
+        self.assertEqual(self._record["cut_count"], 0)
 
     def test_distinct_worlds(self):
-        """Demo run: distinct_worlds == 14907."""
-        self.assertEqual(self._record["distinct_worlds"], 14907)
+        """Demo run: distinct_worlds == 44006."""
+        self.assertEqual(self._record["distinct_worlds"], 44006)
 
     def test_rows(self):
-        """Demo run: rows == 151421."""
-        self.assertEqual(self._record["rows"], 151421)
+        """Demo run: rows == 156609."""
+        self.assertEqual(self._record["rows"], 156609)
 
     def test_raised_count(self):
-        """Demo run: raised_count == 12140."""
-        self.assertEqual(self._record["raised_count"], 12140)
+        """Demo run: raised_count == 12422."""
+        self.assertEqual(self._record["raised_count"], 12422)
 
     def test_load_all_accepts_worlds(self):
         """load_all accepts the demo worlds.csv."""

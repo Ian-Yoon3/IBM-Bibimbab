@@ -17,6 +17,7 @@ import unittest
 from datetime import date, timedelta
 from unittest import mock
 
+from engine.episodes import derived_tags
 from engine.loader import load_all
 from engine.simulate import offer_receipt_date
 from engine.worlds import evaluate_worlds
@@ -131,9 +132,14 @@ class TestVariantsRun(_VariantCase):
                 if r["source_id"] in ("OF01", "OF02")])
         _, worlds, _, _ = self.run_chain()
         value_cols = [c for c in worlds[0] if c not in ("world_id", "draw", "weight")]
-        self.assertEqual(value_cols, ["purchase_order.PO01.receipt_date",
-                                      "offer.OF02.delay_business_days",
-                                      "cause.K1.active"])
+        expected = ["purchase_order.PO01.receipt_date", "offer.OF02.delay_business_days"]
+        for j in range(1, 5):
+            expected += [
+                f"cause.K1.ep{j}_start_date",
+                f"cause.K1.ep{j}_end_date",
+                f"cause.K1.ep{j}_delay_days",
+            ]
+        self.assertEqual(value_cols, expected)
 
     def test_v04_cause_with_no_episodes(self):
         _write(self.h / "episodes.csv",
@@ -157,7 +163,17 @@ class TestVariantsRun(_VariantCase):
     def _check_k2_certain(self):
         est, worlds, _, _ = self.run_chain()
         self.assertEqual(est["causes"]["K2"]["p_active"], 1.0)
-        self.assertTrue(all(w["cause.K2.active"] == "1" for w in worlds))
+        # Derived K2 tag = 1 in every world; K2 ep1_start_date = 2026-11-08, delay = 2
+        db = load_all(self.d)  # worlds.csv already written by run_chain
+        for w in db["worlds"]:
+            tags = derived_tags(w, db)
+            self.assertEqual(tags.get("K2"), 1,
+                f"world {w['world_id']}: K2 derived tag = {tags.get('K2')}")
+        for w in worlds:
+            self.assertEqual(w["cause.K2.ep1_start_date"], "2026-11-08",
+                f"world {w['world_id']}: K2 ep1_start_date")
+            self.assertEqual(w["cause.K2.ep1_delay_days"], "2",
+                f"world {w['world_id']}: K2 ep1_delay_days")
 
     def test_v06a_episode_open_with_empty_end(self):
         _append(self.h / "episodes.csv", "K2E999,K2,2026-11-08,,2")
@@ -247,8 +263,7 @@ class TestExtremeTails(_VariantCase):
         self.assertEqual(got, date(2026, 11, 10))
 
     def test_huge_shocks_and_early_values_run_end_to_end(self):
-        # Every severity is 10^9 days and every cause is active: receipts and
-        # leads are cut at the cap, offer delays at their cap.
+        # Every severity is 10^9 days; cap invariants must hold for all worlds.
         rows = _read(self.h / "episodes.csv")
         rows.append({"episode_id": "K1E999", "cause_id": "K1", "start_date": "2026-11-08",
                      "end_date": "", "delay_days": "1"})
@@ -259,11 +274,50 @@ class TestExtremeTails(_VariantCase):
             t0 = time.monotonic()
             _, worlds, meta, _ = self.run_chain(M=2, N=5)
             self.assertLess(time.monotonic() - t0, 60)
+        # Every world must load without error
+        db = load_all(self.d)
+        self.assertGreater(len(db["worlds"]), 0)
         for w in worlds:
-            self.assertEqual(w["purchase_order.PO01.receipt_date"], "2027-11-09")
-            self.assertEqual(w["offer.OF02.delay_business_days"], "248")
-            self.assertEqual(w["lane.LN01.lead_days"], "365")
-        self.assertEqual(meta["cut_count"], 2 * 5 * 4)
+            # Every filled K1 delay <= 245
+            for j in range(1, 7):
+                col = f"cause.K1.ep{j}_delay_days"
+                if col in w and w[col] != "none":
+                    self.assertLessEqual(int(w[col]), 245,
+                        f"K1 ep{j} delay {w[col]} > 245")
+            # Every filled K2 delay <= 361
+            for j in range(1, 7):
+                col = f"cause.K2.ep{j}_delay_days"
+                if col in w and w[col] != "none":
+                    self.assertLessEqual(int(w[col]), 361,
+                        f"K2 ep{j} delay {w[col]} > 361")
+            # K1 max delay
+            k1_delays = [
+                int(w[f"cause.K1.ep{j}_delay_days"])
+                for j in range(1, 7)
+                if f"cause.K1.ep{j}_delay_days" in w
+                and w[f"cause.K1.ep{j}_delay_days"] != "none"
+            ]
+            max_k1 = max(k1_delays) if k1_delays else 0
+            # K2 max delay
+            k2_delays = [
+                int(w[f"cause.K2.ep{j}_delay_days"])
+                for j in range(1, 7)
+                if f"cause.K2.ep{j}_delay_days" in w
+                and w[f"cause.K2.ep{j}_delay_days"] != "none"
+            ]
+            max_k2 = max(k2_delays) if k2_delays else 0
+            # OF02 own <= 248 - max K1 delay
+            of02 = int(w["offer.OF02.delay_business_days"])
+            self.assertLessEqual(of02, 248 - max_k1,
+                f"OF02 own {of02} > 248 - {max_k1}")
+            # LN01 own <= 363 - max K2 delay
+            ln01 = int(w["lane.LN01.delay_days"])
+            self.assertLessEqual(ln01, 363 - max_k2,
+                f"LN01 own {ln01} > 363 - {max_k2}")
+            # LN02 own <= 361 - max K2 delay
+            ln02 = int(w["lane.LN02.delay_days"])
+            self.assertLessEqual(ln02, 361 - max_k2,
+                f"LN02 own {ln02} > 361 - {max_k2}")
 
     def test_huge_early_values_run_end_to_end(self):
         with mock.patch.object(sample_mod, "_inv_own_delay", return_value=-10**9):
@@ -272,7 +326,7 @@ class TestExtremeTails(_VariantCase):
             self.assertLess(time.monotonic() - t0, 60)
         for w in worlds:
             self.assertEqual(w["purchase_order.PO01.receipt_date"], "2026-11-12")
-            self.assertEqual(w["lane.LN02.lead_days"], "1")
+            self.assertEqual(w["lane.LN02.delay_days"], "-1000000000")
         self.assertEqual(meta["raised_count"], 2 * 5)
 
 
