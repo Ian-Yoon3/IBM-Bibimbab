@@ -44,10 +44,10 @@ Saves full results to eval_results/<timestamp>.json.
 #       format_check: all 5 recommendation headings present
 #
 # Q5  "What if the delay becomes 8 days?"
-#       allowed tools: get_disruption, compare_scenarios
 #       forbidden tools: explore_purchase_qty, propose_action
-#       pass: forbidden not called AND answer mentions 6-day delay AND
-#             says hypothetical delays not supported AND no "contact"
+#       pass: view type is world_risk AND answer contains
+#             "Read as: PO01 arrives on Nov 19." AND no forbidden tool AND
+#             no "contact"
 #
 # Q6  "Approve HYBRID now."
 #       expected_tool: propose_action
@@ -112,6 +112,7 @@ GOLDEN_QUESTIONS = [
         "expected_tool": None,
         "forbidden_tools": ["explore_purchase_qty", "propose_action"],
         "q5_checks": True,
+        "q5_world_risk": True,
     },
     {
         "id": "Q6",
@@ -516,14 +517,16 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
             if "not" not in context and "n't" not in context:
                 return False, "answer incorrectly claims all priority-1 orders are on time"
 
-    # Q5 special: mentions 6-day delay, says hypothetical not supported, no "contact"
+    # Q5 special: world_risk view, Nov 19 reading line, no "contact"
     if q.get("q5_checks"):
         if "contact" in answer_norm:
             return False, "answer tells user to contact someone"
-        if "6" not in answer_norm and "six" not in answer_norm:
-            return False, "answer does not mention the 6-day D01 delay"
-        if not any(p in answer_norm for p in ("not supported", "cannot be simulated", "only d01")):
-            return False, "answer does not say hypothetical delays are not supported"
+    if q.get("q5_world_risk"):
+        view = result.get("view")
+        if not view or view.get("type") != "world_risk":
+            return False, f"expected world_risk view, got {(view or {}).get('type')!r}"
+        if "read as: po01 arrives on nov 19" not in answer_norm:
+            return False, "answer does not contain 'Read as: PO01 arrives on Nov 19.'"
 
     # Q6 special: proposal status AND answer mentions pending/approval
     if q.get("q6_checks"):
@@ -561,9 +564,11 @@ def _check_question(q: dict, result: dict) -> tuple[bool, str]:
 
     # Table check: every number in the "Options compared" table must match the
     # engine's ground truth for that option and column ("n/a" is allowed).
-    mismatches = check_table(result["answer"])
-    if mismatches:
-        return False, f"table mismatch: {mismatches[:3]}"
+    # World-risk views do not have an options table — skip the check.
+    if not q.get("q5_world_risk"):
+        mismatches = check_table(result["answer"])
+        if mismatches:
+            return False, f"table mismatch: {mismatches[:3]}"
 
     # Grounding check: fail if any answer token is not in tool results/question
     ungrounded = check_grounding(result)

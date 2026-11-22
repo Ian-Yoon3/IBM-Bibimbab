@@ -1,6 +1,8 @@
 """Core day-forward supply chain simulation engine."""
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
+
+from engine.episodes import cause_of, first_overlap_delay
 
 
 def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
@@ -37,6 +39,8 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
     """
     DAY0 = db["DAY0"]
     HORIZON = db["HORIZON"]
+    SIM_END = db["SIM_END"]
+    SAMPLING_CAP = DAY0 + timedelta(days=365)
     products = db["products"]
     warehouses = db["warehouses"]
     offers = db["offers"]
@@ -61,9 +65,10 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
     transfer_cost = 0
 
     def schedule(when, kind, wid, cid, qty, ref):
-        if not (DAY0 <= when <= HORIZON):
+        if not (DAY0 <= when <= SAMPLING_CAP):
             raise ValueError(
-                f"Event date {when} outside simulation window [{DAY0}, {HORIZON}]"
+                f"Event date {when} outside allowed range "
+                f"[{DAY0}, {SAMPLING_CAP}]"
             )
         events[when].append((kind, wid, cid, qty, ref))
 
@@ -82,6 +87,8 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
                  offer["component_id"], po["qty"], po_id)
 
     # ── schedule recovery actions ─────────────────────────────────────────────
+    calendar = db.get("calendar")
+    world_episodes = db.get("world_episodes")
     moved_by_lane: Counter = Counter()
     for action in actions:
         atype = action.get("type")
@@ -96,7 +103,35 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
             qty = int(action["qty"])
             _validate_offer_qty(offer, qty)
             action_date = _parse_date(action["action_date"])
-            receipt_date = action_date + timedelta(days=offer["lead_days"])
+            if world_episodes is not None:
+                cause_k = cause_of(db, "offer", offer_id)
+                if cause_k is not None:
+                    promised_date = calendar.next_business_day(
+                        action_date + timedelta(days=offer["lead_days"])
+                    )
+                    h_horizon = db["cause_horizons"][cause_k]["H"]
+                    if promised_date > h_horizon:
+                        raise ValueError(
+                            f"purchase of offer {offer_id!r} placed on "
+                            f"{action_date}: promised date {promised_date} "
+                            f"is after cause {cause_k!r} horizon H={h_horizon}"
+                        )
+                    shock = first_overlap_delay(
+                        world_episodes.get(cause_k, []),
+                        action_date,
+                        promised_date,
+                    )
+                    own = offer.get("delay_business_days")
+                    if own is not None or shock != 0:
+                        offer_copy = dict(offer)
+                        offer_copy["delay_business_days"] = (own or 0) + shock
+                        receipt_date = offer_receipt_date(action_date, offer_copy, calendar)
+                    else:
+                        receipt_date = offer_receipt_date(action_date, offer, calendar)
+                else:
+                    receipt_date = offer_receipt_date(action_date, offer, calendar)
+            else:
+                receipt_date = offer_receipt_date(action_date, offer, calendar)
             schedule(receipt_date, "ALT_RECEIPT", wid, offer["component_id"], qty, offer_id)
             purchase_cost += qty * offer["unit_cost_usd"] + offer["fixed_fee_usd"]
 
@@ -118,7 +153,30 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
                     f"exceeds max_qty {lane['max_qty']}"
                 )
             action_date = _parse_date(action["action_date"])
-            receipt_date = action_date + timedelta(days=lane["lead_days"])
+            base_arrival = action_date + timedelta(days=lane["lead_days"])
+            cause_k = cause_of(db, "lane", lane_id)
+            if world_episodes is not None and cause_k is not None:
+                h_horizon = db["cause_horizons"][cause_k]["H"]
+                if base_arrival > h_horizon:
+                    raise ValueError(
+                        f"transfer on lane {lane_id!r} placed on "
+                        f"{action_date}: base arrival {base_arrival} "
+                        f"is after cause {cause_k!r} horizon H={h_horizon}"
+                    )
+                shock = first_overlap_delay(
+                    world_episodes.get(cause_k, []),
+                    action_date,
+                    base_arrival,
+                )
+            else:
+                shock = 0
+            own_delay = lane.get("delay_days", 0)
+            total = lane["lead_days"] + own_delay + shock
+            if total <= 0:
+                arrival = action_date + timedelta(days=1)
+            else:
+                arrival = action_date + timedelta(days=total)
+            receipt_date = arrival
             schedule(action_date, "TRANSFER_OUT",
                      lane["from_warehouse_id"], cid, -qty, lane_id)
             schedule(receipt_date, "TRANSFER_IN",
@@ -168,10 +226,18 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
         })
 
     # ── main simulation loop ──────────────────────────────────────────────────
+    # Extend the loop end if events were scheduled beyond SIM_END.
+    max_prod_days = max(p["production_days"] for p in products.values())
+    if events:
+        latest_event = max(events.keys())
+        loop_end = max(SIM_END, latest_event + timedelta(days=max_prod_days))
+    else:
+        loop_end = SIM_END
+
     starts: dict[str, object] = {}  # order_id -> date
     next_order = 0
 
-    for offset in range((HORIZON - DAY0).days + 1):
+    for offset in range((loop_end - DAY0).days + 1):
         today = DAY0 + timedelta(days=offset)
         # Process all events for today: sort by qty descending (largest first)
         for kind, wid, cid, qty, ref in sorted(
@@ -258,6 +324,40 @@ def simulate(actions: list, disruption_id: str | None, db: dict) -> dict:
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def offer_receipt_date(action_date: date, offer: dict, calendar) -> date:
+    """Return the receipt date for a purchase of *offer* placed on *action_date*.
+
+    If the offer has no "delay_business_days" key (stage 1 / no world column):
+        receipt = action_date + lead_days  (calendar days, unchanged)
+
+    Otherwise (stage 2 offer kind):
+        promised = next_business_day(action_date + lead_days)
+        receipt  = add_business_days(promised, delay)
+        If receipt <= action_date, receipt = next_business_day(action_date + 1 day)
+
+    *calendar* must not be None when "delay_business_days" is present;
+    passing None in that case raises ValueError.
+    """
+    lead = offer["lead_days"]
+    delay = offer.get("delay_business_days")
+    if delay is None:
+        return action_date + timedelta(days=lead)
+    if calendar is None:
+        raise ValueError(
+            "offer_receipt_date: calendar is required when "
+            "'delay_business_days' is set"
+        )
+    promised = calendar.next_business_day(action_date + timedelta(days=lead))
+    if delay < 0 and -delay >= (promised - action_date).days:
+        # Each business day back is at least one calendar day back, so the
+        # receipt would fall on or before the order date. Skip the walk.
+        return calendar.next_business_day(action_date + timedelta(days=1))
+    receipt = calendar.add_business_days(promised, delay)
+    if receipt <= action_date:
+        receipt = calendar.next_business_day(action_date + timedelta(days=1))
+    return receipt
+
 
 def _parse_date(value: str):
     from datetime import date

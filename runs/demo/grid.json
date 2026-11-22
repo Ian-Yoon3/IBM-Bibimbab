@@ -1,0 +1,1728 @@
+{
+  "families": [
+    {
+      "D0_days": 9,
+      "M": 601,
+      "crossings": [
+        {
+          "diff_hi": -0.005765,
+          "diff_lo": 0.008153,
+          "p_hi": 0.81875,
+          "p_lo": 0.8125,
+          "pair": [
+            "TRANSFER",
+            "ALT_BUY"
+          ],
+          "se_diff_hi": 0.01921,
+          "se_diff_lo": 0.019172
+        }
+      ],
+      "family": "K1",
+      "open_episode": false,
+      "points": [
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.281098,
+            "TRANSFER|ALT_BUY": 0.973253,
+            "TRANSFER|HYBRID": 2.254351,
+            "WAIT|ALT_BUY": 2.834958,
+            "WAIT|HYBRID": 4.116057,
+            "WAIT|TRANSFER": 1.861705
+          },
+          "expected_late": {
+            "ALT_BUY": 4.468028,
+            "HYBRID": 3.18693,
+            "TRANSFER": 5.441281,
+            "WAIT": 7.302987
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.0,
+          "lambda_per_year": 0.0,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.0,
+          "se": {
+            "ALT_BUY": 0.027297,
+            "HYBRID": 0.022684,
+            "TRANSFER": 0.025564,
+            "WAIT": 0.027755
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.011112,
+            "TRANSFER|ALT_BUY": 0.020342,
+            "TRANSFER|HYBRID": 0.013939,
+            "WAIT|ALT_BUY": 0.019606,
+            "WAIT|HYBRID": 0.017485,
+            "WAIT|TRANSFER": 0.008866
+          },
+          "worlds_with_episode": {
+            "K1": 0.0,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.311464,
+            "TRANSFER|ALT_BUY": 0.893968,
+            "TRANSFER|HYBRID": 2.205433,
+            "WAIT|ALT_BUY": 2.765466,
+            "WAIT|HYBRID": 4.07693,
+            "WAIT|TRANSFER": 1.871498
+          },
+          "expected_late": {
+            "ALT_BUY": 4.722696,
+            "HYBRID": 3.411231,
+            "TRANSFER": 5.616664,
+            "WAIT": 7.488161
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.011707,
+          "lambda_per_year": 4.272954,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.1,
+          "se": {
+            "ALT_BUY": 0.026978,
+            "HYBRID": 0.022515,
+            "TRANSFER": 0.025124,
+            "WAIT": 0.027171
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.01099,
+            "TRANSFER|ALT_BUY": 0.02009,
+            "TRANSFER|HYBRID": 0.013643,
+            "WAIT|ALT_BUY": 0.019201,
+            "WAIT|HYBRID": 0.017096,
+            "WAIT|TRANSFER": 0.008845
+          },
+          "worlds_with_episode": {
+            "K1": 0.1,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.343161,
+            "TRANSFER|ALT_BUY": 0.809584,
+            "TRANSFER|HYBRID": 2.152745,
+            "WAIT|ALT_BUY": 2.69074,
+            "WAIT|HYBRID": 4.033902,
+            "WAIT|TRANSFER": 1.881156
+          },
+          "expected_late": {
+            "ALT_BUY": 4.983977,
+            "HYBRID": 3.640815,
+            "TRANSFER": 5.793561,
+            "WAIT": 7.674717
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.024794,
+          "lambda_per_year": 9.049711,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.2,
+          "se": {
+            "ALT_BUY": 0.026897,
+            "HYBRID": 0.022549,
+            "TRANSFER": 0.024771,
+            "WAIT": 0.026651
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010882,
+            "TRANSFER|ALT_BUY": 0.019862,
+            "TRANSFER|HYBRID": 0.013383,
+            "WAIT|ALT_BUY": 0.018777,
+            "WAIT|HYBRID": 0.016705,
+            "WAIT|TRANSFER": 0.00881
+          },
+          "worlds_with_episode": {
+            "K1": 0.2,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.376755,
+            "TRANSFER|ALT_BUY": 0.716664,
+            "TRANSFER|HYBRID": 2.093419,
+            "WAIT|ALT_BUY": 2.607704,
+            "WAIT|HYBRID": 3.984459,
+            "WAIT|TRANSFER": 1.89104
+          },
+          "expected_late": {
+            "ALT_BUY": 5.251306,
+            "HYBRID": 3.874551,
+            "TRANSFER": 5.96797,
+            "WAIT": 7.85901
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.039631,
+          "lambda_per_year": 14.465151,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.3,
+          "se": {
+            "ALT_BUY": 0.027104,
+            "HYBRID": 0.022872,
+            "TRANSFER": 0.024654,
+            "WAIT": 0.02641
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010806,
+            "TRANSFER|ALT_BUY": 0.019679,
+            "TRANSFER|HYBRID": 0.013181,
+            "WAIT|ALT_BUY": 0.018467,
+            "WAIT|HYBRID": 0.016445,
+            "WAIT|TRANSFER": 0.008803
+          },
+          "worlds_with_episode": {
+            "K1": 0.3,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.413935,
+            "TRANSFER|ALT_BUY": 0.613353,
+            "TRANSFER|HYBRID": 2.027288,
+            "WAIT|ALT_BUY": 2.515166,
+            "WAIT|HYBRID": 3.929101,
+            "WAIT|TRANSFER": 1.901814
+          },
+          "expected_late": {
+            "ALT_BUY": 5.53421,
+            "HYBRID": 4.120275,
+            "TRANSFER": 6.147562,
+            "WAIT": 8.049376
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.056758,
+          "lambda_per_year": 20.716817,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.4,
+          "se": {
+            "ALT_BUY": 0.027447,
+            "HYBRID": 0.023324,
+            "TRANSFER": 0.024496,
+            "WAIT": 0.026135
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010715,
+            "TRANSFER|ALT_BUY": 0.019532,
+            "TRANSFER|HYBRID": 0.012942,
+            "WAIT|ALT_BUY": 0.018088,
+            "WAIT|HYBRID": 0.016049,
+            "WAIT|TRANSFER": 0.008798
+          },
+          "worlds_with_episode": {
+            "K1": 0.4,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.452496,
+            "TRANSFER|ALT_BUY": 0.499218,
+            "TRANSFER|HYBRID": 1.951714,
+            "WAIT|ALT_BUY": 2.411073,
+            "WAIT|HYBRID": 3.863569,
+            "WAIT|TRANSFER": 1.911855
+          },
+          "expected_late": {
+            "ALT_BUY": 5.826389,
+            "HYBRID": 4.373894,
+            "TRANSFER": 6.325607,
+            "WAIT": 8.237463
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.077016,
+          "lambda_per_year": 28.110969,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.5,
+          "se": {
+            "ALT_BUY": 0.027796,
+            "HYBRID": 0.023853,
+            "TRANSFER": 0.024442,
+            "WAIT": 0.025894
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.01059,
+            "TRANSFER|ALT_BUY": 0.019464,
+            "TRANSFER|HYBRID": 0.012805,
+            "WAIT|ALT_BUY": 0.017819,
+            "WAIT|HYBRID": 0.015734,
+            "WAIT|TRANSFER": 0.008793
+          },
+          "worlds_with_episode": {
+            "K1": 0.5,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.49604,
+            "TRANSFER|ALT_BUY": 0.370175,
+            "TRANSFER|HYBRID": 1.866215,
+            "WAIT|ALT_BUY": 2.292188,
+            "WAIT|HYBRID": 3.788228,
+            "WAIT|TRANSFER": 1.922013
+          },
+          "expected_late": {
+            "ALT_BUY": 6.133735,
+            "HYBRID": 4.637696,
+            "TRANSFER": 6.50391,
+            "WAIT": 8.425923
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.10181,
+          "lambda_per_year": 37.16068,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.6,
+          "se": {
+            "ALT_BUY": 0.028434,
+            "HYBRID": 0.0246,
+            "TRANSFER": 0.024441,
+            "WAIT": 0.025789
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.0105,
+            "TRANSFER|ALT_BUY": 0.019335,
+            "TRANSFER|HYBRID": 0.012661,
+            "WAIT|ALT_BUY": 0.017536,
+            "WAIT|HYBRID": 0.015492,
+            "WAIT|TRANSFER": 0.008792
+          },
+          "worlds_with_episode": {
+            "K1": 0.6,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.543569,
+            "TRANSFER|ALT_BUY": 0.220824,
+            "TRANSFER|HYBRID": 1.764393,
+            "WAIT|ALT_BUY": 2.152912,
+            "WAIT|HYBRID": 3.696481,
+            "WAIT|TRANSFER": 1.932088
+          },
+          "expected_late": {
+            "ALT_BUY": 6.465466,
+            "HYBRID": 4.921897,
+            "TRANSFER": 6.68629,
+            "WAIT": 8.618378
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.133775,
+          "lambda_per_year": 48.827786,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.7,
+          "se": {
+            "ALT_BUY": 0.029215,
+            "HYBRID": 0.02557,
+            "TRANSFER": 0.024514,
+            "WAIT": 0.025687
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010381,
+            "TRANSFER|ALT_BUY": 0.01922,
+            "TRANSFER|HYBRID": 0.01253,
+            "WAIT|ALT_BUY": 0.017204,
+            "WAIT|HYBRID": 0.015211,
+            "WAIT|TRANSFER": 0.008789
+          },
+          "worlds_with_episode": {
+            "K1": 0.7,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.5999,
+            "TRANSFER|ALT_BUY": 0.034767,
+            "TRANSFER|HYBRID": 1.634667,
+            "WAIT|ALT_BUY": 1.977413,
+            "WAIT|HYBRID": 3.577313,
+            "WAIT|TRANSFER": 1.942646
+          },
+          "expected_late": {
+            "ALT_BUY": 6.836381,
+            "HYBRID": 5.236481,
+            "TRANSFER": 6.871148,
+            "WAIT": 8.813794
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.178826,
+          "lambda_per_year": 65.271649,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.8,
+          "se": {
+            "ALT_BUY": 0.030264,
+            "HYBRID": 0.026864,
+            "TRANSFER": 0.02485,
+            "WAIT": 0.025865
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010234,
+            "TRANSFER|ALT_BUY": 0.019153,
+            "TRANSFER|HYBRID": 0.01262,
+            "WAIT|ALT_BUY": 0.017004,
+            "WAIT|HYBRID": 0.015176,
+            "WAIT|TRANSFER": 0.008794
+          },
+          "worlds_with_episode": {
+            "K1": 0.8,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.607512,
+            "TRANSFER|ALT_BUY": 0.008153,
+            "TRANSFER|HYBRID": 1.615666,
+            "WAIT|ALT_BUY": 1.952296,
+            "WAIT|HYBRID": 3.559809,
+            "WAIT|TRANSFER": 1.944143
+          },
+          "expected_late": {
+            "ALT_BUY": 6.886173,
+            "HYBRID": 5.278661,
+            "TRANSFER": 6.894326,
+            "WAIT": 8.838469
+          },
+          "kind": "bisect",
+          "lambda_per_day": 0.185997,
+          "lambda_per_year": 67.889044,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.8125,
+          "se": {
+            "ALT_BUY": 0.03044,
+            "HYBRID": 0.02707,
+            "TRANSFER": 0.024925,
+            "WAIT": 0.025934
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010218,
+            "TRANSFER|ALT_BUY": 0.019172,
+            "TRANSFER|HYBRID": 0.012664,
+            "WAIT|ALT_BUY": 0.017019,
+            "WAIT|HYBRID": 0.015215,
+            "WAIT|TRANSFER": 0.008795
+          },
+          "worlds_with_episode": {
+            "K1": 0.812612,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.611631,
+            "TRANSFER|ALT_BUY": -0.005765,
+            "TRANSFER|HYBRID": 1.605865,
+            "WAIT|ALT_BUY": 1.939126,
+            "WAIT|HYBRID": 3.550757,
+            "WAIT|TRANSFER": 1.944892
+          },
+          "expected_late": {
+            "ALT_BUY": 6.91272,
+            "HYBRID": 5.30109,
+            "TRANSFER": 6.906955,
+            "WAIT": 8.851847
+          },
+          "kind": "bisect",
+          "lambda_per_day": 0.189764,
+          "lambda_per_year": 69.263941,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.81875,
+          "se": {
+            "ALT_BUY": 0.030552,
+            "HYBRID": 0.027176,
+            "TRANSFER": 0.024942,
+            "WAIT": 0.025944
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010214,
+            "TRANSFER|ALT_BUY": 0.01921,
+            "TRANSFER|HYBRID": 0.012699,
+            "WAIT|ALT_BUY": 0.017039,
+            "WAIT|HYBRID": 0.015223,
+            "WAIT|TRANSFER": 0.008794
+          },
+          "worlds_with_episode": {
+            "K1": 0.818752,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.615799,
+            "TRANSFER|ALT_BUY": -0.019617,
+            "TRANSFER|HYBRID": 1.596181,
+            "WAIT|ALT_BUY": 1.92619,
+            "WAIT|HYBRID": 3.541988,
+            "WAIT|TRANSFER": 1.945807
+          },
+          "expected_late": {
+            "ALT_BUY": 6.938519,
+            "HYBRID": 5.32272,
+            "TRANSFER": 6.918902,
+            "WAIT": 8.864709
+          },
+          "kind": "bisect",
+          "lambda_per_day": 0.193663,
+          "lambda_per_year": 70.687088,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.825,
+          "se": {
+            "ALT_BUY": 0.030646,
+            "HYBRID": 0.027275,
+            "TRANSFER": 0.024958,
+            "WAIT": 0.025952
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010207,
+            "TRANSFER|ALT_BUY": 0.019226,
+            "TRANSFER|HYBRID": 0.01271,
+            "WAIT|ALT_BUY": 0.017034,
+            "WAIT|HYBRID": 0.015209,
+            "WAIT|TRANSFER": 0.008792
+          },
+          "worlds_with_episode": {
+            "K1": 0.825,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.632762,
+            "TRANSFER|ALT_BUY": -0.079285,
+            "TRANSFER|HYBRID": 1.553478,
+            "WAIT|ALT_BUY": 1.869276,
+            "WAIT|HYBRID": 3.502038,
+            "WAIT|TRANSFER": 1.948561
+          },
+          "expected_late": {
+            "ALT_BUY": 7.045599,
+            "HYBRID": 5.412837,
+            "TRANSFER": 6.966314,
+            "WAIT": 8.914875
+          },
+          "kind": "bisect",
+          "lambda_per_day": 0.210791,
+          "lambda_per_year": 76.938755,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.85,
+          "se": {
+            "ALT_BUY": 0.031012,
+            "HYBRID": 0.027681,
+            "TRANSFER": 0.025034,
+            "WAIT": 0.026008
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.01018,
+            "TRANSFER|ALT_BUY": 0.019259,
+            "TRANSFER|HYBRID": 0.012787,
+            "WAIT|ALT_BUY": 0.017014,
+            "WAIT|HYBRID": 0.015233,
+            "WAIT|TRANSFER": 0.008791
+          },
+          "worlds_with_episode": {
+            "K1": 0.85,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.672388,
+            "TRANSFER|ALT_BUY": -0.219443,
+            "TRANSFER|HYBRID": 1.452945,
+            "WAIT|ALT_BUY": 1.734759,
+            "WAIT|HYBRID": 3.407146,
+            "WAIT|TRANSFER": 1.954201
+          },
+          "expected_late": {
+            "ALT_BUY": 7.280591,
+            "HYBRID": 5.608203,
+            "TRANSFER": 7.061148,
+            "WAIT": 9.015349
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.255843,
+          "lambda_per_year": 93.382618,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.9,
+          "se": {
+            "ALT_BUY": 0.032041,
+            "HYBRID": 0.028735,
+            "TRANSFER": 0.025278,
+            "WAIT": 0.026219
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010101,
+            "TRANSFER|ALT_BUY": 0.019441,
+            "TRANSFER|HYBRID": 0.013038,
+            "WAIT|ALT_BUY": 0.017109,
+            "WAIT|HYBRID": 0.015341,
+            "WAIT|TRANSFER": 0.008789
+          },
+          "worlds_with_episode": {
+            "K1": 0.9,
+            "K2": 0.104709
+          }
+        },
+        {
+          "M": 601,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.793236,
+            "TRANSFER|ALT_BUY": -0.684559,
+            "TRANSFER|HYBRID": 1.108677,
+            "WAIT|ALT_BUY": 1.280141,
+            "WAIT|HYBRID": 3.073378,
+            "WAIT|TRANSFER": 1.9647
+          },
+          "expected_late": {
+            "ALT_BUY": 7.924567,
+            "HYBRID": 6.131331,
+            "TRANSFER": 7.240008,
+            "WAIT": 9.204709
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.511686,
+          "lambda_per_year": 186.765235,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.99,
+          "se": {
+            "ALT_BUY": 0.034955,
+            "HYBRID": 0.031715,
+            "TRANSFER": 0.025676,
+            "WAIT": 0.026498
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010034,
+            "TRANSFER|ALT_BUY": 0.020515,
+            "TRANSFER|HYBRID": 0.014328,
+            "WAIT|ALT_BUY": 0.017898,
+            "WAIT|HYBRID": 0.016085,
+            "WAIT|TRANSFER": 0.008785
+          },
+          "worlds_with_episode": {
+            "K1": 0.99,
+            "K2": 0.104709
+          }
+        }
+      ],
+      "required_M": 601,
+      "slot_counts": {
+        "K1": 18,
+        "K2": 4
+      },
+      "target_met": true
+    },
+    {
+      "D0_days": 5,
+      "M": 624,
+      "crossings": [],
+      "family": "K2",
+      "open_episode": false,
+      "points": [
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.395954,
+            "TRANSFER|ALT_BUY": 0.787965,
+            "TRANSFER|HYBRID": 2.183918,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 4.164615,
+            "WAIT|TRANSFER": 1.980697
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 3.308878,
+            "TRANSFER": 5.492796,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.0,
+          "lambda_per_year": 0.0,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.0,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.022242,
+            "TRANSFER": 0.024849,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.01102,
+            "TRANSFER|ALT_BUY": 0.019772,
+            "TRANSFER|HYBRID": 0.013354,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.01692,
+            "WAIT|TRANSFER": 0.009097
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.0
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.314167,
+            "TRANSFER|ALT_BUY": 0.892204,
+            "TRANSFER|HYBRID": 2.20637,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 4.082829,
+            "WAIT|TRANSFER": 1.876458
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 3.390665,
+            "TRANSFER": 5.597035,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.021072,
+          "lambda_per_year": 7.691318,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.1,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.022386,
+            "TRANSFER": 0.024966,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010806,
+            "TRANSFER|ALT_BUY": 0.019681,
+            "TRANSFER|HYBRID": 0.013387,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.01679,
+            "WAIT|TRANSFER": 0.008679
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.1
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.230633,
+            "TRANSFER|ALT_BUY": 0.998093,
+            "TRANSFER|HYBRID": 2.228726,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.999295,
+            "WAIT|TRANSFER": 1.770569
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 3.474199,
+            "TRANSFER": 5.702925,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.044629,
+          "lambda_per_year": 16.289479,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.2,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.022504,
+            "TRANSFER": 0.025052,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010633,
+            "TRANSFER|ALT_BUY": 0.019602,
+            "TRANSFER|HYBRID": 0.013487,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.016729,
+            "WAIT|TRANSFER": 0.008271
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.2
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.144343,
+            "TRANSFER|ALT_BUY": 1.106899,
+            "TRANSFER|HYBRID": 2.251242,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.913005,
+            "WAIT|TRANSFER": 1.661763
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 3.560489,
+            "TRANSFER": 5.811731,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.071335,
+          "lambda_per_year": 26.037271,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.3,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.022679,
+            "TRANSFER": 0.025146,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010453,
+            "TRANSFER|ALT_BUY": 0.019513,
+            "TRANSFER|HYBRID": 0.013605,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.016682,
+            "WAIT|TRANSFER": 0.007823
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.3
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.053205,
+            "TRANSFER|ALT_BUY": 1.219912,
+            "TRANSFER|HYBRID": 2.273117,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.821867,
+            "WAIT|TRANSFER": 1.54875
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 3.651627,
+            "TRANSFER": 5.924744,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.102165,
+          "lambda_per_year": 37.290271,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.4,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.022916,
+            "TRANSFER": 0.025257,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010296,
+            "TRANSFER|ALT_BUY": 0.019416,
+            "TRANSFER|HYBRID": 0.013758,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.016687,
+            "WAIT|TRANSFER": 0.007401
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.4
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.957644,
+            "TRANSFER|ALT_BUY": 1.338341,
+            "TRANSFER|HYBRID": 2.295986,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.726306,
+            "WAIT|TRANSFER": 1.430321
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 3.747187,
+            "TRANSFER": 6.043173,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.138629,
+          "lambda_per_year": 50.599744,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.5,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.023173,
+            "TRANSFER": 0.025396,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010242,
+            "TRANSFER|ALT_BUY": 0.019369,
+            "TRANSFER|HYBRID": 0.013936,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.016755,
+            "WAIT|TRANSFER": 0.007075
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.5
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.856554,
+            "TRANSFER|ALT_BUY": 1.462668,
+            "TRANSFER|HYBRID": 2.319223,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.625216,
+            "WAIT|TRANSFER": 1.305994
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 3.848277,
+            "TRANSFER": 6.1675,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.183258,
+          "lambda_per_year": 66.889223,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.6,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.023436,
+            "TRANSFER": 0.025568,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010249,
+            "TRANSFER|ALT_BUY": 0.019392,
+            "TRANSFER|HYBRID": 0.014147,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.016798,
+            "WAIT|TRANSFER": 0.006741
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.6
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.746322,
+            "TRANSFER|ALT_BUY": 1.596987,
+            "TRANSFER|HYBRID": 2.343309,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.514984,
+            "WAIT|TRANSFER": 1.171675
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 3.95851,
+            "TRANSFER": 6.301819,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.240795,
+          "lambda_per_year": 87.890015,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.7,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.023789,
+            "TRANSFER": 0.025739,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010267,
+            "TRANSFER|ALT_BUY": 0.019359,
+            "TRANSFER|HYBRID": 0.014394,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.016945,
+            "WAIT|TRANSFER": 0.006458
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.7
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.624519,
+            "TRANSFER|ALT_BUY": 1.744679,
+            "TRANSFER|HYBRID": 2.369199,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.393181,
+            "WAIT|TRANSFER": 1.023982
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 4.080312,
+            "TRANSFER": 6.449511,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.321888,
+          "lambda_per_year": 117.488968,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.8,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.024207,
+            "TRANSFER": 0.026044,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010435,
+            "TRANSFER|ALT_BUY": 0.01947,
+            "TRANSFER|HYBRID": 0.014685,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.017093,
+            "WAIT|TRANSFER": 0.006303
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.8
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.478285,
+            "TRANSFER|ALT_BUY": 1.917276,
+            "TRANSFER|HYBRID": 2.395561,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.246947,
+            "WAIT|TRANSFER": 0.851386
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 4.226546,
+            "TRANSFER": 6.622107,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.460517,
+          "lambda_per_year": 168.088712,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.9,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.024745,
+            "TRANSFER": 0.026316,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.010729,
+            "TRANSFER|ALT_BUY": 0.019568,
+            "TRANSFER|HYBRID": 0.015025,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.017399,
+            "WAIT|TRANSFER": 0.006284
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.9
+          }
+        },
+        {
+          "M": 624,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.280529,
+            "TRANSFER|ALT_BUY": 2.142059,
+            "TRANSFER|HYBRID": 2.422588,
+            "WAIT|ALT_BUY": 2.768662,
+            "WAIT|HYBRID": 3.049191,
+            "WAIT|TRANSFER": 0.626603
+          },
+          "expected_late": {
+            "ALT_BUY": 4.704832,
+            "HYBRID": 4.424303,
+            "TRANSFER": 6.846891,
+            "WAIT": 7.473494
+          },
+          "kind": "grid",
+          "lambda_per_day": 0.921034,
+          "lambda_per_year": 336.177424,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.99,
+          "se": {
+            "ALT_BUY": 0.02667,
+            "HYBRID": 0.025463,
+            "TRANSFER": 0.026652,
+            "WAIT": 0.026897
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.011206,
+            "TRANSFER|ALT_BUY": 0.019754,
+            "TRANSFER|HYBRID": 0.015543,
+            "WAIT|ALT_BUY": 0.018801,
+            "WAIT|HYBRID": 0.017957,
+            "WAIT|TRANSFER": 0.006447
+          },
+          "worlds_with_episode": {
+            "K1": 0.094111,
+            "K2": 0.99
+          }
+        }
+      ],
+      "required_M": 624,
+      "slot_counts": {
+        "K1": 4,
+        "K2": 18
+      },
+      "target_met": true
+    },
+    {
+      "D0_days": 5,
+      "M": 863,
+      "crossings": [],
+      "family": "scale",
+      "points": [
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.378297,
+            "TRANSFER|ALT_BUY": 0.845904,
+            "TRANSFER|HYBRID": 2.2242,
+            "WAIT|ALT_BUY": 2.820944,
+            "WAIT|HYBRID": 4.199241,
+            "WAIT|TRANSFER": 1.975041
+          },
+          "expected_late": {
+            "ALT_BUY": 4.433731,
+            "HYBRID": 3.055435,
+            "TRANSFER": 5.279635,
+            "WAIT": 7.254676
+          },
+          "kind": "grid",
+          "m": 0.0,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.0,
+          "se": {
+            "ALT_BUY": 0.022381,
+            "HYBRID": 0.018546,
+            "TRANSFER": 0.020478,
+            "WAIT": 0.022326
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.00916,
+            "TRANSFER|ALT_BUY": 0.017178,
+            "TRANSFER|HYBRID": 0.012209,
+            "WAIT|ALT_BUY": 0.017169,
+            "WAIT|HYBRID": 0.015622,
+            "WAIT|TRANSFER": 0.007714
+          },
+          "worlds_with_episode": {
+            "K1": 0.0,
+            "K2": 0.0
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.32613,
+            "TRANSFER|ALT_BUY": 0.878372,
+            "TRANSFER|HYBRID": 2.204502,
+            "WAIT|ALT_BUY": 2.759589,
+            "WAIT|HYBRID": 4.085718,
+            "WAIT|TRANSFER": 1.881217
+          },
+          "expected_late": {
+            "ALT_BUY": 4.666257,
+            "HYBRID": 3.340127,
+            "TRANSFER": 5.544629,
+            "WAIT": 7.425846
+          },
+          "kind": "grid",
+          "m": 0.927173,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.1,
+          "se": {
+            "ALT_BUY": 0.022609,
+            "HYBRID": 0.019029,
+            "TRANSFER": 0.020471,
+            "WAIT": 0.022093
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.008955,
+            "TRANSFER|ALT_BUY": 0.016974,
+            "TRANSFER|HYBRID": 0.012065,
+            "WAIT|ALT_BUY": 0.016884,
+            "WAIT|HYBRID": 0.015339,
+            "WAIT|TRANSFER": 0.007447
+          },
+          "worlds_with_episode": {
+            "K1": 0.090174,
+            "K2": 0.100174
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.322016,
+            "TRANSFER|ALT_BUY": 0.879988,
+            "TRANSFER|HYBRID": 2.202005,
+            "WAIT|ALT_BUY": 2.754079,
+            "WAIT|HYBRID": 4.076095,
+            "WAIT|TRANSFER": 1.87409
+          },
+          "expected_late": {
+            "ALT_BUY": 4.684334,
+            "HYBRID": 3.362317,
+            "TRANSFER": 5.564322,
+            "WAIT": 7.438413
+          },
+          "kind": "m1",
+          "m": 1.0,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.107418,
+          "se": {
+            "ALT_BUY": 0.022639,
+            "HYBRID": 0.019084,
+            "TRANSFER": 0.020488,
+            "WAIT": 0.022101
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.00893,
+            "TRANSFER|ALT_BUY": 0.016957,
+            "TRANSFER|HYBRID": 0.012066,
+            "WAIT|ALT_BUY": 0.016866,
+            "WAIT|HYBRID": 0.015327,
+            "WAIT|TRANSFER": 0.007423
+          },
+          "worlds_with_episode": {
+            "K1": 0.096813,
+            "K2": 0.107503
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.271634,
+            "TRANSFER|ALT_BUY": 0.906605,
+            "TRANSFER|HYBRID": 2.178239,
+            "WAIT|ALT_BUY": 2.690869,
+            "WAIT|HYBRID": 3.962503,
+            "WAIT|TRANSFER": 1.784264
+          },
+          "expected_late": {
+            "ALT_BUY": 4.903998,
+            "HYBRID": 3.632364,
+            "TRANSFER": 5.810603,
+            "WAIT": 7.594867
+          },
+          "kind": "grid",
+          "m": 1.963663,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.2,
+          "se": {
+            "ALT_BUY": 0.023372,
+            "HYBRID": 0.020043,
+            "TRANSFER": 0.020796,
+            "WAIT": 0.022179
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.008839,
+            "TRANSFER|ALT_BUY": 0.016987,
+            "TRANSFER|HYBRID": 0.012115,
+            "WAIT|ALT_BUY": 0.016731,
+            "WAIT|HYBRID": 0.015231,
+            "WAIT|TRANSFER": 0.007334
+          },
+          "worlds_with_episode": {
+            "K1": 0.179322,
+            "K2": 0.199183
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.212874,
+            "TRANSFER|ALT_BUY": 0.934345,
+            "TRANSFER|HYBRID": 2.147219,
+            "WAIT|ALT_BUY": 2.618024,
+            "WAIT|HYBRID": 3.830898,
+            "WAIT|TRANSFER": 1.683679
+          },
+          "expected_late": {
+            "ALT_BUY": 5.145191,
+            "HYBRID": 3.932317,
+            "TRANSFER": 6.079537,
+            "WAIT": 7.763216
+          },
+          "kind": "grid",
+          "m": 3.13874,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.3,
+          "se": {
+            "ALT_BUY": 0.024593,
+            "HYBRID": 0.021491,
+            "TRANSFER": 0.021355,
+            "WAIT": 0.022471
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.008836,
+            "TRANSFER|ALT_BUY": 0.017186,
+            "TRANSFER|HYBRID": 0.012284,
+            "WAIT|ALT_BUY": 0.016698,
+            "WAIT|HYBRID": 0.015257,
+            "WAIT|TRANSFER": 0.007407
+          },
+          "worlds_with_episode": {
+            "K1": 0.267451,
+            "K2": 0.296813
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.150574,
+            "TRANSFER|ALT_BUY": 0.956669,
+            "TRANSFER|HYBRID": 2.107242,
+            "WAIT|ALT_BUY": 2.535284,
+            "WAIT|HYBRID": 3.685857,
+            "WAIT|TRANSFER": 1.578615
+          },
+          "expected_late": {
+            "ALT_BUY": 5.396663,
+            "HYBRID": 4.246089,
+            "TRANSFER": 6.353331,
+            "WAIT": 7.931947
+          },
+          "kind": "grid",
+          "m": 4.495265,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.4,
+          "se": {
+            "ALT_BUY": 0.026063,
+            "HYBRID": 0.023235,
+            "TRANSFER": 0.022139,
+            "WAIT": 0.022923
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.008911,
+            "TRANSFER|ALT_BUY": 0.017423,
+            "TRANSFER|HYBRID": 0.012483,
+            "WAIT|ALT_BUY": 0.016704,
+            "WAIT|HYBRID": 0.015389,
+            "WAIT|TRANSFER": 0.007587
+          },
+          "worlds_with_episode": {
+            "K1": 0.35511,
+            "K2": 0.393273
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.083986,
+            "TRANSFER|ALT_BUY": 0.973488,
+            "TRANSFER|HYBRID": 2.057474,
+            "WAIT|ALT_BUY": 2.443418,
+            "WAIT|HYBRID": 3.527404,
+            "WAIT|TRANSFER": 1.46993
+          },
+          "expected_late": {
+            "ALT_BUY": 5.655817,
+            "HYBRID": 4.571831,
+            "TRANSFER": 6.629305,
+            "WAIT": 8.099235
+          },
+          "kind": "grid",
+          "m": 6.099695,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.5,
+          "se": {
+            "ALT_BUY": 0.027592,
+            "HYBRID": 0.025041,
+            "TRANSFER": 0.022836,
+            "WAIT": 0.023346
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.009031,
+            "TRANSFER|ALT_BUY": 0.017759,
+            "TRANSFER|HYBRID": 0.012896,
+            "WAIT|ALT_BUY": 0.0168,
+            "WAIT|HYBRID": 0.015742,
+            "WAIT|TRANSFER": 0.007823
+          },
+          "worlds_with_episode": {
+            "K1": 0.442393,
+            "K2": 0.488882
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 1.012225,
+            "TRANSFER|ALT_BUY": 0.983922,
+            "TRANSFER|HYBRID": 1.996147,
+            "WAIT|ALT_BUY": 2.336657,
+            "WAIT|HYBRID": 3.348882,
+            "WAIT|TRANSFER": 1.352735
+          },
+          "expected_late": {
+            "ALT_BUY": 5.934699,
+            "HYBRID": 4.922474,
+            "TRANSFER": 6.918621,
+            "WAIT": 8.271356
+          },
+          "kind": "grid",
+          "m": 8.063358,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.6,
+          "se": {
+            "ALT_BUY": 0.029234,
+            "HYBRID": 0.026864,
+            "TRANSFER": 0.023468,
+            "WAIT": 0.023757
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.00924,
+            "TRANSFER|ALT_BUY": 0.01828,
+            "TRANSFER|HYBRID": 0.013377,
+            "WAIT|ALT_BUY": 0.017045,
+            "WAIT|HYBRID": 0.01612,
+            "WAIT|TRANSFER": 0.008071
+          },
+          "worlds_with_episode": {
+            "K1": 0.530006,
+            "K2": 0.583783
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.934942,
+            "TRANSFER|ALT_BUY": 0.985759,
+            "TRANSFER|HYBRID": 1.920701,
+            "WAIT|ALT_BUY": 2.215139,
+            "WAIT|HYBRID": 3.150081,
+            "WAIT|TRANSFER": 1.22938
+          },
+          "expected_late": {
+            "ALT_BUY": 6.23055,
+            "HYBRID": 5.295608,
+            "TRANSFER": 7.216309,
+            "WAIT": 8.445689
+          },
+          "kind": "grid",
+          "m": 10.594961,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.7,
+          "se": {
+            "ALT_BUY": 0.030718,
+            "HYBRID": 0.028584,
+            "TRANSFER": 0.023944,
+            "WAIT": 0.023998
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.009434,
+            "TRANSFER|ALT_BUY": 0.018847,
+            "TRANSFER|HYBRID": 0.014018,
+            "WAIT|ALT_BUY": 0.017418,
+            "WAIT|HYBRID": 0.016672,
+            "WAIT|TRANSFER": 0.008259
+          },
+          "worlds_with_episode": {
+            "K1": 0.619114,
+            "K2": 0.678123
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.848766,
+            "TRANSFER|ALT_BUY": 0.969577,
+            "TRANSFER|HYBRID": 1.818343,
+            "WAIT|ALT_BUY": 2.062178,
+            "WAIT|HYBRID": 2.910944,
+            "WAIT|TRANSFER": 1.092601
+          },
+          "expected_late": {
+            "ALT_BUY": 6.567943,
+            "HYBRID": 5.719177,
+            "TRANSFER": 7.53752,
+            "WAIT": 8.630122
+          },
+          "kind": "grid",
+          "m": 14.163054,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.8,
+          "se": {
+            "ALT_BUY": 0.032067,
+            "HYBRID": 0.030098,
+            "TRANSFER": 0.024127,
+            "WAIT": 0.024008
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.009545,
+            "TRANSFER|ALT_BUY": 0.01951,
+            "TRANSFER|HYBRID": 0.014858,
+            "WAIT|ALT_BUY": 0.017975,
+            "WAIT|HYBRID": 0.017354,
+            "WAIT|TRANSFER": 0.008293
+          },
+          "worlds_with_episode": {
+            "K1": 0.711622,
+            "K2": 0.772879
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.747503,
+            "TRANSFER|ALT_BUY": 0.918911,
+            "TRANSFER|HYBRID": 1.666414,
+            "WAIT|ALT_BUY": 1.85018,
+            "WAIT|HYBRID": 2.597683,
+            "WAIT|TRANSFER": 0.931269
+          },
+          "expected_late": {
+            "ALT_BUY": 6.985249,
+            "HYBRID": 6.237746,
+            "TRANSFER": 7.90416,
+            "WAIT": 8.835429
+          },
+          "kind": "grid",
+          "m": 20.262749,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.9,
+          "se": {
+            "ALT_BUY": 0.033003,
+            "HYBRID": 0.031266,
+            "TRANSFER": 0.0239,
+            "WAIT": 0.023684
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.00937,
+            "TRANSFER|ALT_BUY": 0.020023,
+            "TRANSFER|HYBRID": 0.015792,
+            "WAIT|ALT_BUY": 0.018553,
+            "WAIT|HYBRID": 0.01799,
+            "WAIT|TRANSFER": 0.007919
+          },
+          "worlds_with_episode": {
+            "K1": 0.813389,
+            "K2": 0.870632
+          }
+        },
+        {
+          "M": 863,
+          "diff": {
+            "ALT_BUY|HYBRID": 0.612283,
+            "TRANSFER|ALT_BUY": 0.726112,
+            "TRANSFER|HYBRID": 1.338395,
+            "WAIT|ALT_BUY": 1.428575,
+            "WAIT|HYBRID": 2.040857,
+            "WAIT|TRANSFER": 0.702462
+          },
+          "expected_late": {
+            "ALT_BUY": 7.676599,
+            "HYBRID": 7.064316,
+            "TRANSFER": 8.402711,
+            "WAIT": 9.105174
+          },
+          "kind": "grid",
+          "m": 40.525498,
+          "overflow": {
+            "K1": 0,
+            "K2": 0
+          },
+          "p": 0.99,
+          "se": {
+            "ALT_BUY": 0.032366,
+            "HYBRID": 0.031069,
+            "TRANSFER": 0.022841,
+            "WAIT": 0.022796
+          },
+          "se_diff": {
+            "ALT_BUY|HYBRID": 0.008311,
+            "TRANSFER|ALT_BUY": 0.019608,
+            "TRANSFER|HYBRID": 0.016436,
+            "WAIT|ALT_BUY": 0.018551,
+            "WAIT|HYBRID": 0.018089,
+            "WAIT|TRANSFER": 0.006554
+          },
+          "worlds_with_episode": {
+            "K1": 0.942561,
+            "K2": 0.97471
+          }
+        }
+      ],
+      "reference_cause": "K2",
+      "required_M": 863,
+      "slot_counts": {
+        "K1": 29,
+        "K2": 25
+      },
+      "target_met": true
+    }
+  ],
+  "m1_check": {
+    "ALT_BUY": {
+      "grid": 4.684334,
+      "main": 4.65185,
+      "z": 1.434875
+    },
+    "HYBRID": {
+      "grid": 3.362317,
+      "main": 3.337855,
+      "z": 1.28184
+    },
+    "TRANSFER": {
+      "grid": 5.564322,
+      "main": 5.54694,
+      "z": 0.848391
+    },
+    "WAIT": {
+      "grid": 7.438413,
+      "main": 7.417585,
+      "z": 0.94239
+    }
+  },
+  "settings": {
+    "N": 200,
+    "max_M": 2000,
+    "method": "lhs",
+    "p_grid": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      0.99
+    ],
+    "pilot_M": 100,
+    "seed": 20261109,
+    "target_se": 0.02
+  },
+  "version": 1
+}

@@ -1,0 +1,5 @@
+cause_id,day_unit,target_type,target_id
+K1,business,purchase_order,PO01
+K1,business,offer,OF02
+K2,calendar,lane,LN01
+K2,calendar,lane,LN02

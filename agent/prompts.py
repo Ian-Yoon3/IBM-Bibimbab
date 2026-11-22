@@ -11,8 +11,10 @@ RULES — follow these strictly:
 1. ALL NUMBERS must come from tool results. Never compute or estimate figures
    yourself.
 
-2. SCOPE: Only disruption D01 is modelled. For any other disruption ID,
-   custom delay date, or hypothetical scenario, do NOT make up numbers.
+2. SCOPE: Only disruption D01 is modelled. Other disruption IDs, receipt dates
+   outside the simulation window and changes to other inputs are not supported.
+   Do NOT make up numbers for them. Receipt dates of PO01 inside the window are
+   shown by code from the engine. Do not write numbers for them yourself.
    Gather: call get_disruption(disruption_id="D01") once AND
    compare_scenarios once so the answer can list real D01 options.
    Then stop; do not call explore_purchase_qty or get_priority_view.
@@ -64,7 +66,12 @@ EVIDENCE PLAYBOOK — gather exactly the tools listed for each question type:
   "priority customers / high-priority orders for a named scenario":
     1. get_priority_view(scenario_id=WAIT|TRANSFER|ALT_BUY|HYBRID)
 
-{propose_playbook}  "different delay length / what if N days / new disruption / hypothetical":
+{propose_playbook}  "risk, chance, worst case, what if N days, what if it arrives on a date
+  (receipt date of PO01 inside the window)":
+    1. get_disruption(disruption_id="D01")
+    — then stop. The tables are built by code from the engine.
+
+  "dates outside the window, other inputs, unknown disruption":
     1. get_disruption(disruption_id="D01")  — confirm actual D01 delay
     2. compare_scenarios                    — get real on-time counts for all options
     — then stop; do not call explore_purchase_qty or get_priority_view
@@ -196,7 +203,7 @@ FACTUAL questions ("how bad", "what is the impact", "how many orders"):
   ## Evidence
   (bullet list: one bullet per key number, citing the tool that returned it)
 
-UNSUPPORTED questions (different delay, hypothetical, unknown disruption):
+UNSUPPORTED questions (dates outside the window, other inputs, unknown disruption):
   ## Answer
   (start with the "scope_note" field of get_disruption, copied word for
   word. Do not recommend an option for the hypothetical case and do not
@@ -288,7 +295,17 @@ the table. Several option names look alike, so never describe an option by name 
 
 Rules: use only numbers that appear in the situation or the table. Do not compute
 differences, sums or percentages. Do not write headings, tables or a next step.
-Do not tell the user to contact anyone."""
+Do not tell the user to contact anyone.
+
+Comparisons are checked by code against the table, and a sentence that cannot be
+checked is removed. So when you compare:
+- Name both options by their code and name the column, for example
+  "TRANSFER has more on-time orders than WAIT".
+- Say "the most", "the lowest" or "the cheapest" only when it holds for every row
+  of the table. If it holds only inside a limit, put the limit in the same phrase:
+  "the most on-time orders within the budget", "the lowest extra cost among options
+  with at least 10 on-time orders".
+- Do not write "the only option", "no other option" or "any other option"."""
     return {"role": "user", "content": content}
 
 
@@ -317,3 +334,112 @@ def build_messages(
     system_msg = {"role": "system", "content": build_system_prompt(allow_propose)}
     user_msg   = {"role": "user",   "content": user_message}
     return [system_msg] + (history or []) + [user_msg]
+
+
+# ── World-risk compose message ────────────────────────────────────────────────
+
+def build_world_risk_message(user_message: str, view: dict) -> dict:
+    """Return the compose-phase user message for a world_risk view.
+
+    Includes the user message, reading lines, the time-and-cost table, the
+    late-orders-by-date table, the trade-off bullets, and the writing rules.
+
+    Parameters
+    ----------
+    user_message : str
+        The original user question.
+    view : dict
+        A world_risk_view() result dict.
+
+    Returns
+    -------
+    A single {"role": "user", "content": ...} dict.
+    """
+    md = view["markdown"]
+
+    # Extract sections relevant to the LLM (reading, two tables, trade-offs)
+    def _section(heading: str) -> str:
+        marker = f"## {heading}"
+        start = md.find(marker)
+        if start == -1:
+            return ""
+        end = md.find("\n## ", start + 1)
+        return md[start:end].strip() if end != -1 else md[start:].strip()
+
+    reading_sec = _section("Reading")
+    table_sec = _section("Time and cost by option")
+    wi_sec = _section("Late orders by receipt date")
+    tradeoff_sec = _section("Trade-offs")
+    sure_sec = _section("How sure is this")
+    causes_sec = _section("Shared causes")
+
+    sections = []
+    if reading_sec:
+        sections.append(reading_sec)
+    if table_sec:
+        sections.append(table_sec)
+    if sure_sec:
+        sections.append(sure_sec)
+    if causes_sec:
+        sections.append(causes_sec)
+    if wi_sec:
+        sections.append(wi_sec)
+    if tradeoff_sec:
+        sections.append(tradeoff_sec)
+
+    # Detect date mode: Reading section present means a specific date was resolved.
+    # Extract the bolded focus date label from the Late orders table if present.
+    focus_date_label = None
+    if wi_sec:
+        import re as _re
+        m = _re.search(r"\|\s*\*\*([^*]+)\*\*\s*\|", wi_sec)
+        if m:
+            focus_date_label = m.group(1).strip()
+
+    col_meanings = (
+        "Column meanings:\n"
+        "- Expected late orders, Range of the average, 90th percentile, Worst-10% average"
+        " and Chance of no late order describe all possible cases together. Never use"
+        " them for one date.\n"
+        "- Range of the average is uncertainty about the average, not the range of one"
+        " outcome.\n"
+        '- "Late if it arrives <date>" and the date table give the late orders for one'
+        " receipt date.\n"
+        "- Extra cost does not depend on the receipt date."
+    )
+    if focus_date_label:
+        col_meanings += (
+            f'\nThe user asked about {focus_date_label}. For that date use only the'
+            f' "Late if it arrives {focus_date_label}" column.'
+        )
+
+    rules = (
+        "Rules:\n"
+        "- Start with a direct answer to the question in the first sentence.\n"
+        "- Write at most 4 sentences.\n"
+        "- Do not restate the table.\n"
+        "- Quote at most three numbers and name the column each number comes from.\n"
+        "- Use only numbers that appear above.\n"
+        "- Do not compute differences, sums, ratios or averages.\n"
+        "- Never combine time and cost into one score.\n"
+        "- Do not pick a single best option unless the user gave a criterion; "
+        "then use only the marks in the table.\n"
+        "- Point out where measures disagree when it matters for the question.\n"
+        "- Comparisons are checked by code against the table and the paragraph is "
+        "removed when one cannot be checked. When you compare, name both options by "
+        "their code and name the column, for example \"HYBRID has a higher Chance "
+        "of no late order than TRANSFER\". Say highest or lowest only when it holds "
+        "for every row. Do not write \"the only option\" or \"no other option\".\n"
+        "- Mention only option codes that are rows of the table.\n"
+        "- No headings, tables, lists or next steps.\n"
+        "- Do not guess about the supplier.\n\n"
+        'Output form: "Answer: <paragraph>"'
+    )
+
+    content = (
+        f"User question: {user_message}\n\n"
+        + "\n\n".join(sections)
+        + f"\n\n{col_meanings}"
+        + f"\n\n{rules}"
+    )
+    return {"role": "user", "content": content}

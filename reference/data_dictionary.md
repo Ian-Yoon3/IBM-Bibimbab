@@ -165,3 +165,14 @@
 | `component_id` | FK components | 이전 부품 |
 | `action_date` | date | 출고 가정일 |
 | `qty` | int | 이전 EA |
+
+## worlds.csv (선택, 1단계 11행)
+
+기본 키 `world_id`. 세계 하나가 한 행이다. 파일이 없으면 엔진은 `disruptions.revised_receipt_date` 하나를 가중치 1로 쓴다. 형식 근거는 `docs/decisions/0004-wide-worlds-file.md`, 1단계 가중치 근거는 `docs/decisions/0002-receipt-date-weights.md`. 1단계에서 쓰던 `world_overrides.csv`는 더 이상 읽지 않으며, 남아 있으면 오류가 난다.
+
+| 필드 | 형식 | 정의 |
+|---|---|---|
+| `world_id` | ID | 세계 키. 가능한 상황 하나 |
+| `draw` | int | 0 이상 정수. 이 세계를 만든 파라미터 추출 번호. 추출마다 가중치 합이 같아야 한다. 1단계는 모두 0 |
+| `weight` | int | 1 이상 정수. 엔진이 전체 합으로 나눠 확률로 쓴다. 1단계 합계 1000은 정한 배율이며 표본 수가 아니다 |
+| `<target_type>.<target_id>.<field>` | 종류별 | 세계가 덮어쓸 기본 데이터 값. 열 하나가 변수 하나. 빈칸은 허용하지 않는다. 지금 열린 종류는 `purchase_order.<PO>.receipt_date`뿐이며, 값은 해당 PO의 `planned_receipt_date` 이상, 시뮬레이션 마지막 날 이하 |
