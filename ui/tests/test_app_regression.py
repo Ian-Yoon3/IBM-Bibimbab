@@ -34,20 +34,43 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
+from ui.fixtures import is_error_fixture, load_fixtures
+
 # Helpers ------------------------------------------------------------------
 # AppTest.from_file resolves relative paths against the calling file's
 # directory (ui/tests/), so we use an absolute path instead.
 _APP_PATH = str(Path(__file__).parent.parent.parent / "app.py")
 _TIMEOUT = 30
 
-# Selector indices in the find_plan selectbox:
-#   0  = placeholder "— select an example —"
-#   1  = fixture 0  (conv1_t1_i0):  success, "Our budget is 500 dollars..."
-#   22 = fixture 21 (conv19_t3_i21): proposal fixture "Go with it."
-#   23 = fixture 22 (converror_t1_i22): error fixture "Our budget is 500 dollars..."
-_IDX_SUCCESS_500 = 1
-_IDX_PROPOSAL = 22
-_IDX_ERROR_500 = 23
+
+def _fixture_index(*, question: str = None, is_error: bool = False) -> int:
+    """Return the selectbox index (position + 1) for the matching fixture.
+
+    Exactly one entry must match; raises AssertionError otherwise.
+    """
+    fixtures = load_fixtures()
+    matches = []
+    for i, e in enumerate(fixtures):
+        q_match = question is None or e["question"] == question
+        err_match = is_error_fixture(e["result"]) == is_error
+        if q_match and err_match:
+            matches.append(i)
+    assert len(matches) == 1, (
+        f"Expected exactly 1 fixture matching question={question!r} "
+        f"is_error={is_error}, found {len(matches)}: "
+        f"{[fixtures[i]['question'] for i in matches]}"
+    )
+    # Selectbox index 0 is the placeholder; fixture i maps to index i+1.
+    return matches[0] + 1
+
+
+# Selector indices in the fixture selectbox (0 = placeholder):
+#   _IDX_SUCCESS_500 — success entry for the $500 question
+#   _IDX_PROPOSAL    — proposal entry "Go with it."
+#   _IDX_ERROR_500   — error entry for the $500 question
+_IDX_SUCCESS_500 = _fixture_index(question="Our budget is 500 dollars. What should we do?", is_error=False)
+_IDX_PROPOSAL = _fixture_index(question="Go with it.", is_error=False)
+_IDX_ERROR_500 = _fixture_index(question="Our budget is 500 dollars. What should we do?", is_error=True)
 
 _QUESTION_MATCHED = "Our budget is 500 dollars. What should we do?"
 _QUESTION_UNMATCHED = "This question does not match any saved example XYZ987"
@@ -321,7 +344,7 @@ class TestDuplicateQuestionFixtures(unittest.TestCase):
         success_last = success_msgs[-1]
         self.assertFalse(success_last.get("is_error"), "Success fixture marked as error")
 
-        # New conversation then select error fixture (index 23)
+        # New conversation then select the error fixture
         at.button(key="new_conv").click()
         at.run()
         _go_to_compare(at)
@@ -396,17 +419,17 @@ class TestUnmatchedInput(unittest.TestCase):
 # Added to fix regressions A, B, and C (commit 495b7f5)
 # ===========================================================================
 
-# Indices in the find_plan selectbox (0 = placeholder):
-_IDX_A = 1   # conv1_t1_i0  — $500 recommendation
-_IDX_B = 2   # conv2_t1_i1  — $800 recommendation
-_IDX_ERROR = 23  # converror_t1_i22 — error fixture (same question as _IDX_A)
+# Selector indices derived from the fixture file (0 = placeholder):
+_IDX_A = _fixture_index(question="Our budget is 500 dollars. What should we do?", is_error=False)
+_IDX_B = _fixture_index(question="We can spend up to $800. Which option?", is_error=False)
+_IDX_ERROR = _fixture_index(question="Our budget is 500 dollars. What should we do?", is_error=True)
 
 # Exact question texts for the two non-error 500/800 fixtures
 _Q_500 = "Our budget is 500 dollars. What should we do?"
 _Q_800 = "We can spend up to $800. Which option?"
 
 # Total number of non-placeholder fixture options
-_TOTAL_FIXTURES = 23
+_TOTAL_FIXTURES = len(load_fixtures())
 
 
 class TestRegressionA_FirstSelectionDisplaysAnswer(unittest.TestCase):
@@ -447,8 +470,8 @@ class TestRegressionA_FirstSelectionDisplaysAnswer(unittest.TestCase):
                       f"Expected snippet: {snippet!r}\n"
                       f"Rendered: {rendered_texts[:300]!r}")
 
-    def test_all_23_fixtures_display_answer_immediately(self):
-        """All 23 fixtures show their answer after exactly one selection."""
+    def test_all_fixtures_display_answer_immediately(self):
+        """All fixtures show their answer after exactly one selection."""
         for idx in range(1, _TOTAL_FIXTURES + 1):
             with self.subTest(selector_index=idx):
                 self._check_fixture_at_index(idx)
@@ -829,8 +852,8 @@ if __name__ == "__main__":
 # Issue 1 — Retry buttons are real, fixture-id-bound actions
 # ===========================================================================
 # These tests verify the fix for the retry no-op defect.
-# _IDX_A   = conv1_t1_i0  (success, $500)
-# _IDX_ERROR = conv_error_t1_i22 (error, same question as $500)
+# _IDX_A     = the $500 success entry
+# _IDX_ERROR = the error entry (same question as $500)
 # ===========================================================================
 
 class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
@@ -991,7 +1014,7 @@ class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
         at = _boot()
         _go_to_compare(at)
 
-        # Load the error fixture (index 23), which shares question with success (index 1)
+        # Load the error fixture, which shares its question with the $500 success entry
         at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR_500)
         at.run()
         msgs = at.session_state.get("display_messages", [])
