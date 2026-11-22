@@ -10,6 +10,9 @@ result dict. Numbers are displayed exactly as received.
 """
 from __future__ import annotations
 
+import datetime
+
+import pandas as pd
 import streamlit as st
 
 
@@ -665,6 +668,188 @@ def _render_proposal_view(view: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# world_risk helpers and renderer
+# ---------------------------------------------------------------------------
+
+def split_markdown_sections(markdown: str) -> dict[str, str]:
+    """Split *markdown* on lines that start with '## ' and return a mapping
+    of heading text to body text, preserving order.
+
+    Text before the first heading is ignored.  A heading that appears more
+    than once keeps the first body.  Empty input gives {}.
+    """
+    if not markdown:
+        return {}
+    sections: dict[str, str] = {}
+    current_heading: str | None = None
+    body_lines: list[str] = []
+
+    for line in markdown.splitlines():
+        if line.startswith("## "):
+            if current_heading is not None and current_heading not in sections:
+                sections[current_heading] = "\n".join(body_lines).strip()
+            current_heading = line[3:].strip()
+            body_lines = []
+        else:
+            if current_heading is not None:
+                body_lines.append(line)
+
+    if current_heading is not None and current_heading not in sections:
+        sections[current_heading] = "\n".join(body_lines).strip()
+
+    return sections
+
+
+def _render_world_risk_view(view: dict) -> None:
+    """Render a world_risk view with summary table, charts, and expanders."""
+    rows = view.get("rows", [])
+    settings = view.get("settings") or {}
+    budget = settings.get("budget")
+    focus_date = view.get("focus_date")
+    reading = view.get("reading") or []
+    assumptions = view.get("assumptions") or []
+    explanation_status = view.get("explanation_status")
+    explanation = view.get("explanation")
+    suggested_questions = view.get("suggested_questions") or []
+    markdown_text = view.get("markdown", "")
+    sections = split_markdown_sections(markdown_text)
+
+    # 1. Situation and scope note
+    situation = view.get("situation", "")
+    if situation:
+        st.markdown(situation)
+    scope_note = view.get("scope_note", "")
+    if scope_note:
+        st.caption(scope_note)
+
+    # 2. Reading lines (date mode) — always visible, never in an expander
+    for line in reading:
+        st.info(line)
+
+    # 3. Summary table
+    if rows:
+        # Build column list
+        col_headers = ["Option", "Extra cost", "Expected late orders",
+                       "Chance of no late order"]
+        if focus_date is not None:
+            # Format focus date as "Mon D" e.g. "Nov 14"
+            try:
+                fd = datetime.date.fromisoformat(focus_date)
+                month_abbr = fd.strftime("%b")
+                day_str = str(fd.day)
+                focus_col_label = f"Late if it arrives {month_abbr} {day_str}"
+            except (ValueError, TypeError):
+                focus_col_label = f"Late if it arrives {focus_date}"
+            col_headers.append(focus_col_label)
+        if budget is not None:
+            col_headers.append(f"Within ${_fmt_cost(budget).lstrip('$')}")
+
+        header_html = (
+            "<table class='cmp-table'><thead><tr>"
+            + "".join(f"<th>{h}</th>" for h in col_headers)
+            + "</tr></thead><tbody>"
+        )
+        body_html = ""
+        for r in rows:
+            code = r.get("code", "")
+            name = r.get("name", code)
+            ec = r.get("extra_cost")
+            exp_late = r.get("expected_late_orders")
+            p_no_late = r.get("p_no_late_pct")
+
+            ec_str = _fmt_cost(ec) if ec is not None else "—"
+            exp_late_str = f"{exp_late:.2f}" if exp_late is not None else "—"
+            p_no_late_str = f"{p_no_late:.1f}%" if p_no_late is not None else "—"
+            option_str = f"{name} ({code})"
+
+            cells = [option_str, ec_str, exp_late_str, p_no_late_str]
+            if focus_date is not None:
+                late_at = r.get("late_at_focus")
+                cells.append(str(late_at) if late_at is not None else "—")
+            if budget is not None:
+                within = r.get("within_budget")
+                cells.append("Yes" if within else "No")
+
+            body_html += (
+                "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+            )
+
+        st.markdown(header_html + body_html + "</tbody></table>",
+                    unsafe_allow_html=True)
+
+    # 4. Two bar charts side by side
+    if rows:
+        codes = [r.get("code", "") for r in rows]
+        late_values = [r.get("expected_late_orders", 0) for r in rows]
+        cost_values = [r.get("extra_cost", 0) for r in rows]
+
+        chart_col1, chart_col2 = st.columns(2)
+        with chart_col1:
+            st.caption("Expected late orders")
+            chart_data_late = {
+                "Option": codes,
+                "Expected late orders": late_values,
+            }
+            # Render as a simple bar chart using st.bar_chart
+            df_late = pd.DataFrame(chart_data_late).set_index("Option")
+            st.bar_chart(df_late)
+        with chart_col2:
+            st.caption("Extra cost (USD)")
+            chart_data_cost = {
+                "Option": codes,
+                "Extra cost (USD)": cost_values,
+            }
+            df_cost = pd.DataFrame(chart_data_cost).set_index("Option")  # noqa: PD013
+            st.bar_chart(df_cost)
+
+    # 5. AI explanation paragraph
+    if explanation_status == "ok" and explanation:
+        st.caption("AI explanation")
+        st.markdown(explanation)
+    elif explanation_status in ("dropped", "unavailable"):
+        # Show the fixed "What this means" section from the markdown
+        what_this_means = sections.get("What this means", "")
+        if what_this_means:
+            st.markdown(what_this_means)
+
+    # 6. Collapsed expanders for markdown sections
+    n_assumptions = len(assumptions)
+    if n_assumptions > 0:
+        st.caption(
+            f"{n_assumptions} assumption{'s' if n_assumptions != 1 else ''} apply "
+            f"to these numbers. Open Assumptions to read them."
+        )
+
+    expander_defs = [
+        ("How sure is this", "How sure is this"),
+        ("Shared causes", "Shared causes"),
+        ("Late orders by receipt date", "Late orders by receipt date"),
+        ("Trade-offs", "Trade-offs"),
+        (f"Assumptions ({n_assumptions})", "Assumptions"),
+        ("Notes", "Notes"),
+    ]
+    for expander_label, section_key in expander_defs:
+        # For the assumptions expander, only show when assumptions is non-empty
+        if section_key == "Assumptions" and n_assumptions == 0:
+            continue
+        body = sections.get(section_key, "")
+        if not body:
+            continue
+        with st.expander(expander_label, expanded=False):
+            st.markdown(body)
+
+    # 7. Full analysis expander
+    with st.expander("Full analysis", expanded=False):
+        st.markdown(markdown_text)
+
+    # 8. Suggested questions as a bulleted list
+    if suggested_questions:
+        st.caption("Questions you can ask")
+        for q in suggested_questions:
+            st.markdown(f"- {q}")
+
+
+# ---------------------------------------------------------------------------
 # Single result renderer (public API)
 # ---------------------------------------------------------------------------
 
@@ -709,6 +894,8 @@ def render_result(result: dict, label: str = "assistant") -> None:
             _render_option_view(view)
         elif vtype == "proposal":
             _render_proposal_view(view)
+        elif vtype == "world_risk":
+            _render_world_risk_view(view)
         else:
             # Unknown type — show markdown
             st.markdown(answer)
