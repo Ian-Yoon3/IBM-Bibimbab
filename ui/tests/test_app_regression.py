@@ -279,21 +279,23 @@ class TestLiveModeBlocking(unittest.TestCase):
         self.assertNotIn("fixture_selector_compare", at.session_state)
 
     def test_live_mode_blocked_on_all_non_overview_pages(self):
-        """The live guard fires on compare and impact pages too."""
+        """The live guard fires on compare page in Live mode.
+        Impact page is no longer fully blocked (Part 3: live risk form).
+        """
         at = _boot()
         at.radio(key="mode_radio").set_value("Live agent")
         at.run()
 
-        for page_btn_key in ("nav_compare", "nav_impact"):
-            at.button(key=page_btn_key).click()
-            at.run()
-            self.assertEqual(len(at.selectbox), 0,
-                             f"Fixture selector visible on {page_btn_key} in Live mode")
-            warnings = [w.value for w in at.warning]
-            self.assertTrue(
-                any("not available" in w.lower() for w in warnings),
-                f"No unavailable warning on {page_btn_key} in Live mode",
-            )
+        # compare page is still fully blocked in Live mode
+        at.button(key="nav_compare").click()
+        at.run()
+        self.assertEqual(len(at.selectbox), 0,
+                         "Fixture selector visible on nav_compare in Live mode")
+        warnings = [w.value for w in at.warning]
+        self.assertTrue(
+            any("not available" in w.lower() for w in warnings),
+            f"No unavailable warning on nav_compare in Live mode: {warnings}",
+        )
 
     def test_live_mode_overview_shows_unavailable(self):
         """Overview page also shows the unavailable message in Live mode."""

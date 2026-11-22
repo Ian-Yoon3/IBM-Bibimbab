@@ -163,12 +163,14 @@ class TestRiskPageOverviewLiveMode(unittest.TestCase):
             "Selectbox found on the risk page in Live mode (should be absent)",
         )
 
-    def test_unavailable_warning_present_in_live_mode(self):
-        """The 'not available' warning appears in Live mode."""
+    def test_no_unavailable_warning_in_live_mode(self):
+        """The impact page no longer shows 'not available' in Live mode.
+        It now shows either the API key guidance or the risk question form.
+        """
         warnings = [w.value for w in self.at.warning]
-        self.assertTrue(
+        self.assertFalse(
             any("not available" in w.lower() for w in warnings),
-            f"Expected 'not available' warning in Live mode; got: {warnings}",
+            f"Unexpected 'not available' warning in Live mode: {warnings}",
         )
 
 
