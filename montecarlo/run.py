@@ -143,13 +143,33 @@ def run(data_dir, out_dir, M: int = 1000, N: int = 200,
     # Build per-cause and per-variable summaries for the record
     cause_summary = {}
     for cid, cp in est["causes"].items():
+        T_free = cp["T_free_days"]
+        rate_shape = cp["rate_shape"]
+        per_year_mean = round(rate_shape / T_free * 365, 6) if T_free > 0 else None
+        # open_episode: convert date objects to ISO strings for JSON
+        oe_raw = cp.get("open_episode")
+        if oe_raw is not None:
+            oe_out = {
+                "start_date": oe_raw["start_date"].isoformat()
+                    if hasattr(oe_raw.get("start_date"), "isoformat")
+                    else str(oe_raw["start_date"]),
+                "end_date": (oe_raw["end_date"].isoformat()
+                    if hasattr(oe_raw.get("end_date"), "isoformat")
+                    else (str(oe_raw["end_date"]) if oe_raw.get("end_date") is not None else None)),
+                "delay_days": oe_raw.get("delay_days"),
+            }
+        else:
+            oe_out = None
         cause_summary[cid] = {
             "open_on_day0":          cp["open_on_day0"],
-            "T_free_days":           cp["T_free_days"],
+            "T_free_days":           T_free,
             "duration_prior_share":  cp["duration_prior_share"],
             "severity_prior_share":  cp["severity_prior_share"],
             "slots":                 slot_counts.get(cid, 0),
             "overflow":              meta["overflow_counts"].get(cid, 0),
+            "rate_shape":            rate_shape,
+            "per_year_mean":         per_year_mean,
+            "open_episode":          oe_out,
         }
 
     var_summary = {}

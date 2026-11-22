@@ -4,7 +4,7 @@ import decimal
 from datetime import timedelta
 from fractions import Fraction
 
-from engine.episodes import world_identity
+from engine.episodes import derived_tags, world_identity
 from engine.evaluate import evaluate
 from engine.simulate import build_scenario_actions, simulate
 
@@ -217,10 +217,11 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         Disruption to evaluate (must exist in db["disruptions"]).
     db : dict
         Loaded database (from loader.load_all()).  Never mutated.
-    weighted_results : list of (weight, results, draw)
+    weighted_results : list of (weight, results, draw, tags)
         weight : int
         results : dict scenario_id -> (late_orders, total_extra_cost)
         draw : int or None
+        tags : dict {cause_id: 0 or 1} or None
         One entry per distinct world.
     weights_source : str
         Source of the weights ("file", "announced_date", or "run").
@@ -241,7 +242,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         )
     pXX_key = f"p{int(level_pct)}_late_orders"
 
-    total_w = Fraction(sum(wt for wt, _, _draw in weighted_results))
+    total_w = Fraction(sum(wt for wt, _, _draw, _tags in weighted_results))
 
     dis = db["disruptions"][disruption_id]
     po_id = dis["po_id"]
@@ -260,9 +261,9 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
     # ── per-draw aggregation (for average_range and ranking) ──────────────────
     # draw -> {sid -> (sum_wt_late, sum_wt)} for per-draw expected late
     draw_sids: dict = {}   # draw -> {sid -> [sum_wt_late: Fraction, sum_wt: Fraction]}
-    has_none_draw = any(d is None for _, _, d in weighted_results)
+    has_none_draw = any(d is None for _, _, d, _t in weighted_results)
     draws_seen: set = set()
-    for wt, results, draw in weighted_results:
+    for wt, results, draw, _tags in weighted_results:
         if draw is not None:
             draws_seen.add(draw)
             if draw not in draw_sids:
@@ -278,6 +279,43 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
     # average_range and ranking require >= 2 distinct draws and no None draws.
     use_draws = (not has_none_draw) and len(draws_seen) >= 2
 
+    # ── per-cause tag accumulation ─────────────────────────────────────────────
+    # cause_id -> {0: Fraction weight, 1: Fraction weight}
+    db_causes = db.get("causes") or []
+    # First-appearance cause order (preserving causes.csv order).
+    cause_ids_ordered = []
+    _seen_cids: set = set()
+    for _cr in db_causes:
+        _cid = _cr["cause_id"]
+        if _cid not in _seen_cids:
+            cause_ids_ordered.append(_cid)
+            _seen_cids.add(_cid)
+
+    # Check whether any world has tags=None (makes causes aggregation unavailable).
+    any_tags_none = any(t is None for _, _, _d, t in weighted_results)
+    use_causes = bool(cause_ids_ordered) and not any_tags_none
+
+    # Accumulate per-cause tag weights and per-(cause, tag, sid) late sums.
+    # cause_tag_w[cid][tag] = Fraction total weight of worlds with that tag
+    # cause_tag_late[cid][tag][sid] = Fraction sum of weight*late
+    cause_tag_w: dict = {}
+    cause_tag_late: dict = {}
+    if use_causes:
+        for cid in cause_ids_ordered:
+            cause_tag_w[cid] = {0: Fraction(0), 1: Fraction(0)}
+            cause_tag_late[cid] = {
+                0: {sid: Fraction(0) for sid in disrupted_scenario_ids},
+                1: {sid: Fraction(0) for sid in disrupted_scenario_ids},
+            }
+        for wt, results, _draw, tags in weighted_results:
+            wt_frac = Fraction(wt)
+            for cid in cause_ids_ordered:
+                tag = tags.get(cid, 0)
+                cause_tag_w[cid][tag] += wt_frac
+                for sid in disrupted_scenario_ids:
+                    late, _ = results[sid]
+                    cause_tag_late[cid][tag][sid] += wt_frac * Fraction(late)
+
     # ── per-option aggregation ─────────────────────────────────────────────────
     option_results = {}   # scenario_id -> aggregated dict
 
@@ -290,7 +328,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         p_no_w = Fraction(0)
         lates_and_weights = []
 
-        for wt, results, _draw in weighted_results:
+        for wt, results, _draw, _tags in weighted_results:
             wt_frac = Fraction(wt)
             late, cost = results[sid]
 
@@ -461,6 +499,51 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
             "tail_mean_late_change": round_half_away(tail_chg, 2),
         })
 
+    # ── causes aggregation ────────────────────────────────────────────────────
+    if use_causes:
+        # Build targets list per cause in causes.csv order.
+        cause_targets: dict = {}
+        for _cr in db_causes:
+            _cid = _cr["cause_id"]
+            if _cid not in cause_targets:
+                cause_targets[_cid] = []
+            cause_targets[_cid].append([_cr["target_type"], _cr["target_id"]])
+
+        causes_out = []
+        for cid in cause_ids_ordered:
+            w1 = cause_tag_w[cid][1]
+            w0 = cause_tag_w[cid][0]
+            active_pct = round_half_away(Fraction(100) * w1 / total_w, 1)
+
+            without_dict = {}
+            with_dict = {}
+            for sid in disrupted_scenario_ids:
+                if w0 > 0:
+                    without_dict[sid] = round_half_away(
+                        cause_tag_late[cid][0][sid] / w0, 2
+                    )
+                else:
+                    without_dict[sid] = None
+                if w1 > 0:
+                    with_dict[sid] = round_half_away(
+                        cause_tag_late[cid][1][sid] / w1, 2
+                    )
+                else:
+                    with_dict[sid] = None
+
+            causes_out.append({
+                "cause_id": cid,
+                "targets": cause_targets.get(cid, []),
+                "active_pct": active_pct,
+                "without": without_dict,
+                "with": with_dict,
+                "per_year_mean": None,
+                "open_episode": None,
+                "grid": None,
+            })
+    else:
+        causes_out = []
+
     # ── assemble final output (remove internal Fraction fields) ───────────────
     options_out = []
     for sid in disrupted_scenario_ids:
@@ -482,6 +565,8 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         },
         "tradeoff_steps": tradeoff_steps,
         "ranking": ranking,
+        "causes": causes_out,
+        "common_scale": None,
     }
 
 
@@ -522,11 +607,13 @@ def evaluate_worlds(disruption_id: str, db: dict,
     # Cache: (scenario_id, world_identity(world)) -> (late_orders, total_extra_cost)
     _sim_cache: dict = {}
 
-    # Build weighted_results: list of (weight, {sid: (late, cost)}, draw)
+    # Build weighted_results: list of (weight, {sid: (late, cost)}, draw, tags)
     weighted_results = []
     for w in worlds:
         wt = w["weight"]
         draw = w.get("draw")  # int or None (synthetic fallback world has no draw)
+        # tags: derived_tags for worlds that have episodes, else None
+        tags = derived_tags(w, db) if "episodes" in w else None
         results = {}
         for sid in disrupted_scenario_ids:
             cache_key = (sid, world_identity(w))
@@ -536,7 +623,7 @@ def evaluate_worlds(disruption_id: str, db: dict,
                 late, cost = world_result(db, disruption_id, sid, w)
                 _sim_cache[cache_key] = (late, cost)
             results[sid] = (late, cost)
-        weighted_results.append((wt, results, draw))
+        weighted_results.append((wt, results, draw, tags))
 
     return aggregate_options(disruption_id, db, weighted_results, weights_source,
                              len(worlds), level)

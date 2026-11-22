@@ -1,13 +1,22 @@
 """Run folder management: fingerprinting, result tables, and run selection."""
 
 import csv
+import decimal
 import hashlib
 import json
+import math
 import sys
 from fractions import Fraction
 from pathlib import Path
 
 from engine.worlds import aggregate_options, world_result
+
+
+def _round_half_away_float(x: float, digits: int) -> float:
+    """Round x (a plain float) to digits decimal places, half away from zero."""
+    fmt = "1." + "0" * digits if digits > 0 else "1"
+    d = decimal.Decimal(str(x))
+    return float(d.quantize(decimal.Decimal(fmt), rounding=decimal.ROUND_HALF_UP))
 
 # ---------------------------------------------------------------------------
 # Module constants
@@ -184,6 +193,16 @@ def build_result_table(db_with_worlds, worlds_csv_path, out_dir) -> dict:
         if idx not in db_world_for_index:
             db_world_for_index[idx] = db_with_worlds["worlds"][i]
 
+    # Determine cause IDs in first-appearance order from db["causes"].
+    db_causes = db_with_worlds.get("causes") or []
+    cause_ids_ordered = []
+    _seen_cause_ids: set = set()
+    for _cr in db_causes:
+        _cid = _cr["cause_id"]
+        if _cid not in _seen_cause_ids:
+            cause_ids_ordered.append(_cid)
+            _seen_cause_ids.add(_cid)
+
     # Build result rows: one per distinct world.
     result_rows = []
     for idx in range(len(world_index_map)):
@@ -193,6 +212,12 @@ def build_result_table(db_with_worlds, worlds_csv_path, out_dir) -> dict:
         # Copy value cells verbatim from the first occurrence.
         for col, val in zip(value_cols, first_raw[3:]):
             row[col] = val
+        # active.<cause_id> columns (derived_tags for episode-bearing worlds).
+        if cause_ids_ordered:
+            from engine.episodes import derived_tags as _derived_tags
+            tags = _derived_tags(world, db_with_worlds) if "episodes" in world else {}
+            for cid in cause_ids_ordered:
+                row[f"active.{cid}"] = str(tags.get(cid, 0))
         # Simulate each disrupted scenario.
         for dis_id, sid in scenario_sids:
             late, cost = world_result(db_with_worlds, dis_id, sid, world)
@@ -202,6 +227,8 @@ def build_result_table(db_with_worlds, worlds_csv_path, out_dir) -> dict:
 
     # Build results.csv header.
     results_header = ["world_index"] + value_cols
+    for cid in cause_ids_ordered:
+        results_header.append(f"active.{cid}")
     for _, sid in scenario_sids:
         results_header.append(f"late_orders.{sid}")
         results_header.append(f"extra_cost.{sid}")
@@ -256,10 +283,12 @@ def rebuild_worlds_csv(run_dir, out_path):
             results_by_index[row["world_index"]] = row
 
     # Value columns are results header columns after world_index, excluding
-    # late_orders.* and extra_cost.* columns.
+    # active.*, late_orders.* and extra_cost.* columns.
     value_cols = [
         c for c in results_header[1:]
-        if not c.startswith("late_orders.") and not c.startswith("extra_cost.")
+        if not c.startswith("active.")
+        and not c.startswith("late_orders.")
+        and not c.startswith("extra_cost.")
     ]
 
     # Build worlds.csv header = ["world_id", "draw", "weight"] + value_cols.
@@ -528,7 +557,17 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
         if s.get("disruption_id", "") == disruption_id
     ]
 
+    # Determine active.* column names present in results.csv.
+    if results_rows:
+        active_cause_ids = [
+            c[len("active."):] for c in results_rows[0].keys()
+            if c.startswith("active.")
+        ]
+    else:
+        active_cause_ids = []
+
     # Build weighted_results: one entry per distinct (draw, world_index) with weight > 0.
+    # tags = {cause_id: int} from active.* columns, or None if no such columns.
     weighted_results = []
     for (draw, idx_str), weight in weight_by_draw_index.items():
         if weight <= 0:
@@ -539,10 +578,154 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
             late = int(result_row[f"late_orders.{sid}"])
             cost = int(result_row[f"extra_cost.{sid}"])
             results[sid] = (late, cost)
-        weighted_results.append((weight, results, draw))
+        if active_cause_ids:
+            tags = {cid: int(result_row[f"active.{cid}"]) for cid in active_cause_ids}
+        else:
+            tags = None
+        weighted_results.append((weight, results, draw, tags))
 
     result = aggregate_options(disruption_id, db, weighted_results, "run",
                                total_rows, level)
+
+    # ── Fill per-cause fields from run_record.json and optionally grid.json ───
+    if result.get("causes"):
+        # Load run_record.json.
+        record_path = run_dir / "run_record.json"
+        if record_path.exists():
+            with record_path.open(encoding="utf-8") as fh:
+                run_record = json.load(fh)
+        else:
+            run_record = {}
+
+        record_causes = run_record.get("causes", {})
+
+        # Optionally load grid.json (only when it's in the fingerprint).
+        grid_dict = None
+        if _GRID_FILE in fp.get("outputs", {}):
+            grid_path = run_dir / _GRID_FILE
+            if grid_path.exists():
+                with grid_path.open(encoding="utf-8") as fh:
+                    grid_dict = json.load(fh)
+
+        # Build a lookup from grid family name -> family dict.
+        grid_by_family: dict = {}
+        scale_family_dict = None
+        if grid_dict is not None:
+            for fam in grid_dict.get("families", []):
+                fname = fam["family"]
+                if fname == "scale":
+                    scale_family_dict = fam
+                else:
+                    grid_by_family[fname] = fam
+
+        # Scenarios that belong to this disruption (for filtering grid crossings).
+        dis_scenario_ids = set(disrupted_scenario_ids)
+
+        for entry in result["causes"]:
+            cid = entry["cause_id"]
+            rc = record_causes.get(cid, {})
+
+            # per_year_mean from run_record
+            if "T_free_days" in rc and rc["T_free_days"] > 0:
+                raw_pym = rc.get("rate_shape", 1) / rc["T_free_days"] * 365
+                entry["per_year_mean"] = _round_half_away_float(raw_pym, 1)
+            # open_episode from run_record
+            oe = rc.get("open_episode")
+            if oe is not None:
+                entry["open_episode"] = {
+                    "start_date": oe["start_date"].isoformat()
+                        if hasattr(oe.get("start_date"), "isoformat")
+                        else str(oe["start_date"]),
+                    "end_date": (oe["end_date"].isoformat()
+                        if hasattr(oe.get("end_date"), "isoformat")
+                        else (str(oe["end_date"]) if oe.get("end_date") is not None else None)),
+                    "delay_days": oe.get("delay_days"),
+                }
+
+            # grid per cause
+            fam = grid_by_family.get(cid)
+            if fam is not None:
+                D0 = fam["D0_days"]
+                # crossings filtered to pairs within disruption_id
+                crossings_out = []
+                for cr in fam.get("crossings", []):
+                    pair = cr["pair"]
+                    if all(p in dis_scenario_ids for p in pair):
+                        p_lo = cr["p_lo"]
+                        p_hi = cr["p_hi"]
+                        crossings_out.append({
+                            "pair": pair,
+                            "p_lo": p_lo,
+                            "p_hi": p_hi,
+                            "per_year_lo": _round_half_away_float(
+                                -math.log(1 - p_lo) / D0 * 365, 1),
+                            "per_year_hi": _round_half_away_float(
+                                -math.log(1 - p_hi) / D0 * 365, 1),
+                        })
+                # max_p from grid points
+                max_p = max(
+                    (pt["p"] for pt in fam.get("points", []) if pt.get("kind") == "grid"),
+                    default=None,
+                )
+                max_per_year = None
+                if max_p is not None and D0 > 0:
+                    max_per_year = _round_half_away_float(
+                        -math.log(1 - max_p) / D0 * 365, 1)
+                entry["grid"] = {
+                    "D0_days": D0,
+                    "crossings": crossings_out,
+                    "max_p": max_p,
+                    "max_per_year": max_per_year,
+                }
+
+        # common_scale
+        if scale_family_dict is not None:
+            ref_cause = scale_family_dict.get("reference_cause")
+            D0_r = scale_family_dict.get("D0_days", 1)
+            # lam_bar: from run_record causes[ref_cause] rate_shape/T_free_days
+            lam_bar = None
+            if ref_cause and ref_cause in record_causes:
+                rc_ref = record_causes[ref_cause]
+                T_ref = rc_ref.get("T_free_days", 0)
+                if T_ref > 0:
+                    lam_bar = rc_ref.get("rate_shape", 1) / T_ref
+
+            crossings_out = []
+            if lam_bar is not None and lam_bar > 0:
+                for cr in scale_family_dict.get("crossings", []):
+                    pair = cr["pair"]
+                    if all(p in dis_scenario_ids for p in pair):
+                        p_lo = cr["p_lo"]
+                        p_hi = cr["p_hi"]
+                        # Find m values at p_lo and p_hi from scale points
+                        m_at: dict = {}
+                        for pt in scale_family_dict.get("points", []):
+                            if pt.get("p") in (p_lo, p_hi):
+                                m_at[pt["p"]] = pt.get("m")
+                        m_lo = m_at.get(p_lo)
+                        m_hi = m_at.get(p_hi)
+                        entry_cr = {"pair": pair}
+                        if m_lo is not None:
+                            entry_cr["m_lo"] = m_lo / (lam_bar * D0_r)
+                        if m_hi is not None:
+                            entry_cr["m_hi"] = m_hi / (lam_bar * D0_r)
+                        crossings_out.append(entry_cr)
+
+            # max_m from scale points
+            max_m_raw = max(
+                (pt.get("m", 0.0) for pt in scale_family_dict.get("points", [])
+                 if pt.get("kind") == "grid"),
+                default=None,
+            )
+            max_m = None
+            if max_m_raw is not None and lam_bar is not None and lam_bar > 0:
+                max_m = _round_half_away_float(max_m_raw / (lam_bar * D0_r), 2)
+
+            result["common_scale"] = {
+                "reference_cause": ref_cause,
+                "crossings": crossings_out,
+                "max_m": max_m,
+            }
 
     # Add run path.
     try:
