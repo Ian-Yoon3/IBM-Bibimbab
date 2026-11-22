@@ -360,12 +360,18 @@ def build_world_risk_message(user_message: str, view: dict) -> dict:
     table_sec = _section("Time and cost by option")
     wi_sec = _section("Late orders by receipt date")
     tradeoff_sec = _section("Trade-offs")
+    sure_sec = _section("How sure is this")
+    causes_sec = _section("Shared causes")
 
     sections = []
     if reading_sec:
         sections.append(reading_sec)
     if table_sec:
         sections.append(table_sec)
+    if sure_sec:
+        sections.append(sure_sec)
+    if causes_sec:
+        sections.append(causes_sec)
     if wi_sec:
         sections.append(wi_sec)
     if tradeoff_sec:
@@ -382,8 +388,11 @@ def build_world_risk_message(user_message: str, view: dict) -> dict:
 
     col_meanings = (
         "Column meanings:\n"
-        "- Expected late orders, 90th percentile, Worst case and Chance of no late order"
-        " describe all possible receipt dates together. Never use them for one date.\n"
+        "- Expected late orders, Range of the average, 90th percentile, Worst-10% average"
+        " and Chance of no late order describe all possible cases together. Never use"
+        " them for one date.\n"
+        "- Range of the average is uncertainty about the average, not the range of one"
+        " outcome.\n"
         '- "Late if it arrives <date>" and the date table give the late orders for one'
         " receipt date.\n"
         "- Extra cost does not depend on the receipt date."

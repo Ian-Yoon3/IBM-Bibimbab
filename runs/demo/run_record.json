@@ -6,7 +6,7 @@
   "total_samples": 200000,
   "rows": 156609,
   "distinct_worlds": 44006,
-  "run_time_s": 6.429,
+  "run_time_s": 6.268,
   "DAY0": "2026-11-09",
   "causes": {
     "K1": {
@@ -54,7 +54,7 @@
   },
   "history_shipments": 43,
   "history_episodes": 10,
-  "created_at": "2026-11-22T04:31:49.977656+00:00",
+  "created_at": "2026-11-22T05:31:21.940370+00:00",
   "result_table": {
     "distinct_worlds": 44006,
     "scenarios": [
@@ -63,6 +63,6 @@
       "ALT_BUY",
       "HYBRID"
     ],
-    "evaluation_time_s": 58.636
+    "evaluation_time_s": 57.793
   }
 }

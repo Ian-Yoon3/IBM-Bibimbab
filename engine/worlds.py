@@ -137,10 +137,13 @@ def quantile(values_and_weights: list, level: Fraction) -> int:
         )
     pairs = sorted(values_and_weights, key=lambda t: t[0])
     total_w = sum(w for _, w in pairs)
-    cumw = Fraction(0)
+    # cumw / total_w >= level, compared exactly without building a Fraction
+    # per step (weights may be int or Fraction).
+    num, den = level.numerator, level.denominator
+    cumw = 0
     for value, wt in pairs:
         cumw += wt
-        if cumw / total_w >= level:
+        if cumw * den >= num * total_w:
             return value
     # Should not reach here if level <= 1 and total_w > 0.
     return pairs[-1][0]
@@ -242,6 +245,9 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         )
     pXX_key = f"p{int(level_pct)}_late_orders"
 
+    # Weights are integers: every sum below is exact in int arithmetic, and
+    # Fractions are built only for the final quotients (same values as before,
+    # much faster on 10^5 weighted worlds).
     total_w = Fraction(sum(wt for wt, _, _draw, _tags in weighted_results))
 
     dis = db["disruptions"][disruption_id]
@@ -268,13 +274,14 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
             draws_seen.add(draw)
             if draw not in draw_sids:
                 draw_sids[draw] = {
-                    sid: [Fraction(0), Fraction(0)]
+                    sid: [0, 0]
                     for sid in disrupted_scenario_ids
                 }
             for sid in disrupted_scenario_ids:
                 late, _cost = results[sid]
-                draw_sids[draw][sid][0] += Fraction(wt) * Fraction(late)
-                draw_sids[draw][sid][1] += Fraction(wt)
+                acc = draw_sids[draw][sid]
+                acc[0] += wt * late
+                acc[1] += wt
 
     # average_range and ranking require >= 2 distinct draws and no None draws.
     use_draws = (not has_none_draw) and len(draws_seen) >= 2
@@ -302,19 +309,18 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
     cause_tag_late: dict = {}
     if use_causes:
         for cid in cause_ids_ordered:
-            cause_tag_w[cid] = {0: Fraction(0), 1: Fraction(0)}
+            cause_tag_w[cid] = {0: 0, 1: 0}
             cause_tag_late[cid] = {
-                0: {sid: Fraction(0) for sid in disrupted_scenario_ids},
-                1: {sid: Fraction(0) for sid in disrupted_scenario_ids},
+                0: {sid: 0 for sid in disrupted_scenario_ids},
+                1: {sid: 0 for sid in disrupted_scenario_ids},
             }
         for wt, results, _draw, tags in weighted_results:
-            wt_frac = Fraction(wt)
             for cid in cause_ids_ordered:
                 tag = tags.get(cid, 0)
-                cause_tag_w[cid][tag] += wt_frac
+                cause_tag_w[cid][tag] += wt
                 for sid in disrupted_scenario_ids:
                     late, _ = results[sid]
-                    cause_tag_late[cid][tag][sid] += wt_frac * Fraction(late)
+                    cause_tag_late[cid][tag][sid] += wt * late
 
     # ── per-option aggregation ─────────────────────────────────────────────────
     option_results = {}   # scenario_id -> aggregated dict
@@ -323,13 +329,12 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         scenario = db["scenarios"][sid]
 
         extra_cost_seen = None
-        exp_late = Fraction(0)
+        exp_late = 0
         worst = 0
-        p_no_w = Fraction(0)
-        lates_and_weights = []
+        p_no_w = 0
+        weight_by_late: dict = {}   # late orders -> summed integer weight
 
         for wt, results, _draw, _tags in weighted_results:
-            wt_frac = Fraction(wt)
             late, cost = results[sid]
 
             if extra_cost_seen is None:
@@ -340,13 +345,16 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
                     "the cost axis must be extended"
                 )
 
-            exp_late += wt_frac * Fraction(late)
+            exp_late += wt * late
             worst = max(worst, late)
             if late == 0:
-                p_no_w += wt_frac
-            lates_and_weights.append((late, wt_frac))
+                p_no_w += wt
+            weight_by_late[late] = weight_by_late.get(late, 0) + wt
+        # Worlds with equal late orders are merged: the quantile and the tail
+        # mean depend only on the distribution of late orders.
+        lates_and_weights = [(late, Fraction(w)) for late, w in weight_by_late.items()]
 
-        exp_exact = exp_late / total_w
+        exp_exact = Fraction(exp_late) / total_w
         p_no_exact = Fraction(100) * p_no_w / total_w
         p90 = quantile(lates_and_weights, level)
 
@@ -359,7 +367,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
             per_draw_exp = []
             for draw in sorted(draws_seen):
                 acc = draw_sids[draw][sid]
-                per_draw_exp.append((acc[0] / acc[1], Fraction(1)))
+                per_draw_exp.append((Fraction(acc[0], acc[1]), Fraction(1)))
             ar_lo = quantile_frac(per_draw_exp, Fraction(1, 20))
             ar_hi = quantile_frac(per_draw_exp, Fraction(19, 20))
             average_range = [
@@ -368,7 +376,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
             ]
             # Keep exact per-draw expected lates for ranking.
             per_draw_exp_exact = {
-                draw: draw_sids[draw][sid][0] / draw_sids[draw][sid][1]
+                draw: Fraction(draw_sids[draw][sid][0], draw_sids[draw][sid][1])
                 for draw in sorted(draws_seen)
             }
         else:
@@ -520,13 +528,13 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
             for sid in disrupted_scenario_ids:
                 if w0 > 0:
                     without_dict[sid] = round_half_away(
-                        cause_tag_late[cid][0][sid] / w0, 2
+                        Fraction(cause_tag_late[cid][0][sid], w0), 2
                     )
                 else:
                     without_dict[sid] = None
                 if w1 > 0:
                     with_dict[sid] = round_half_away(
-                        cause_tag_late[cid][1][sid] / w1, 2
+                        Fraction(cause_tag_late[cid][1][sid], w1), 2
                     )
                 else:
                     with_dict[sid] = None

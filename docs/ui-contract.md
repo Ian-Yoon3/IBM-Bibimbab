@@ -103,7 +103,11 @@ Three modes share one layout. `view["mode"]` is `overview` (from `get_overview()
 | `focus_date` | `"2026-11-14"` | Date mode only, else `None`. Highlight this column in the date table |
 | `rows` | see below | One row per option |
 | `what_if` | `{"dates": ["2026-11-11", ...], "late_orders": {"WAIT": [0, 1, ...], ...}}` | Late orders of each option for each receipt date. Needs no weights |
-| `steps` | `[{"from": "TRANSFER", "to": "ALT_BUY", "extra_cost_change": 834, "expected_late_change": -0.73, "p90_late_change": -1, "worst_late_change": -1, "p_no_late_pct_change": -4.2}]` | Moving to the next option in order of cost |
+| `steps` | `[{"from": "TRANSFER", "to": "ALT_BUY", "extra_cost_change": 834, "expected_late_change": -0.90, "p90_late_change": -1, "p_no_late_pct_change": -3.2, "tail_mean_late_change": -0.09}]` | Moving to the next option in order of cost |
+| `ranking` | `{"order": ["HYBRID", "ALT_BUY", "TRANSFER", "WAIT"], "draws": 1000, "same_draws": 957, "other_orders": [{"order": [...], "draws": 43}]}` or `None` | How often the order by expected late orders holds over the parameter draws. `None` when the weights have only one draw (stage 1 worlds, announced date) |
+| `causes` | list, see below, or `[]` | One entry per shared cause. `[]` when the data has no causes or no cause episodes |
+| `common_scale` | `{"reference_cause": "K2", "crossings": [], "max_m": 40.53}` or `None` | All cause rates multiplied by the same factor m. `None` without a threshold grid |
+| `assumptions` | list of strings or `[]` | Assumption lines shown under "Assumptions". Show them as they are |
 | `explanation` | `"ALT_BUY expects 2.99 ..."` or `None` | The AI paragraph, only when `explanation_status` is `"ok"` |
 | `explanation_status` | `"ok"`, `"dropped"`, `"unavailable"` or `None` | `dropped` means the code removed the paragraph because it used a number or option that is not in the tables. `None` in overview |
 | `scope_note` | `"Weights come from data/worlds.csv ..."` | Where the weights come from |
@@ -117,14 +121,27 @@ Each row in `rows`:
 | `code`, `name`, `scenario_id` | `"TRANSFER"`, `"Move stock from North Buffer and East Buffer"` | Same meaning as in other views |
 | `extra_cost` | `416` | USD. The cost axis |
 | `expected_late_orders` | `3.73` | Weighted average. Keep the two decimals |
+| `average_range` | `[3.64, 5.8]` or `None` | Range of the AVERAGE over the parameter draws (5% to 95%). Label it "Range of the average". It is not the range of one outcome. `None` with one draw |
 | `p90_late_orders` | `7` | In 9 of 10 weighted cases late orders are at or below this number. Label it "90th percentile" |
-| `worst_late_orders` | `8` | Worst receipt date in the data |
+| `tail_mean_late_orders` | `9.5` | Average late orders in the worst 10% of weighted cases. Label it "Worst-10% average". Replaces the old worst case column |
 | `p_no_late_pct` | `5.6` | Chance of no late order, in percent. Show with a % sign |
 | `late_at_focus` | `1` or `None` | Date mode only. Late orders on `focus_date` |
 | `within_budget` | `true`, `false` or `None` | Only when the user stated a budget |
 
+Each entry in `causes`:
+
+| Field | Example | Meaning |
+|---|---|---|
+| `cause_id`, `targets` | `"K1"`, `[["purchase_order", "PO01"], ["offer", "OF02"]]` | The cause and what it delays |
+| `active_pct` | `9.5` | Chance in percent that an episode of the cause is under way in the decision window |
+| `without`, `with` | `{"WAIT": 7.24, ...}`, `{"WAIT": 9.13, ...}` | Expected late orders per option over the cases without and with the cause. A value is `None` when no case falls in that group |
+| `per_year_mean` | `4.1` or `None` | Estimated episodes per year (Monte Carlo run only) |
+| `open_episode` | `None` or `{"start_date": "2026-11-07", "end_date": None, "delay_days": 3}` | The cause is in progress on the decision day. Then show the status sentence from `markdown` instead of without/with |
+| `grid` | `{"D0_days": 9, "crossings": [{"pair": ["TRANSFER", "ALT_BUY"], "p_lo": 0.8125, "p_hi": 0.81875, "per_year_lo": 67.9, "per_year_hi": 69.3}], "max_p": 0.99, "max_per_year": 186.8}` or `None` | Where two options swap order as the cause gets more frequent. No crossing means the order holds up to `max_p` |
+
 Rules for this view
 - No star and no approve button. `proposal` is always `None` here.
+- Never compute a threshold from `without` and `with`. The thresholds come only from `grid` and `common_scale`.
 - Show the time columns and the cost column side by side. Never combine them into one score or rank.
 - Show the reading lines in date mode. Do not hide them.
 - If `explanation_status` is not `"ok"`, do not show any AI text. The fixed line in `markdown` explains why.

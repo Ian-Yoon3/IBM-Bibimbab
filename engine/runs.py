@@ -1,5 +1,6 @@
 """Run folder management: fingerprinting, result tables, and run selection."""
 
+import copy
 import csv
 import decimal
 import hashlib
@@ -482,6 +483,7 @@ def load_grid(run_dir, data_dir) -> dict:
 
 # Cache for parsed result tables: (resolved_run_dir_str, results_hash, row_map_hash) -> parsed data
 _RUN_CACHE: dict = {}
+_RESULT_CACHE: dict = {}   # evaluate_run results, keyed by the verified fingerprint
 
 
 def evaluate_run(disruption_id: str, db: dict, run_dir,
@@ -510,6 +512,13 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
 
     # Always check first.
     fp = check_run(run_dir, _fp_data_path)
+
+    # The result is fully determined by the verified fingerprint (inputs,
+    # code, outputs) and the arguments, so it is cached per process.  The
+    # check above still runs on every call.
+    result_key = (str(run_dir), json.dumps(fp, sort_keys=True), disruption_id, level)
+    if result_key in _RESULT_CACHE:
+        return copy.deepcopy(_RESULT_CACHE[result_key])
 
     results_path = run_dir / "results.csv"
     row_map_path = run_dir / "row_map.csv"
@@ -713,6 +722,7 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
     except ValueError:
         result["run"] = str(run_dir)
 
+    _RESULT_CACHE[result_key] = copy.deepcopy(result)
     return result
 
 

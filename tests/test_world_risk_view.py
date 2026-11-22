@@ -101,12 +101,12 @@ class TestRows(unittest.TestCase):
         cls.view = world_risk_view("overview")
         cls.rows = {r["scenario_id"]: r for r in cls.view["rows"]}
 
-    def _check(self, sid, exp_exp, exp_p90, exp_worst, exp_pno, exp_cost):
+    def _check(self, sid, exp_exp, exp_p90, exp_tail, exp_pno, exp_cost):
         r = self.rows[sid]
         for attr, got, want in [
             ("expected_late_orders", r["expected_late_orders"], exp_exp),
             ("p90_late_orders",      r["p90_late_orders"],      exp_p90),
-            ("worst_late_orders",    r["worst_late_orders"],    exp_worst),
+            ("tail_mean_late_orders", r["tail_mean_late_orders"], exp_tail),
             ("p_no_late_pct",        r["p_no_late_pct"],        exp_pno),
             ("extra_cost",           r["extra_cost"],           exp_cost),
         ]:
@@ -116,16 +116,16 @@ class TestRows(unittest.TestCase):
                 )
 
     def test_b_wait(self):
-        self._check("WAIT",     6.53, 10, 11, 1.4,  0)
+        self._check("WAIT",     6.53, 10, 10.2, 1.4,  0)
 
     def test_b_transfer(self):
-        self._check("TRANSFER", 3.73,  7,  8, 5.6,  416)
+        self._check("TRANSFER", 3.73,  7,  7.2, 5.6,  416)
 
     def test_b_alt_buy(self):
-        self._check("ALT_BUY",  2.99,  6,  7, 1.4,  1250)
+        self._check("ALT_BUY",  2.99,  6,  6.2, 1.4,  1250)
 
     def test_b_hybrid(self):
-        self._check("HYBRID",   1.36,  4,  5, 35.0, 1306)
+        self._check("HYBRID",   1.36,  4,  4.2, 35.0, 1306)
 
 
 class TestDateMode(unittest.TestCase):
@@ -384,6 +384,7 @@ class TestFourFixes(unittest.TestCase):
         expected = [
             "Situation",
             "Time and cost by option",
+            "How sure is this",
             "Late orders by receipt date",
             "Trade-offs",
             "What this means",
@@ -402,6 +403,7 @@ class TestFourFixes(unittest.TestCase):
             "Situation",
             "Reading",
             "Time and cost by option",
+            "How sure is this",
             "Late orders by receipt date",
             "Trade-offs",
             "What this means",

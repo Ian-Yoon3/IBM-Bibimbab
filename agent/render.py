@@ -942,6 +942,152 @@ SUGGESTED_QUESTIONS: list[str] = [
 ]
 
 
+# ── world_risk helpers (step 6b-2) ────────────────────────────────────────────
+
+def _pct(x: float) -> str:
+    """0.8125 -> '81.3%' (one decimal, half away from zero)."""
+    from decimal import Decimal, ROUND_HALF_UP
+    return f"{Decimal(str(x * 100)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)}%"
+
+
+def _num(x) -> str:
+    """Show a number without a trailing '.0' (4.0 -> '4', 4.1 -> '4.1')."""
+    return f"{x:g}" if isinstance(x, float) else str(x)
+
+
+def _public_step(step: dict) -> dict:
+    """Trade-off step as shown in the view (the worst-case change is not shown)."""
+    return {k: v for k, v in step.items() if k != "worst_late_change"}
+
+
+def _how_sure_lines(rows: list, wr: dict) -> list:
+    """Q8: the range of the average, the outcome tail and ranking stability
+    in separate sentences."""
+    lines = []
+    if any(r["average_range"] is not None for r in rows):
+        lines.append(
+            "Range of the average: where the expected value itself may lie "
+            "(5% to 95% over the parameter draws). The history is short, so the "
+            "rates behind the averages are uncertain."
+        )
+    lines.append(
+        "One outcome varies more than the average: in 9 of 10 weighted cases late "
+        "orders are at or below the 90th percentile, and the worst 10% of cases "
+        "average the number in the Worst-10% average column."
+    )
+    rk = wr.get("ranking")
+    if rk:
+        lines.append(
+            f"The order by expected late orders ({', '.join(rk['order'])}) is the same "
+            f"in {rk['same_draws']} of {rk['draws']} parameter draws."
+        )
+        for other in rk["other_orders"][:3]:
+            lines.append(
+                f"In {other['draws']} draws the order is {', '.join(other['order'])}."
+            )
+    return lines
+
+
+def _targets_text(targets: list) -> str:
+    return ", ".join(t[1] for t in targets)
+
+
+def _cause_lines(rows: list, wr: dict) -> list:
+    """Per cause: chance and frequency, without/with numbers, threshold or
+    robustness from the grid; open episodes get a status sentence (F3)."""
+    exp_now = {r["scenario_id"]: r["expected_late_orders"] for r in rows}
+    codes = [r["scenario_id"] for r in rows]
+    lines = []
+    for c in wr["causes"]:
+        cid = c["cause_id"]
+        head = f"{cid} (affects {_targets_text(c['targets'])})"
+        oe = c.get("open_episode")
+        if oe is not None:
+            end = (f"announced end {_day(oe['end_date'])}" if oe.get("end_date")
+                   else "end not announced, estimated from the history")
+            delay = (f"recorded delay {oe['delay_days']} days" if oe.get("delay_days")
+                     is not None else "delay estimated from the history")
+            lines.append(f"- {head}: in progress since {_day(oe['start_date'])}, "
+                         f"{end}, {delay}. Current shipments are affected.")
+        else:
+            freq = (f" (about {_num(c['per_year_mean'])} per year)"
+                    if c.get("per_year_mean") is not None else "")
+            lines.append(f"- {head}: chance that an episode starts in the decision "
+                         f"window {c['active_pct']:.1f}%{freq}.")
+            parts = []
+            for sid in codes:
+                wo, wi = c["without"].get(sid), c["with"].get(sid)
+                wo_s = f"{wo:.2f}" if wo is not None else "n/a"
+                wi_s = f"{wi:.2f}" if wi is not None else "n/a"
+                parts.append(f"{sid} {wo_s} / {wi_s}")
+            lines.append("  Expected late orders without / with it: "
+                         + ", ".join(parts) + ".")
+        g = c.get("grid")
+        if g is not None:
+            open_cause = oe is not None
+            for cr in g["crossings"]:
+                a, b = cr["pair"]
+                lead = a if exp_now[a] <= exp_now[b] else b
+                if open_cause:
+                    where = (f"between {_num(cr['per_year_lo'])} and "
+                             f"{_num(cr['per_year_hi'])} new episodes per year")
+                else:
+                    where = (f"when the chance is between {_pct(cr['p_lo'])} and "
+                             f"{_pct(cr['p_hi'])} (about {_num(cr['per_year_lo'])} to "
+                             f"{_num(cr['per_year_hi'])} per year)")
+                lines.append(f"  {a} and {b} swap places {where}. Now {lead} has "
+                             f"fewer expected late orders.")
+            if not g["crossings"]:
+                if open_cause:
+                    lines.append(f"  No change in the order up to "
+                                 f"{_num(g['max_per_year'])} new episodes per year.")
+                else:
+                    lines.append(f"  No change in the order up to a chance of "
+                                 f"{_pct(g['max_p'])} (about {_num(g['max_per_year'])} "
+                                 f"per year).")
+    cs = wr.get("common_scale")
+    if cs is not None:
+        if cs["crossings"]:
+            for cr in cs["crossings"]:
+                a, b = cr["pair"]
+                lines.append(f"- All causes together: {a} and {b} swap places at "
+                             f"{_num(cr['m_lo'])} to {_num(cr['m_hi'])} times the "
+                             f"estimated rates.")
+        else:
+            lines.append(f"- All causes together: no change in the order up to "
+                         f"{_num(cs['max_m'])} times the estimated rates.")
+    if any(c.get("grid") for c in wr["causes"]):
+        lines.append("The thresholds come from re-running the model at each rate. "
+                     "They cannot be read off the without / with numbers, because a "
+                     "higher rate also changes how many episodes start and when.")
+    return lines
+
+
+def _synthetic_history() -> bool:
+    """True when data/history/README.md says the history is synthetic."""
+    from pathlib import Path
+    import engine.loader as _loader
+    readme = Path(_loader._DEFAULT_DATA_DIR) / "history" / "README.md"
+    try:
+        return "synthetic" in readme.read_text(encoding="utf-8").lower()
+    except OSError:
+        return False
+
+
+def _assumption_lines(wr: dict) -> list:
+    """Short assumption list shown when shared causes are modelled (S2)."""
+    if not wr["causes"]:
+        return []
+    lines = []
+    if wr["weights_source"] == "run" and _synthetic_history():
+        lines.append("The history in data/history is synthetic: it was generated "
+                     "for this demo (see data/history/README.md), not recorded.")
+    lines.append("Which shipments share a cause is an assumption (data/causes.csv).")
+    lines.append("Episodes start at a constant rate with memoryless gaps, and each "
+                 "episode has one delay. The full list is in the README.")
+    return lines
+
+
 # ── world_risk_view ────────────────────────────────────────────────────────────
 
 def _world_risk_option_name(scenario_id: str, cat: dict) -> str:
@@ -1023,7 +1169,8 @@ def world_risk_view(
             "extra_cost": opt["extra_cost"],
             "expected_late_orders": opt["expected_late_orders"],
             "p90_late_orders": opt["p90_late_orders"],
-            "worst_late_orders": opt["worst_late_orders"],
+            "tail_mean_late_orders": opt["tail_mean_late_orders"],
+            "average_range": opt["average_range"],
             "p_no_late_pct": opt["p_no_late_pct"],
             "late_at_focus": late_at_focus,
             "within_budget": within_budget,
@@ -1065,7 +1212,8 @@ def world_risk_view(
     )
     if mode != "overview" and exp_text:
         # Insert "## What this means" after Trade-offs, before Notes.
-        notes_marker = "\n\n## Notes\n"
+        notes_marker = ("\n\n## Assumptions\n" if "\n\n## Assumptions\n" in body_md
+                        else "\n\n## Notes\n")
         if notes_marker in body_md:
             body_md = body_md.replace(
                 notes_marker,
@@ -1087,7 +1235,11 @@ def world_risk_view(
         "focus_date": focus_date,
         "rows": rows,
         "what_if": wr["what_if"],
-        "steps": wr["tradeoff_steps"],
+        "steps": [_public_step(st) for st in wr["tradeoff_steps"]],
+        "ranking": wr["ranking"],
+        "causes": wr["causes"],
+        "common_scale": wr["common_scale"],
+        "assumptions": _assumption_lines(wr),
         "explanation": exp_text if mode != "overview" else None,
         "explanation_status": exp_status,
         "scope_note": scope_note,
@@ -1132,10 +1284,11 @@ def _build_world_risk_md_no_exp(
 
     # ## Time and cost by option
     focus_date_day = _day(focus_date) if focus_date else None
-    header_cols = [
-        "Option", "Extra cost", "Expected late orders",
-        "90th percentile", "Worst case", "Chance of no late order",
-    ]
+    show_range = any(r["average_range"] is not None for r in rows)
+    header_cols = ["Option", "Extra cost", "Expected late orders"]
+    if show_range:
+        header_cols.append("Range of the average")
+    header_cols += ["90th percentile", "Worst-10% average", "Chance of no late order"]
     if focus_date:
         header_cols.append(f"Late if it arrives {focus_date_day}")
     if budget is not None:
@@ -1149,8 +1302,13 @@ def _build_world_risk_md_no_exp(
             f"{r['name']} ({r['code']})",
             _money(r["extra_cost"]),
             f"{r['expected_late_orders']:.2f}",
+        ]
+        if show_range:
+            rng = r["average_range"]
+            cells.append(f"{rng[0]:.2f} to {rng[1]:.2f}" if rng is not None else "n/a")
+        cells += [
             str(r["p90_late_orders"]),
-            str(r["worst_late_orders"]),
+            f"{r['tail_mean_late_orders']:.2f}",
             f"{r['p_no_late_pct']:.1f}%",
         ]
         if focus_date:
@@ -1159,6 +1317,13 @@ def _build_world_risk_md_no_exp(
             cells.append("Yes" if r["within_budget"] else "No")
         table_rows.append("| " + " | ".join(cells) + " |")
     parts.append("## Time and cost by option\n" + "\n".join(table_rows))
+
+    # ## How sure is this
+    parts.append("## How sure is this\n" + "\n".join(_how_sure_lines(rows, wr)))
+
+    # ## Shared causes
+    if wr["causes"]:
+        parts.append("## Shared causes\n" + "\n".join(_cause_lines(rows, wr)))
 
     # ## Late orders by receipt date
     dates = wr["what_if"]["dates"]
@@ -1185,7 +1350,10 @@ def _build_world_risk_md_no_exp(
                 cell = f"**{cell}**"
             cells.append(cell)
         wi_rows_lines.append("| " + " | ".join(cells) + " |")
-    parts.append("## Late orders by receipt date\n" + "\n".join(wi_rows_lines))
+    wi_note = ("Each column sets only the receipt date of the delayed purchase order. "
+               "Every other value stays at its base (no extra delay, no cause episode).")
+    parts.append("## Late orders by receipt date\n" + wi_note + "\n\n"
+                 + "\n".join(wi_rows_lines))
 
     # ## Trade-offs
     bullets = []
@@ -1195,13 +1363,13 @@ def _build_world_risk_md_no_exp(
         cost_chg = step["extra_cost_change"]
         exp_chg = step["expected_late_change"]
         p90_chg = step["p90_late_change"]
-        worst_chg = step["worst_late_change"]
+        tail_chg = step["tail_mean_late_change"]
         p_no_chg = step["p_no_late_pct_change"]
         bullets.append(
             f"- {frm} to {to}: +{_money(cost_chg)}, "
             f"expected late orders {exp_chg:+.2f}, "
             f"90th percentile {p90_chg:+d}, "
-            f"worst case {worst_chg:+d}, "
+            f"worst-10% average {tail_chg:+.2f}, "
             f"chance of no late order {p_no_chg:+.1f} points"
         )
     parts.append("## Trade-offs\n" + "\n".join(bullets))
@@ -1210,8 +1378,10 @@ def _build_world_risk_md_no_exp(
     notes = [
         "Time and cost are shown side by side and never combined into one score.",
         "90th percentile: in 9 of 10 weighted cases late orders are at or below this number.",
-        "The weights are an assumption from the data file.",
+        "Worst-10% average: the average number of late orders in the worst 10% of weighted cases.",
     ]
+    if wr["weights_source"] != "run":
+        notes.append("The weights are an assumption from the data file.")
 
     if mode == "overview":
         sq_lines = "\n".join(f"- *{q}*" for q in SUGGESTED_QUESTIONS)
@@ -1222,11 +1392,14 @@ def _build_world_risk_md_no_exp(
             'To act on an option, say *"Propose HYBRID"* or another option code.'
         )
 
-    # Order: Trade-offs already appended. Now: Notes, Next step.
-    # The "What this means" slot is inserted by world_risk_view between
-    # Trade-offs and Notes so that the final heading order is:
-    # Situation, [Reading,] Time and cost, Late orders, Trade-offs,
-    # What this means, Notes, Next step.
+    # Order: Trade-offs already appended. Now: [Assumptions,] Notes, Next step.
+    # The "What this means" slot is inserted by world_risk_view after
+    # Trade-offs so that the final heading order is:
+    # Situation, [Reading,] Time and cost, How sure is this, [Shared causes,]
+    # Late orders, Trade-offs, What this means, [Assumptions,] Notes, Next step.
+    assumptions = _assumption_lines(wr)
+    if assumptions:
+        parts.append("## Assumptions\n" + "\n".join(f"- {x}" for x in assumptions))
     parts.append("## Notes\n" + "\n".join(notes))
     parts.append(next_step)
 

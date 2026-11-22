@@ -113,9 +113,29 @@ def run_conversation(turns: list[str], llm) -> list[dict]:
     return out
 
 
+def _run_identity() -> dict:
+    """Which Monte Carlo run the answers came from (None when no run is selected).
+
+    make_ui_fixtures replays the sweep against the same run and stops when the
+    run's outputs have changed since the sweep.
+    """
+    import engine.loader
+    import engine.runs
+    run_dir = engine.runs.selected_run_for(engine.loader._DEFAULT_DATA_DIR)
+    if run_dir is None:
+        return {"run": None, "run_outputs": None}
+    fp = engine.runs.check_run(run_dir, engine.loader._DEFAULT_DATA_DIR)
+    try:
+        rel = run_dir.resolve().relative_to(engine.runs.REPO_ROOT).as_posix()
+    except ValueError:
+        rel = str(run_dir)
+    return {"run": rel, "run_outputs": fp["outputs"]}
+
+
 def main() -> None:
     load_dotenv()
     model_id = sys.argv[1] if len(sys.argv) > 1 else _DEFAULT_MODEL
+    run_id = _run_identity()
     from agent.llm import WatsonxLLM
     llm = WatsonxLLM(model_id=model_id)
 
@@ -133,7 +153,7 @@ def main() -> None:
             tools = ", ".join(x["name"] for x in t["tools"]) or "(none)"
             print(f"    -> view={t['view_type']}  proposal={t['proposal_created']}  "
                   f"tools={tools}  {' '.join(flags) or 'ok'}")
-            results.append({"conversation": i, "model": model_id, **t})
+            results.append({"conversation": i, "model": model_id, **run_id, **t})
 
     os.makedirs("eval_results", exist_ok=True)
     path = os.path.join("eval_results",

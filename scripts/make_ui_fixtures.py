@@ -13,10 +13,14 @@ Each replayed turn is checked against the saved run (same view type, same
 table, same deterministic markdown).  The script stops with an error if a
 check fails, so the fixtures never drift silently from the code.
 
+Sweeps made after step 6b record the selected Monte Carlo run; the replay
+uses the same run and stops if it has changed (rebuild the run or make a new
+sweep).  Older sweeps replay against the stage 1 worlds.
+
 Run from the repository root (no .env needed):
 
     python -m scripts.make_ui_fixtures
-    python -m scripts.make_ui_fixtures eval_results/sweep_20261112_020142.json
+    python -m scripts.make_ui_fixtures eval_results/sweep_20261122_010853.json
 
 Output: ``ui_fixtures/agent_results.json``.  See ``docs/ui-contract.md``.
 """
@@ -26,6 +30,8 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tempfile
+from contextlib import contextmanager
 from itertools import groupby
 from pathlib import Path
 
@@ -34,7 +40,7 @@ from agent.loop import run_agent
 from scripts.stage1_data import use_stage1_default_data
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261112_020142.json"
+DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261122_010853.json"
 OUT = ROOT / "ui_fixtures" / "agent_results.json"
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -87,9 +93,49 @@ def _public(result: dict) -> dict:
     return {k: v for k, v in result.items() if k != "history"}
 
 
+class StaleRun(Exception):
+    """The run a sweep was made with no longer matches the repository."""
+
+
+@contextmanager
+def _data_for(entries: list):
+    """Replay against the data the sweep was made with.
+
+    Sweeps from 2026-11-12 and earlier carry no "run" key: they were made with
+    the stage 1 worlds (scripts.stage1_data).  Newer sweeps record the selected
+    Monte Carlo run and its output hashes; the replay selects the same run and
+    stops (StaleRun) when the run no longer matches its fingerprint or its
+    outputs differ from the sweep's.
+    """
+    import engine.loader
+    import engine.runs
+    if "run" not in entries[0] or entries[0]["run"] is None:
+        with use_stage1_default_data():
+            yield
+        return
+    run_rel = entries[0]["run"]
+    run_dir = engine.runs.REPO_ROOT / run_rel
+    try:
+        fp = engine.runs.check_run(run_dir, engine.loader._DEFAULT_DATA_DIR)
+    except ValueError as exc:
+        raise StaleRun(f"{run_rel} does not match its fingerprint: {exc}") from exc
+    if fp["outputs"] != entries[0]["run_outputs"]:
+        raise StaleRun(f"{run_rel} was rebuilt with different results after the "
+                       f"sweep; run a new sweep (python -m scripts.question_sweep)")
+    prev = engine.runs.SELECTION_PATH
+    with tempfile.TemporaryDirectory() as td:
+        sel = Path(td) / "run_selection.json"
+        sel.write_text(json.dumps({"run": run_rel}), encoding="utf-8")
+        engine.runs.SELECTION_PATH = sel
+        try:
+            yield
+        finally:
+            engine.runs.SELECTION_PATH = prev
+
+
 def build(sweep_path: Path) -> list[dict]:
-    with use_stage1_default_data():
-        entries = json.loads(sweep_path.read_text(encoding="utf-8"))
+    entries = json.loads(sweep_path.read_text(encoding="utf-8"))
+    with _data_for(entries):
         fixtures = []
         for conv, turns in groupby(entries, key=lambda e: e["conversation"]):
             history = None
@@ -128,7 +174,7 @@ def main() -> None:
     sweep = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SWEEP
     try:
         fixtures = build(sweep)
-    except AssertionError as exc:
+    except (AssertionError, StaleRun) as exc:
         raise SystemExit(str(exc)) from exc
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(fixtures, indent=1, ensure_ascii=False, default=str) + "\n",
