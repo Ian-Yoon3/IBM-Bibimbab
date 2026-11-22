@@ -1295,7 +1295,9 @@ def world_risk_view(
         "causes": wr["causes"],
         "common_scale": wr["common_scale"],
         "assumptions": _assumption_lines(wr),
-        "explanation": exp_text if mode != "overview" else None,
+        # The AI paragraph only.  When it was dropped or is unavailable the
+        # fixed line lives in ``markdown`` and this field is None.
+        "explanation": exp_text if exp_status == "ok" else None,
         "explanation_status": exp_status,
         "explanation_drop_reason": exp_drop_reason,
         "scope_note": scope_note,

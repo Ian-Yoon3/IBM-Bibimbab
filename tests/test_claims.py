@@ -431,8 +431,27 @@ class Wiring(unittest.TestCase):
                          ("dropped", "comparison"))
         self.assertNotIn(bad, v["markdown"])
         self.assertIn("could not be confirmed", v["markdown"])
+        self.assertIsNone(v["explanation"])
         v = world_risk_view("general", explanation="WAIT has 123456 expected late orders.")
         self.assertEqual(v["explanation_drop_reason"], "number")
+        self.assertIsNone(v["explanation"])
+
+    def test_explanation_field_holds_only_the_ai_paragraph(self):
+        """ok -> the paragraph; dropped, unavailable, overview -> None.  The
+        fixed line that explains a missing paragraph is in the markdown."""
+        from agent.render import world_risk_view
+        rows = world_risk_view("general")["rows"]
+        hi, lo = self._pair(rows, "expected_late_orders")
+        good = f"{hi} has higher expected late orders than {lo}."
+        self.assertEqual(world_risk_view("general", explanation=good)["explanation"], good)
+        v = world_risk_view("general", explanation=None)
+        self.assertEqual(v["explanation_status"], "unavailable")
+        self.assertIsNone(v["explanation"])
+        self.assertIn("## What this means", v["markdown"])
+        self.assertIn("unavailable", v["markdown"])
+        v = world_risk_view("overview")
+        self.assertIsNone(v["explanation"])
+        self.assertNotIn("## What this means", v["markdown"])
 
 
 if __name__ == "__main__":
