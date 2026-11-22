@@ -146,6 +146,27 @@ def quantile(values_and_weights: list, level: Fraction) -> int:
     return pairs[-1][0]
 
 
+def quantile_frac(values_and_weights: list, level: Fraction) -> Fraction:
+    """Smallest Fraction value whose cumulative weight share is >= level.
+
+    Like quantile() but accepts Fraction values and returns Fraction.
+    values_and_weights: list of (value: Fraction, weight: Fraction)
+    level: Fraction, must satisfy 0 < level <= 1.
+    """
+    if not (Fraction(0) < level <= Fraction(1)):
+        raise ValueError(
+            f"quantile_frac level must satisfy 0 < level <= 1, got {level}"
+        )
+    pairs = sorted(values_and_weights, key=lambda t: t[0])
+    total_w = sum(w for _, w in pairs)
+    cumw = Fraction(0)
+    for value, wt in pairs:
+        cumw += wt
+        if cumw / total_w >= level:
+            return value
+    return pairs[-1][0]
+
+
 # ---------------------------------------------------------------------------
 # evaluate_worlds
 # ---------------------------------------------------------------------------
@@ -163,6 +184,28 @@ def world_result(db: dict, disruption_id: str, scenario_id: str,
     return ev["late_orders"], ev["total_extra_cost"]
 
 
+def _tail_mean(lates_and_weights: list, tail_w: Fraction) -> Fraction:
+    """Exact weighted mean of the worst tail_w units of weight.
+
+    lates_and_weights: list of (late: int, weight: Fraction).
+    tail_w: the target tail weight (> 0).
+
+    Sorts descending by late, then takes whole weights until adding the next
+    one would exceed tail_w, takes the needed fractional part of that weight,
+    and returns late_sum / tail_w.
+    """
+    pairs = sorted(lates_and_weights, key=lambda t: t[0], reverse=True)
+    late_sum = Fraction(0)
+    remaining = tail_w
+    for late, wt in pairs:
+        if remaining <= 0:
+            break
+        taken = min(wt, remaining)
+        late_sum += Fraction(late) * taken
+        remaining -= taken
+    return late_sum / tail_w
+
+
 def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
                       weights_source: str, world_count: int,
                       level: Fraction = Fraction(9, 10)) -> dict:
@@ -174,7 +217,10 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         Disruption to evaluate (must exist in db["disruptions"]).
     db : dict
         Loaded database (from loader.load_all()).  Never mutated.
-    weighted_results : list of (weight: int, results: dict scenario_id -> (late_orders, total_extra_cost))
+    weighted_results : list of (weight, results, draw)
+        weight : int
+        results : dict scenario_id -> (late_orders, total_extra_cost)
+        draw : int or None
         One entry per distinct world.
     weights_source : str
         Source of the weights ("file", "announced_date", or "run").
@@ -195,7 +241,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         )
     pXX_key = f"p{int(level_pct)}_late_orders"
 
-    total_w = Fraction(sum(wt for wt, _ in weighted_results))
+    total_w = Fraction(sum(wt for wt, _, _draw in weighted_results))
 
     dis = db["disruptions"][disruption_id]
     po_id = dis["po_id"]
@@ -207,6 +253,30 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         sid for sid, s in db["scenarios"].items()
         if s["disruption_id"] == disruption_id
     ]
+
+    # Tail weight = (1 - level) * total_w
+    tail_w = (1 - level) * total_w
+
+    # ── per-draw aggregation (for average_range and ranking) ──────────────────
+    # draw -> {sid -> (sum_wt_late, sum_wt)} for per-draw expected late
+    draw_sids: dict = {}   # draw -> {sid -> [sum_wt_late: Fraction, sum_wt: Fraction]}
+    has_none_draw = any(d is None for _, _, d in weighted_results)
+    draws_seen: set = set()
+    for wt, results, draw in weighted_results:
+        if draw is not None:
+            draws_seen.add(draw)
+            if draw not in draw_sids:
+                draw_sids[draw] = {
+                    sid: [Fraction(0), Fraction(0)]
+                    for sid in disrupted_scenario_ids
+                }
+            for sid in disrupted_scenario_ids:
+                late, _cost = results[sid]
+                draw_sids[draw][sid][0] += Fraction(wt) * Fraction(late)
+                draw_sids[draw][sid][1] += Fraction(wt)
+
+    # average_range and ranking require >= 2 distinct draws and no None draws.
+    use_draws = (not has_none_draw) and len(draws_seen) >= 2
 
     # ── per-option aggregation ─────────────────────────────────────────────────
     option_results = {}   # scenario_id -> aggregated dict
@@ -220,7 +290,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         p_no_w = Fraction(0)
         lates_and_weights = []
 
-        for wt, results in weighted_results:
+        for wt, results, _draw in weighted_results:
             wt_frac = Fraction(wt)
             late, cost = results[sid]
 
@@ -242,6 +312,31 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         p_no_exact = Fraction(100) * p_no_w / total_w
         p90 = quantile(lates_and_weights, level)
 
+        # Tail mean (worst (1-level) fraction of total weight).
+        tail_mean_exact = _tail_mean(lates_and_weights, tail_w)
+
+        # average_range: [q(1/20), q(19/20)] of per-draw expected late, each
+        # draw has weight 1 for the quantile.
+        if use_draws:
+            per_draw_exp = []
+            for draw in sorted(draws_seen):
+                acc = draw_sids[draw][sid]
+                per_draw_exp.append((acc[0] / acc[1], Fraction(1)))
+            ar_lo = quantile_frac(per_draw_exp, Fraction(1, 20))
+            ar_hi = quantile_frac(per_draw_exp, Fraction(19, 20))
+            average_range = [
+                round_half_away(ar_lo, 2),
+                round_half_away(ar_hi, 2),
+            ]
+            # Keep exact per-draw expected lates for ranking.
+            per_draw_exp_exact = {
+                draw: draw_sids[draw][sid][0] / draw_sids[draw][sid][1]
+                for draw in sorted(draws_seen)
+            }
+        else:
+            average_range = None
+            per_draw_exp_exact = None
+
         option_results[sid] = {
             "scenario_id": sid,
             "label": scenario["label"],
@@ -250,10 +345,71 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
             "worst_late_orders": worst,
             pXX_key: p90,
             "p_no_late_pct": round_half_away(p_no_exact, 1),
+            "tail_mean_late_orders": round_half_away(tail_mean_exact, 2),
+            "average_range": average_range,
             # Keep exact Fraction values for tradeoff arithmetic.
             "_exp_exact": exp_exact,
             "_p_no_exact": p_no_exact,
+            "_tail_mean_exact": tail_mean_exact,
+            "_per_draw_exp_exact": per_draw_exp_exact,
         }
+
+    # ── ranking ───────────────────────────────────────────────────────────────
+    if use_draws:
+        sorted_draws = sorted(draws_seen)
+        draw_count = len(sorted_draws)
+
+        # Scenario order: ascending (expected_late_exact, scenarios.csv position).
+        sid_to_pos = {sid: i for i, sid in enumerate(disrupted_scenario_ids)}
+
+        def _scenario_sort_key(sid, exp_exact):
+            return (exp_exact, sid_to_pos[sid])
+
+        # Global order by global expected.
+        global_order = sorted(
+            disrupted_scenario_ids,
+            key=lambda sid: _scenario_sort_key(
+                sid, option_results[sid]["_exp_exact"]
+            ),
+        )
+
+        # Per-draw order.
+        draw_orders = []
+        for draw in sorted_draws:
+            order = sorted(
+                disrupted_scenario_ids,
+                key=lambda sid: _scenario_sort_key(
+                    sid, option_results[sid]["_per_draw_exp_exact"][draw]
+                ),
+            )
+            draw_orders.append(tuple(order))
+
+        global_order_tuple = tuple(global_order)
+        same_draws = sum(1 for o in draw_orders if o == global_order_tuple)
+
+        # Collect other orders.
+        other_counts: dict = {}
+        for o in draw_orders:
+            if o != global_order_tuple:
+                other_counts[o] = other_counts.get(o, 0) + 1
+
+        # Sort other orders: draws descending, then order list ascending.
+        other_orders = sorted(
+            other_counts.items(),
+            key=lambda item: (-item[1], list(item[0])),
+        )
+
+        ranking = {
+            "order": list(global_order_tuple),
+            "draws": draw_count,
+            "same_draws": same_draws,
+            "other_orders": [
+                {"order": list(o), "draws": n}
+                for o, n in other_orders
+            ],
+        }
+    else:
+        ranking = None
 
     # ── what_if: late_orders per option per receipt date ──────────────────────
     what_if_dates = []
@@ -292,6 +448,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
         worst_chg = rt["worst_late_orders"] - rf["worst_late_orders"]
         p90_chg = rt[pXX_key] - rf[pXX_key]
         p_no_chg = rt["_p_no_exact"] - rf["_p_no_exact"]
+        tail_chg = rt["_tail_mean_exact"] - rf["_tail_mean_exact"]
 
         tradeoff_steps.append({
             "from": frm,
@@ -301,6 +458,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
             "worst_late_change": worst_chg,
             f"p{int(level_pct)}_late_change": p90_chg,
             "p_no_late_pct_change": round_half_away(p_no_chg, 1),
+            "tail_mean_late_change": round_half_away(tail_chg, 2),
         })
 
     # ── assemble final output (remove internal Fraction fields) ───────────────
@@ -323,6 +481,7 @@ def aggregate_options(disruption_id: str, db: dict, weighted_results: list,
             "late_orders": what_if_late,
         },
         "tradeoff_steps": tradeoff_steps,
+        "ranking": ranking,
     }
 
 
@@ -363,10 +522,11 @@ def evaluate_worlds(disruption_id: str, db: dict,
     # Cache: (scenario_id, world_identity(world)) -> (late_orders, total_extra_cost)
     _sim_cache: dict = {}
 
-    # Build weighted_results: list of (weight, {sid: (late, cost)})
+    # Build weighted_results: list of (weight, {sid: (late, cost)}, draw)
     weighted_results = []
     for w in worlds:
         wt = w["weight"]
+        draw = w.get("draw")  # int or None (synthetic fallback world has no draw)
         results = {}
         for sid in disrupted_scenario_ids:
             cache_key = (sid, world_identity(w))
@@ -376,7 +536,7 @@ def evaluate_worlds(disruption_id: str, db: dict,
                 late, cost = world_result(db, disruption_id, sid, w)
                 _sim_cache[cache_key] = (late, cost)
             results[sid] = (late, cost)
-        weighted_results.append((wt, results))
+        weighted_results.append((wt, results, draw))
 
     return aggregate_options(disruption_id, db, weighted_results, weights_source,
                              len(worlds), level)

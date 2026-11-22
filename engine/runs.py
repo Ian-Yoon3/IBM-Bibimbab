@@ -507,11 +507,18 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
     # Build results lookup: world_index -> results row.
     results_by_index = {row["world_index"]: row for row in results_rows}
 
-    # Sum integer weights per world_index.
-    weight_by_index: dict = {}
+    # Sum integer weights per (draw, world_index).
+    # draw is a string in row_map; convert to int when non-empty, else None.
+    weight_by_draw_index: dict = {}   # (draw, idx_str) -> int weight
+    draw_by_index: dict = {}          # idx_str -> draw (int or None)
     for rm in row_map_rows:
         idx = rm["world_index"]
-        weight_by_index[idx] = weight_by_index.get(idx, 0) + int(rm["weight"])
+        raw_draw = rm.get("draw", "")
+        draw = int(raw_draw) if raw_draw != "" else None
+        key = (draw, idx)
+        weight_by_draw_index[key] = weight_by_draw_index.get(key, 0) + int(rm["weight"])
+        # All rows with the same world_index should have the same draw.
+        draw_by_index[idx] = draw
 
     total_rows = len(row_map_rows)
 
@@ -521,9 +528,9 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
         if s.get("disruption_id", "") == disruption_id
     ]
 
-    # Build weighted_results: one entry per distinct world with weight > 0.
+    # Build weighted_results: one entry per distinct (draw, world_index) with weight > 0.
     weighted_results = []
-    for idx_str, weight in weight_by_index.items():
+    for (draw, idx_str), weight in weight_by_draw_index.items():
         if weight <= 0:
             continue
         result_row = results_by_index[idx_str]
@@ -532,7 +539,7 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
             late = int(result_row[f"late_orders.{sid}"])
             cost = int(result_row[f"extra_cost.{sid}"])
             results[sid] = (late, cost)
-        weighted_results.append((weight, results))
+        weighted_results.append((weight, results, draw))
 
     result = aggregate_options(disruption_id, db, weighted_results, "run",
                                total_rows, level)
