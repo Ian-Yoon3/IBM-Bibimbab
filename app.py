@@ -202,8 +202,8 @@ def _page_overview() -> None:
         else "A key supplier has a delay in delivering materials, which could disrupt downstream production and customer deliveries."
     )
 
-    # Two-column hero layout
-    hero_col, _spacer = st.columns([3, 2])
+    # Two-column hero layout — left: text + button, right: illustration
+    hero_col, img_col = st.columns([3, 2])
     with hero_col:
         st.markdown(
             f"""
@@ -225,9 +225,19 @@ def _page_overview() -> None:
             ):
                 navigate_to("find_plan")
                 st.rerun()
-        else:
-            render_live_unavailable()
-            return
+
+    with img_col:
+        import pathlib as _pathlib
+        _img_path = _pathlib.Path(__file__).parent / "ui" / "assets" / "supply-chain-recovery.png"
+        if _img_path.exists():
+            st.image(
+                str(_img_path),
+                use_container_width=True,
+            )
+
+    if st.session_state.mode != "fixtures":
+        render_live_unavailable()
+        return
 
     st.divider()
 
