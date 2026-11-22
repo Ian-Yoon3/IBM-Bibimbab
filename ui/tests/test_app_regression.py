@@ -819,3 +819,404 @@ class TestRegressionK_SeparateSessionsDoNotShareState(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# ===========================================================================
+# Issue 1 — Retry buttons are real, fixture-id-bound actions
+# ===========================================================================
+# These tests verify the fix for the retry no-op defect.
+# _IDX_A   = conv1_t1_i0  (success, $500)
+# _IDX_ERROR = conv_error_t1_i22 (error, same question as $500)
+# ===========================================================================
+
+class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
+    """Issue 1: Clicking a retry button appends the correct fixture exactly once."""
+
+    def test_clicking_retry_appends_fixture_response(self):
+        """Clicking the retry button on an error message appends a new entry."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Load the error fixture
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+
+        msgs_before = list(at.session_state.get("display_messages", []))
+        self.assertGreater(len(msgs_before), 0)
+        # Verify the last message is an error assistant message
+        last = msgs_before[-1]
+        self.assertEqual(last.get("type"), "assistant")
+        self.assertTrue(last.get("is_error"), "Last message should be an error")
+        error_fixture_id = last.get("fixture_id")
+        self.assertIsNotNone(error_fixture_id)
+
+        # Click the retry button for the error message (idx = 1 for the first pair)
+        retry_key = "retry_1"
+        retry_btn = at.button(key=retry_key)
+        retry_btn.click()
+        at.run()
+
+        msgs_after = at.session_state.get("display_messages", [])
+        self.assertGreater(
+            len(msgs_after), len(msgs_before),
+            "Clicking retry did not append a new message — retry is still a no-op",
+        )
+        # The new last assistant message must have the same fixture_id
+        new_last = msgs_after[-1]
+        self.assertEqual(new_last.get("type"), "assistant")
+        self.assertEqual(
+            new_last.get("fixture_id"), error_fixture_id,
+            f"Retry appended wrong fixture: expected {error_fixture_id!r}, "
+            f"got {new_last.get('fixture_id')!r}",
+        )
+        self.assertEqual(len(at.exception), 0, f"Exception after retry: {list(at.exception)}")
+
+    def test_retry_adds_exactly_one_pair(self):
+        """Clicking retry once adds exactly 2 messages (user + assistant)."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+        count_before = len(at.session_state.get("display_messages", []))
+
+        at.button(key="retry_1").click()
+        at.run()
+
+        count_after = len(at.session_state.get("display_messages", []))
+        self.assertEqual(
+            count_after - count_before, 2,
+            f"Expected retry to add exactly 2 messages, added {count_after - count_before}",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+    def test_retry_updates_submitted_request(self):
+        """Clicking retry updates submitted_request to the retried fixture_id."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Load error fixture first
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+        error_fixture_id = at.session_state.get("submitted_request", {}).get("fixture_id")
+
+        # Then load a different fixture (success $500 is conv1_t1_i0 — same question
+        # but different fixture_id, so it will be a different submitted_request)
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        at.run()
+        self.assertNotEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            error_fixture_id,
+        )
+
+        # Retry the first error message (which is at display index 1)
+        at.button(key="retry_1").click()
+        at.run()
+
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            error_fixture_id,
+            "submitted_request not updated to retried fixture_id",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+    def test_retry_after_different_fixture_retries_original_error(self):
+        """Historical error retry works even after another fixture is selected."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Step 1: load error fixture (messages: [user idx0, asst idx1])
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+        msgs_step1 = at.session_state.get("display_messages", [])
+        error_fixture_id = msgs_step1[-1].get("fixture_id")
+
+        # Step 2: load success fixture (messages: [.., user idx2, asst idx3])
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        msgs_step2 = at.session_state.get("display_messages", [])
+        self.assertEqual(len(msgs_step2), 4)
+
+        # Retry the original error (at display index 1)
+        at.button(key="retry_1").click()
+        at.run()
+
+        msgs_final = at.session_state.get("display_messages", [])
+        # Should have 6 messages: error, success, retried-error
+        self.assertEqual(len(msgs_final), 6,
+                         f"Expected 6 messages after historical retry, got {len(msgs_final)}")
+
+        # The new last message must be the retried error fixture
+        self.assertEqual(
+            msgs_final[-1].get("fixture_id"), error_fixture_id,
+            "Last message is not the retried error fixture",
+        )
+
+        # Verify the answer is actually rendered
+        rendered = " ".join(m.value for m in at.markdown)
+        error_answer = msgs_final[-1]["result"].get("answer", "")
+        snippet = error_answer[:40]
+        self.assertIn(snippet, rendered,
+                      f"Retried error answer not rendered. Snippet: {snippet!r}")
+        self.assertEqual(len(at.exception), 0)
+
+    def test_no_additional_messages_on_rerun_after_retry(self):
+        """An ordinary rerun after retry does not add more messages."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+        at.button(key="retry_1").click()
+        at.run()
+        count_after_retry = len(at.session_state.get("display_messages", []))
+
+        # Ordinary reruns must not add messages
+        at.run()
+        at.run()
+        self.assertEqual(
+            len(at.session_state.get("display_messages", [])),
+            count_after_retry,
+            "Ordinary rerun after retry duplicated messages",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+    def test_retry_fixture_id_not_identified_by_question_text(self):
+        """Retry uses fixture_id, not question text: retrying an error fixture
+        always reproduces the error, even if a success fixture shares the question."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Load the error fixture (index 23), which shares question with success (index 1)
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR_500)
+        at.run()
+        msgs = at.session_state.get("display_messages", [])
+        error_msg = msgs[-1]
+        self.assertTrue(error_msg.get("is_error"), "Expected error fixture")
+        error_fixture_id = error_msg.get("fixture_id")
+
+        # Click retry — it must reproduce the error, not the success fixture
+        at.button(key="retry_1").click()
+        at.run()
+
+        msgs_after = at.session_state.get("display_messages", [])
+        retried_msg = msgs_after[-1]
+        self.assertTrue(
+            retried_msg.get("is_error"),
+            "Retry produced a success response instead of an error — "
+            "fixture was identified by question text, not fixture_id",
+        )
+        self.assertEqual(
+            retried_msg.get("fixture_id"), error_fixture_id,
+            f"Retried fixture_id mismatch: expected {error_fixture_id!r}, "
+            f"got {retried_msg.get('fixture_id')!r}",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+
+# ===========================================================================
+# Issue 2 — Explicit fixture reselection is not ignored
+# ===========================================================================
+# These tests verify the fix for the stale-selector defect.
+# ===========================================================================
+
+class TestIssue2_ExplicitReselectionProcessed(unittest.TestCase):
+    """Issue 2: Intentional reselection of the same fixture after placeholder
+    navigation is correctly processed."""
+
+    def test_500_typed800_placeholder_500_appends_500(self):
+        """Select $500, submit $800 via form, choose placeholder, re-select $500.
+
+        Expected: the $500 fixture is appended as the 5th and 6th messages,
+        and submitted_request points to the $500 fixture_id.
+        """
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Step 1: select $500 fixture
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        self.assertEqual(len(at.session_state.get("display_messages", [])), 2)
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv1_t1_i0",
+        )
+
+        # Step 2: submit the saved $800 question through the text form
+        at.text_input(key="free_text_find_plan").input(_Q_800)
+        at.form_submit_button(
+            key="FormSubmitter:free_text_form_find_plan-Submit"
+        ).click()
+        at.run()
+        self.assertEqual(len(at.session_state.get("display_messages", [])), 4)
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv2_t1_i1",
+            "submitted_request should be $800 after form submission",
+        )
+
+        # Step 3: select the placeholder
+        at.selectbox(key="fixture_selector_find_plan").select_index(0)
+        at.run()
+        # Messages and submitted_request must remain unchanged after placeholder
+        self.assertEqual(len(at.session_state.get("display_messages", [])), 4,
+                         "Placeholder selection changed message count")
+
+        # Step 4: explicitly re-select $500
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+
+        msgs = at.session_state.get("display_messages", [])
+        self.assertEqual(
+            len(msgs), 6,
+            f"Expected 6 messages after $500→$800→placeholder→$500, got {len(msgs)}. "
+            "Explicit reselection was ignored.",
+        )
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv1_t1_i0",
+            "submitted_request not updated to $500 after explicit reselection",
+        )
+
+        # The final assistant message must render the $500 answer
+        rendered = " ".join(m.value for m in at.markdown)
+        last_asst = next(
+            (m for m in reversed(msgs) if m.get("type") == "assistant"), None
+        )
+        self.assertIsNotNone(last_asst)
+        snippet = last_asst["result"].get("answer", "")[:60]
+        self.assertIn(snippet, rendered,
+                      f"$500 answer not rendered after reselection. Snippet: {snippet!r}")
+
+        # No duplicates on a plain rerun
+        at.run()
+        self.assertEqual(
+            len(at.session_state.get("display_messages", [])), 6,
+            "Plain rerun after reselection duplicated messages",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+    def test_cross_page_reselection_appends_response(self):
+        """Select $500 on Find a plan, go to Compare and select $800,
+        return to Find a plan and explicitly re-select $500.
+
+        Expected: $500 response is appended, conversation has 6 messages,
+        submitted_request = conv1_t1_i0.
+        """
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Step 1: select $500 on find_plan
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        self.assertEqual(len(at.session_state.get("display_messages", [])), 2)
+
+        # Step 2: navigate to compare and select $800
+        at.button(key="nav_compare").click()
+        at.run()
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_B)
+        at.run()
+        self.assertEqual(len(at.session_state.get("display_messages", [])), 4)
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv2_t1_i1",
+        )
+
+        # Step 3: return to find_plan — the selector defaults back to placeholder (index=0)
+        at.button(key="nav_find_plan").click()
+        at.run()
+        # Messages preserved
+        self.assertEqual(len(at.session_state.get("display_messages", [])), 4,
+                         "Navigation cleared display_messages")
+
+        # Step 4: explicitly re-select $500 on find_plan
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+
+        msgs = at.session_state.get("display_messages", [])
+        self.assertEqual(
+            len(msgs), 6,
+            f"Expected 6 messages after cross-page $500→$800→$500 sequence, "
+            f"got {len(msgs)}. Cross-page reselection was ignored.",
+        )
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv1_t1_i0",
+            "submitted_request not updated to $500 after cross-page reselection",
+        )
+
+        # Verify $500 answer rendered and no duplicates
+        rendered = " ".join(m.value for m in at.markdown)
+        last_asst = next(
+            (m for m in reversed(msgs) if m.get("type") == "assistant"), None
+        )
+        self.assertIsNotNone(last_asst)
+        snippet = last_asst["result"].get("answer", "")[:60]
+        self.assertIn(snippet, rendered,
+                      f"$500 answer not rendered after cross-page reselection. "
+                      f"Snippet: {snippet!r}")
+
+        # No duplicates on plain rerun
+        at.run()
+        self.assertEqual(
+            len(at.session_state.get("display_messages", [])), 6,
+            "Plain rerun after cross-page reselection duplicated messages",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+    def test_ordinary_rerun_still_cannot_replay_stale_selection(self):
+        """Regression B behaviour preserved: an ordinary rerun after form
+        submission does not replay the stale selector value."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Select $500 fixture (selector index 1)
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+
+        # Type the $800 question through the form
+        at.text_input(key="free_text_find_plan").input(_Q_800)
+        at.form_submit_button(
+            key="FormSubmitter:free_text_form_find_plan-Submit"
+        ).click()
+        at.run()
+        self.assertEqual(len(at.session_state.get("display_messages", [])), 4)
+
+        # Ordinary reruns — the widget still shows $500 but must NOT replay
+        at.run()
+        at.run()
+        self.assertEqual(
+            len(at.session_state.get("display_messages", [])), 4,
+            "Ordinary rerun replayed stale $500 selector (Regression B still broken)",
+        )
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv2_t1_i1",
+            "submitted_request reverted to $500 on ordinary rerun",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+    def test_no_duplicates_after_explicit_reselection_reruns(self):
+        """After explicit reselection + rerun, no additional messages appear."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Select, go to placeholder, re-select
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        at.selectbox(key="fixture_selector_find_plan").select_index(0)
+        at.run()
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+
+        count = len(at.session_state.get("display_messages", []))
+        self.assertEqual(count, 4,
+                         f"Expected 4 messages ($500 × 2), got {count}")
+
+        # Subsequent reruns must not change count
+        at.run()
+        at.run()
+        self.assertEqual(
+            len(at.session_state.get("display_messages", [])), count,
+            "Reruns after explicit reselection duplicated messages",
+        )
+        self.assertEqual(len(at.exception), 0)

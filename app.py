@@ -244,6 +244,35 @@ def _page_overview() -> None:
 # Chat / example-selector screen (shared by Find plan, Compare, Impact pages)
 # ===========================================================================
 
+def _make_retry_callback(fixture_id: str):
+    """Return a zero-argument callback that queues *fixture_id* for retry.
+
+    The callback records the target fixture_id in session state so that
+    the next rerun can process it via _handle_pending_retry().  It does
+    not call st.rerun() itself because Streamlit's on_click callbacks run
+    before rendering — the subsequent automatic rerun is sufficient.
+    """
+    def _callback() -> None:
+        st.session_state["_pending_retry_fixture_id"] = fixture_id
+    return _callback
+
+
+def _handle_pending_retry() -> None:
+    """Process a queued retry request (if any) before rendering messages.
+
+    If session state contains _pending_retry_fixture_id, call
+    _add_fixture_to_conversation() with that fixture_id and clear the
+    key so subsequent reruns are no-ops.  Triggers st.rerun() so the
+    new message is immediately visible.
+    """
+    pending = st.session_state.pop("_pending_retry_fixture_id", None)
+    if pending is not None:
+        # Retry must bypass the idempotency check: the user explicitly asked
+        # to re-run the same fixture (force=True).
+        _add_fixture_to_conversation(pending, force=True)
+        st.rerun()
+
+
 def _render_display_messages() -> None:
     """Re-render every stored conversation message from display_messages."""
     for idx, msg in enumerate(st.session_state.display_messages):
@@ -258,21 +287,34 @@ def _render_display_messages() -> None:
                 # Regression C fix: pass a unique key per message so that
                 # multiple historical error banners do not collide on the
                 # same Streamlit element ID.
-                render_error_retry_banner(on_retry=lambda: None, msg_key=str(idx))
+                # Issue 1 fix: bind a real retry callback using the message's
+                # fixture_id instead of a no-op lambda.
+                retry_fixture_id = msg.get("fixture_id")
+                on_retry = (
+                    _make_retry_callback(retry_fixture_id)
+                    if retry_fixture_id is not None
+                    else lambda: None
+                )
+                render_error_retry_banner(on_retry=on_retry, msg_key=str(idx))
         elif msg_type == "unmatched":
             render_unmatched_message()
 
 
-def _add_fixture_to_conversation(fixture_id: str) -> None:
+def _add_fixture_to_conversation(fixture_id: str, *, force: bool = False) -> None:
     """Record a fixture selection in display_messages (idempotent by fixture_id).
 
     If the most-recently stored turn already corresponds to this fixture_id,
     do nothing — prevents duplicates on ordinary reruns.
+
+    Pass force=True to bypass the idempotency check.  This is used by
+    the retry path and by explicit reselection after a placeholder navigation,
+    where the user deliberately wants the same fixture appended again.
     """
     msgs = st.session_state.display_messages
 
     # Idempotency check: skip if the last stored turn is already this fixture.
-    if msgs:
+    # Bypassed when force=True (retry, explicit reselection after placeholder).
+    if not force and msgs:
         last = msgs[-1]
         if last.get("fixture_id") == fixture_id:
             return
@@ -401,7 +443,13 @@ def _fixture_selector(page_hint: str) -> None:
     handled_key = f"last_handled_selector_{page_hint}"
 
     if chosen_index == 0:
+        # Issue 2 fix: selecting the placeholder resets the handled tracker so
+        # that an explicit re-selection of the same fixture_id is recognised as
+        # a new event on the next interaction.
+        if handled_key in st.session_state:
+            del st.session_state[handled_key]
         # Render the existing conversation and show the prompt.
+        _handle_pending_retry()
         _render_display_messages()
         st.caption("Select an example above to load its response.")
         return
@@ -413,12 +461,19 @@ def _fixture_selector(page_hint: str) -> None:
     # This prevents a stale widget value from replaying after a form
     # submission or an ordinary rerun.
     if st.session_state.get(handled_key) != chosen_id:
-        _add_fixture_to_conversation(chosen_id)
+        # Issue 2 fix: if handled_key is absent (cleared by placeholder navigation),
+        # the user is making an explicit intentional reselection — bypass the
+        # idempotency check so the same fixture_id can be appended again.
+        force_add = handled_key not in st.session_state
+        _add_fixture_to_conversation(chosen_id, force=force_add)
         st.session_state[handled_key] = chosen_id
         # Regression A: immediately rerun so that _render_display_messages
         # on the next pass shows the newly added messages.
         st.rerun()
 
+    # Issue 1 fix: process any pending retry request before rendering so
+    # clicking a historical retry button adds the fixture and refreshes.
+    _handle_pending_retry()
     # On subsequent reruns the selection is already handled; just render.
     _render_display_messages()
 
