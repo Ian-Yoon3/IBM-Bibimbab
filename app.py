@@ -9,6 +9,7 @@ Stage A: Overview screen, fixture-based chat, example selector,
 Permitted agent imports (UI contract):
     from agent.loop import run_agent
     from agent.decisions import record_decision, list_decisions
+    from agent.overview import get_overview
 Live calls are gated behind a WX_API_KEY check; they are never made in
 Stage A.
 
@@ -50,12 +51,13 @@ from ui.renderers import (
     render_live_unavailable,
     render_result,
     render_unmatched_message,
+    render_world_risk,
 )
 from ui.state import init_state, navigate_to, reset_conversation, switch_mode
 
-# UI contract: the only agent import allowed from app.py.
-# Imported at module level so it is available whenever WX_API_KEY is set.
+# UI contract: permitted agent imports.
 from agent.loop import run_agent
+from agent.overview import get_overview
 
 # ---------------------------------------------------------------------------
 # Streamlit page config
@@ -121,7 +123,7 @@ def _sidebar() -> None:
             ("overview",   "🏠 Overview"),
             ("find_plan",  "🔍 Find a recovery plan"),
             ("compare",    "⚖️ Compare options"),
-            ("impact",     "📊 Understand the impact"),
+            ("impact",     "📊 Risk under uncertainty"),
         ]
         for page_id, label in pages:
             active = st.session_state.current_page == page_id
@@ -275,15 +277,15 @@ def _page_overview() -> None:
 <div class="action-card">
   <div class="action-card-icon">📊</div>
   <div class="action-card-body">
-    <div class="action-card-title">Understand the impact</div>
-    <div class="action-card-desc">See how each option could affect orders and delivery.</div>
+    <div class="action-card-title">Risk under uncertainty</div>
+    <div class="action-card-desc">See how each option holds up when the arrival date is uncertain.</div>
   </div>
   <div class="action-card-arrow">›</div>
 </div>
 """,
             unsafe_allow_html=True,
         )
-        if st.button("Go to Understand the impact", key="cta_impact",
+        if st.button("Go to Risk under uncertainty", key="cta_impact",
                      use_container_width=True, type="secondary"):
             navigate_to("impact")
             st.rerun()
@@ -486,11 +488,7 @@ def _fixture_selector(page_hint: str) -> None:
     a stale widget value and overwrite the current conversation.
     """
     st.markdown("#### Saved examples")
-    st.caption(
-        "Select an entry from the list below. "
-        "The successful response and the connection-error response share the same "
-        "question text; they are listed separately and are independently selectable."
-    )
+    st.caption("Pick a saved question to see the recorded answer.")
 
     # Build display list: (fixture_id, label)
     selector_options = ["— select an example —"] + [fid for fid, _ in _fixture_options]
@@ -547,7 +545,7 @@ def _free_text_input(page_hint: str) -> None:
     """Accept free-text input but show limitation message if no match."""
     with st.form(key=f"free_text_form_{page_hint}", clear_on_submit=True):
         user_input = st.text_input(
-            "Or type a question (Fixtures mode only matches saved examples)",
+            "Or type a question (demo mode answers only the saved questions)",
             placeholder="e.g. Our budget is 500 dollars. What should we do?",
             key=f"free_text_{page_hint}",
         )
@@ -764,15 +762,49 @@ def _page_compare() -> None:
 
 
 # ===========================================================================
-# Page: Understand the impact
+# Page: Risk under uncertainty
 # ===========================================================================
-def _page_impact() -> None:
-    _render_fixtures_page(
-        "impact",
-        "📊 Understand the impact",
-        "Select a saved example to understand which orders and customers are "
-        "affected by the disruption.",
+def _page_impact(*, _get_overview_fn=None) -> None:
+    """Risk under uncertainty page.
+
+    Parameters
+    ----------
+    _get_overview_fn:
+        Injectable override for get_overview — used exclusively by unit tests.
+        When None (default), the real get_overview is used.
+    """
+    # Breadcrumb
+    st.markdown(
+        '<div class="breadcrumb">'
+        '<a href="#">Overview</a>'
+        '<span>›</span>'
+        'Risk under uncertainty'
+        '</div>',
+        unsafe_allow_html=True,
     )
+    st.header("📊 Risk under uncertainty")
+
+    # Top-of-page overview: always rendered in both Fixtures and Live mode.
+    overview_fn = _get_overview_fn if _get_overview_fn is not None else get_overview
+    try:
+        overview = overview_fn()
+        overview_view = overview.get("view") or overview
+        render_world_risk(overview_view)
+    except Exception as exc:
+        st.error(str(exc))
+
+    st.divider()
+    st.markdown("### Ask about risk")
+
+    # In Live mode: no selector, show unavailable warning and stop.
+    if st.session_state.mode == "live":
+        render_live_unavailable()
+        return
+
+    # Fixtures mode: example selector and free-text form.
+    _fixture_selector("impact")
+    st.divider()
+    _free_text_input("impact")
 
 
 # ===========================================================================
@@ -805,6 +837,12 @@ def main() -> None:
         _page_find_plan()
         return
 
+    if page == "impact":
+        # impact handles its own Live mode behaviour internally.
+        # _get_overview_fn is intentionally not passed from the router.
+        _page_impact()
+        return
+
     # For all other non-overview pages: block entirely in Live mode.
     if _live_mode_guard():
         render_live_unavailable()
@@ -812,8 +850,6 @@ def main() -> None:
 
     if page == "compare":
         _page_compare()
-    elif page == "impact":
-        _page_impact()
     else:
         # Fallback for future pages
         st.info(f"Page '{page}' is not yet implemented.")

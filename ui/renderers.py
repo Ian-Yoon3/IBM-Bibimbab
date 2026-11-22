@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -700,6 +701,37 @@ def split_markdown_sections(markdown: str) -> dict[str, str]:
     return sections
 
 
+def world_risk_chart_rows(view: dict, field: str) -> list[tuple[str, float]]:
+    """Return (code, value) pairs from view["rows"] in row order, dropping None values.
+
+    Parameters
+    ----------
+    view:
+        A world_risk view dict.
+    field:
+        The row field to read ("expected_late_orders" or "extra_cost").
+
+    Returns
+    -------
+    List of (code, value) in view["rows"] order, with rows where value is None
+    omitted.
+    """
+    result = []
+    for r in view.get("rows", []):
+        value = r.get(field)
+        if value is not None:
+            result.append((r.get("code", ""), value))
+    return result
+
+
+def render_world_risk(view: dict) -> None:
+    """Render a world_risk view directly on the page (not inside a chat message).
+
+    Called by app.py for the risk page top-of-page overview.
+    """
+    _render_world_risk_view(view)
+
+
 def _render_world_risk_view(view: dict) -> None:
     """Render a world_risk view with summary table, charts, and expanders."""
     rows = view.get("rows", [])
@@ -779,28 +811,49 @@ def _render_world_risk_view(view: dict) -> None:
 
     # 4. Two bar charts side by side
     if rows:
-        codes = [r.get("code", "") for r in rows]
-        late_values = [r.get("expected_late_orders", 0) for r in rows]
-        cost_values = [r.get("extra_cost", 0) for r in rows]
+        late_pairs = world_risk_chart_rows(view, "expected_late_orders")
+        cost_pairs = world_risk_chart_rows(view, "extra_cost")
 
         chart_col1, chart_col2 = st.columns(2)
         with chart_col1:
             st.caption("Expected late orders")
-            chart_data_late = {
-                "Option": codes,
-                "Expected late orders": late_values,
-            }
-            # Render as a simple bar chart using st.bar_chart
-            df_late = pd.DataFrame(chart_data_late).set_index("Option")
-            st.bar_chart(df_late)
+            if late_pairs:
+                late_codes, late_values = zip(*late_pairs)
+                df_late = pd.DataFrame({
+                    "Option": list(late_codes),
+                    "Expected late orders": list(late_values),
+                })
+                # Use explicit sort order to preserve row order from view["rows"]
+                order = list(late_codes)
+                chart_late = (
+                    alt.Chart(df_late)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("Option:N", sort=order, title=None),
+                        y=alt.Y("Expected late orders:Q", title="Expected late orders"),
+                    )
+                    .properties(height=300)
+                )
+                st.altair_chart(chart_late, use_container_width=True)
         with chart_col2:
             st.caption("Extra cost (USD)")
-            chart_data_cost = {
-                "Option": codes,
-                "Extra cost (USD)": cost_values,
-            }
-            df_cost = pd.DataFrame(chart_data_cost).set_index("Option")  # noqa: PD013
-            st.bar_chart(df_cost)
+            if cost_pairs:
+                cost_codes, cost_values = zip(*cost_pairs)
+                df_cost = pd.DataFrame({
+                    "Option": list(cost_codes),
+                    "Extra cost (USD)": list(cost_values),
+                })
+                order_cost = list(cost_codes)
+                chart_cost = (
+                    alt.Chart(df_cost)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("Option:N", sort=order_cost, title=None),
+                        y=alt.Y("Extra cost (USD):Q", title="Extra cost (USD)"),
+                    )
+                    .properties(height=300)
+                )
+                st.altair_chart(chart_cost, use_container_width=True)
 
     # 5. AI explanation paragraph
     if explanation_status == "ok" and explanation:
@@ -815,10 +868,11 @@ def _render_world_risk_view(view: dict) -> None:
     # 6. Collapsed expanders for markdown sections
     n_assumptions = len(assumptions)
     if n_assumptions > 0:
-        st.caption(
-            f"{n_assumptions} assumption{'s' if n_assumptions != 1 else ''} apply "
-            f"to these numbers. Open Assumptions to read them."
-        )
+        if n_assumptions == 1:
+            assumption_caption = "1 assumption applies to these numbers. Open Assumptions to read them."
+        else:
+            assumption_caption = f"{n_assumptions} assumptions apply to these numbers. Open Assumptions to read them."
+        st.caption(assumption_caption)
 
     expander_defs = [
         ("How sure is this", "How sure is this"),
