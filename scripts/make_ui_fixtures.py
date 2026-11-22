@@ -20,7 +20,7 @@ sweep).  Older sweeps replay against the stage 1 worlds.
 Run from the repository root (no .env needed):
 
     python -m scripts.make_ui_fixtures
-    python -m scripts.make_ui_fixtures eval_results/sweep_20261122_010853.json
+    python -m scripts.make_ui_fixtures eval_results/sweep_20261122_111825.json
 
 Output: ``ui_fixtures/agent_results.json``.  See ``docs/ui-contract.md``.
 """
@@ -40,7 +40,7 @@ from agent.loop import run_agent
 from scripts.stage1_data import use_stage1_default_data
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261122_010853.json"
+DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261122_111825.json"
 OUT = ROOT / "ui_fixtures" / "agent_results.json"
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

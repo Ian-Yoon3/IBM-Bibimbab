@@ -295,7 +295,17 @@ the table. Several option names look alike, so never describe an option by name 
 
 Rules: use only numbers that appear in the situation or the table. Do not compute
 differences, sums or percentages. Do not write headings, tables or a next step.
-Do not tell the user to contact anyone."""
+Do not tell the user to contact anyone.
+
+Comparisons are checked by code against the table, and a sentence that cannot be
+checked is removed. So when you compare:
+- Name both options by their code and name the column, for example
+  "TRANSFER has more on-time orders than WAIT".
+- Say "the most", "the lowest" or "the cheapest" only when it holds for every row
+  of the table. If it holds only inside a limit, put the limit in the same phrase:
+  "the most on-time orders within the budget", "the lowest extra cost among options
+  with at least 10 on-time orders".
+- Do not write "the only option", "no other option" or "any other option"."""
     return {"role": "user", "content": content}
 
 
@@ -415,6 +425,11 @@ def build_world_risk_message(user_message: str, view: dict) -> dict:
         "- Do not pick a single best option unless the user gave a criterion; "
         "then use only the marks in the table.\n"
         "- Point out where measures disagree when it matters for the question.\n"
+        "- Comparisons are checked by code against the table and the paragraph is "
+        "removed when one cannot be checked. When you compare, name both options by "
+        "their code and name the column, for example \"HYBRID has a higher Chance "
+        "of no late order than TRANSFER\". Say highest or lowest only when it holds "
+        "for every row. Do not write \"the only option\" or \"no other option\".\n"
         "- Mention only option codes that are rows of the table.\n"
         "- No headings, tables, lists or next steps.\n"
         "- Do not guess about the supplier.\n\n"

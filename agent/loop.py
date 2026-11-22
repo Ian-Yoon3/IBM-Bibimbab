@@ -184,6 +184,9 @@ def run_agent(
         except Exception:
             narrative = ""
         rationale, tradeoffs = render.split_narrative(narrative)
+        # Comparisons in the model's text must agree with the table rows.
+        rationale, tradeoffs, view["narrative_check"] = render.check_narrative(
+            view, rationale, tradeoffs)
         if not rationale:
             rationale = ("(The AI explanation is unavailable. The table and the "
                          "recommendation above come from the engine.)")

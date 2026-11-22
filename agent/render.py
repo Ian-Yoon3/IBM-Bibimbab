@@ -19,6 +19,7 @@ import re
 from datetime import date
 
 import engine.tools as _t
+from agent import claims
 
 # ── small helpers ─────────────────────────────────────────────────────────────
 
@@ -413,6 +414,45 @@ def split_narrative(text: str) -> tuple[str, str]:
     lines = [l.strip() for l in trade.splitlines() if l.strip()]
     trade = "\n".join(l if l.startswith("- ") else f"- {l.lstrip('-* ')}" for l in lines)
     return rationale, trade
+
+
+_COMPARISON_NOT_SHOWN = ("(The AI explanation is not shown because it contains a "
+                         "comparison that could not be confirmed against the table.)")
+_TRADEOFF_NOT_SHOWN = ("- (AI trade-off text is not shown where a comparison could "
+                       "not be confirmed against the table.)")
+
+
+def check_narrative(view: dict, rationale: str, tradeoffs: str) -> tuple:
+    """Check the comparisons in the model's text against the options table.
+
+    A higher/lower, most/fewest, "3 fewer" or "save $416" statement must agree
+    with the rows of the table; one that is wrong or cannot be tied to a column
+    and to options is left out (agent/claims.py).  The rationale is kept or
+    replaced as a whole; trade-off lines are judged one by one.
+
+    Returns (rationale, tradeoffs, check) where check is
+    {"rationale": "ok" | "dropped" | "unavailable", "tradeoff_lines_dropped": n}.
+    """
+    table = claims.recommendation_table(view["rows"])
+    star = view.get("recommended")
+    budget = view["settings"]["budget"]
+    check = {"rationale": "ok", "tradeoff_lines_dropped": 0}
+    if not rationale:
+        check["rationale"] = "unavailable"
+    else:
+        ok, _why = claims.check_comparisons(rationale, table, star, budget)
+        if not ok:
+            rationale, check["rationale"] = _COMPARISON_NOT_SHOWN, "dropped"
+    kept = []
+    for line in tradeoffs.splitlines():
+        ok, _why = claims.check_comparisons(line, table, star, budget)
+        if ok:
+            kept.append(line)
+        else:
+            check["tradeoff_lines_dropped"] += 1
+    if check["tradeoff_lines_dropped"]:
+        kept.append(_TRADEOFF_NOT_SHOWN)
+    return rationale, "\n".join(kept), check
 
 
 # ── view: order ───────────────────────────────────────────────────────────────
@@ -1182,6 +1222,7 @@ def world_risk_view(
     situation = sit
 
     # ── explanation slot ──────────────────────────────────────────────────────
+    exp_drop_reason = None
     if mode == "overview":
         exp_status = None
         exp_text = None
@@ -1196,12 +1237,26 @@ def world_risk_view(
         )
         ok, _reason = check_explanation(explanation, _view_md + "\n" + user_message)
         if ok:
+            # Numbers and options are in the tables; now the direction of every
+            # comparison (higher/lower, highest/lowest, ...) must agree with them.
+            cmp_ok, _why = claims.check_comparisons(
+                explanation, claims.world_risk_table(rows, focus_idx is not None),
+                budget=budget)
+            if not cmp_ok:
+                exp_drop_reason = "comparison"
+        else:
+            exp_drop_reason = "number"
+        if exp_drop_reason is None:
             exp_status = "ok"
             exp_text = explanation
-        else:
+        elif exp_drop_reason == "number":
             exp_status = "dropped"
             exp_text = ("(The AI explanation is not shown because it used a number "
                         "or an option that is not in the tables.)")
+        else:
+            exp_status = "dropped"
+            exp_text = ("(The AI explanation is not shown because it contains a "
+                        "comparison that could not be confirmed against the tables.)")
 
     # ── markdown ──────────────────────────────────────────────────────────────
     # _build_world_risk_md_no_exp returns sections up to and including Notes and
@@ -1242,6 +1297,7 @@ def world_risk_view(
         "assumptions": _assumption_lines(wr),
         "explanation": exp_text if mode != "overview" else None,
         "explanation_status": exp_status,
+        "explanation_drop_reason": exp_drop_reason,
         "scope_note": scope_note,
         "suggested_questions": sq,
         "settings": {"budget": budget},

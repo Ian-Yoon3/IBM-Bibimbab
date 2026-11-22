@@ -1,4 +1,4 @@
-"""Review tests for step 6b-1b (written without Bob, after Claude's review).
+"""Review tests for step 6b-1b (written without Bob, after a review).
 
 They check the VALUES of the run-only cause fields, which the 6b-1b tests only
 checked for presence:

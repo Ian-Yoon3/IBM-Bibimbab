@@ -1,0 +1,1154 @@
+[
+  {
+    "conversation": 1,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Our budget is 500 dollars. What should we do?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "500",
+          "objective": "on_time_orders"
+        },
+        "error": null
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "include_transfers": "true",
+          "budget": "500",
+          "objective": "cost"
+        },
+        "error": null
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost | Within $500 |\n|---|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 | yes |\n| **Move stock from North Buffer and East Buffer (TRANSFER) ★** | **8 of 12** | **4 of 6** | **12** | **$416** | **yes** |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 | no |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 | no |\n| Move stock + buy 35 from Beacon Circuits (OF02 x35 + transfers, found by search) | 10 of 12 | 5 of 6 | 4 | $1,126 | no |\n| Move stock + buy 40 from Beacon Circuits (OF02 x40 + transfers, found by search) | 11 of 12 | 5 of 6 | 2 | $1,216 | no |\n| Move stock + buy 65 from Beacon Circuits (OF02 x65 + transfers, found by search) | 12 of 12 | 6 of 6 | 0 | $1,666 | no |\n\n★ = recommended for: most on-time orders, within $500.\n\n## Recommendation\n**Move stock from North Buffer and East Buffer (TRANSFER)**\nThe engine recommends TRANSFER, which has the most on-time orders within the budget. TRANSFER has more on-time orders than WAIT. TRANSFER also has the lowest extra cost among options with at least 8 on-time orders.\n\n## Trade-offs and risks\n- Still late with this option: SO05 (5 days), SO06 (3 days, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- ALT_BUY would increase extra cost to $1,250 and reduce total days late to 5.\n- HYBRID would increase extra cost to $1,306 and reduce total days late to 2.\n\n## Next step\nTo act on this, say: *\"Propose TRANSFER\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: The engine recommends TRANSFER, which has the most on-time orders within the budget. TRANSFER has more on-time orders than WAIT. TRANSFER also has the lowest extra cost among options with at least 8 on-time orders.\nTrade-offs: - ALT_BUY would increase extra cost to $1,250 and reduce total days late to 5. \n- HYBRID would increase extra cost to $1,306 and reduce total days late to 2.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 2,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "We can spend up to $800. Which option?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "800"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost | Within $800 |\n|---|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 | yes |\n| **Move stock from North Buffer and East Buffer (TRANSFER) ★** | **8 of 12** | **4 of 6** | **12** | **$416** | **yes** |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 | no |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 | no |\n\n★ = recommended for: most on-time orders, within $800.\n\n## Recommendation\n**Move stock from North Buffer and East Buffer (TRANSFER)**\nTRANSFER has the most on-time orders within the budget, with 8 on-time orders and an extra cost of $416, which is within the $800 limit. This option is chosen because it balances the number of on-time orders and extra cost. TRANSFER has more on-time orders than WAIT.\n\n## Trade-offs and risks\n- Still late with this option: SO05 (5 days), SO06 (3 days, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- ALT_BUY would increase the number of on-time orders to 9 but exceed the budget with an extra cost of $1,250. - HYBRID would result in the most on-time orders, with 11 on-time orders, but also exceed the budget with an extra cost of $1,306.\n\n## Next step\nTo act on this, say: *\"Propose TRANSFER\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: TRANSFER has the most on-time orders within the budget, with 8 on-time orders and an extra cost of $416, which is within the $800 limit. This option is chosen because it balances the number of on-time orders and extra cost. TRANSFER has more on-time orders than WAIT.\n\nTrade-offs: - ALT_BUY would increase the number of on-time orders to 9 but exceed the budget with an extra cost of $1,250. - HYBRID would result in the most on-time orders, with 11 on-time orders, but also exceed the budget with an extra cost of $1,306.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 3,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What's the best option if we have $1,200 to spend?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "1200"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost | Within $1,200 |\n|---|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 | yes |\n| **Move stock from North Buffer and East Buffer (TRANSFER) ★** | **8 of 12** | **4 of 6** | **12** | **$416** | **yes** |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 | no |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 | no |\n\n★ = recommended for: most on-time orders, within $1,200.\n\n## Recommendation\n**Move stock from North Buffer and East Buffer (TRANSFER)**\nTRANSFER has the most on-time orders within the budget, with 8 on-time orders and an extra cost of $416. This option fits the user's request for the best choice given $1,200 to spend. TRANSFER also has more priority-1 on-time orders than WAIT.\n\n## Trade-offs and risks\n- Still late with this option: SO05 (5 days), SO06 (3 days, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- ALT_BUY would increase the number of on-time orders to 9, but would exceed the budget. - HYBRID would result in the most on-time orders, but would also exceed the budget.\n\n## Next step\nTo act on this, say: *\"Propose TRANSFER\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: TRANSFER has the most on-time orders within the budget, with 8 on-time orders and an extra cost of $416. This option fits the user's request for the best choice given $1,200 to spend. TRANSFER also has more priority-1 on-time orders than WAIT.\n\nTrade-offs: - ALT_BUY would increase the number of on-time orders to 9, but would exceed the budget. - HYBRID would result in the most on-time orders, but would also exceed the budget.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 4,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What is the cheapest way to keep 10 orders on time?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "min_on_time_orders": "10",
+          "include_transfers": "true",
+          "objective": "cost"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |\n|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 |\n| **Move stock + buy 35 from Beacon Circuits (OF02 x35 + transfers, found by search) ★** | **10 of 12** | **5 of 6** | **4** | **$1,126** |\n| Move stock + buy 40 from Beacon Circuits (OF02 x40 + transfers, found by search) | 11 of 12 | 5 of 6 | 2 | $1,216 |\n| Move stock + buy 65 from Beacon Circuits (OF02 x65 + transfers, found by search) | 12 of 12 | 6 of 6 | 0 | $1,666 |\n\n★ = recommended for: lowest extra cost, at least 10 on-time orders.\n\n## Recommendation\n**Move stock + buy 35 from Beacon Circuits (OF02 x35 + transfers)**\nThe option OF02 x35 + transfers has the lowest extra cost among options with at least 10 on-time orders. It has more on-time orders than WAIT and TRANSFER. The option OF02 x35 + transfers was chosen for having the lowest extra cost, at least 10 on-time orders.\n\n## Trade-offs and risks\n- Still late with this option: SO07 (2 days), SO08 (2 days, priority 1).\n- HYBRID has more on-time orders than OF02 x35 + transfers. - OF02 x40 + transfers has more on-time orders than OF02 x35 + transfers.\n\n## Next step\nTo act on this, say: *\"Propose OF02 x35 + transfers\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: The option OF02 x35 + transfers has the lowest extra cost among options with at least 10 on-time orders. It has more on-time orders than WAIT and TRANSFER. The option OF02 x35 + transfers was chosen for having the lowest extra cost, at least 10 on-time orders.\nTrade-offs: - HYBRID has more on-time orders than OF02 x35 + transfers. - OF02 x40 + transfers has more on-time orders than OF02 x35 + transfers.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 5,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "How can we keep all 12 orders on time, and what does it cost?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "budget": "null",
+          "include_transfers": "true",
+          "min_on_time_orders": "12",
+          "objective": "cost",
+          "offer_id": "OF01"
+        },
+        "error": "'OF01' is the disrupted supplier's offer; choose an alternative from get_offers"
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "budget": "null",
+          "include_transfers": "true",
+          "min_on_time_orders": "12",
+          "objective": "cost",
+          "offer_id": "OF02"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |\n|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 |\n| Move stock + buy 35 from Beacon Circuits (OF02 x35 + transfers, found by search) | 10 of 12 | 5 of 6 | 4 | $1,126 |\n| Move stock + buy 40 from Beacon Circuits (OF02 x40 + transfers, found by search) | 11 of 12 | 5 of 6 | 2 | $1,216 |\n| **Move stock + buy 65 from Beacon Circuits (OF02 x65 + transfers, found by search) ★** | **12 of 12** | **6 of 6** | **0** | **$1,666** |\n\n★ = recommended for: most on-time orders, at least 12 on-time orders.\n\n## Recommendation\n**Move stock + buy 65 from Beacon Circuits (OF02 x65 + transfers)**\nThe option OF02 x65 + transfers has the most on-time orders, with 12 of 12 orders on time, which fits the user's request to keep all orders on time. This option also has the most priority-1 orders on time, with 6 of 6 orders on time.\n\n## Trade-offs and risks\n- No orders are late with this option.\n- HYBRID would change the extra cost to $1,306 and the total days late to 2.\n- OF02 x40 + transfers would change the extra cost to $1,216 and the total days late to 2.\n\n## Next step\nTo act on this, say: *\"Propose OF02 x65 + transfers\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: The option OF02 x65 + transfers has the most on-time orders, with 12 of 12 orders on time, which fits the user's request to keep all orders on time. This option also has the most priority-1 orders on time, with 6 of 6 orders on time. \nTrade-offs: - HYBRID would change the extra cost to $1,306 and the total days late to 2. \n- OF02 x40 + transfers would change the extra cost to $1,216 and the total days late to 2.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 6,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Which option has the shortest maximum delay?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "objective": "max_delay"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |\n|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 |\n| **Buy 65 from Beacon Circuits (ALT_BUY) ★** | **9 of 12** | **4 of 6** | **5** | **$1,250** |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 |\n\n★ = recommended for: shortest maximum delay.\n\n## Recommendation\n**Buy 65 from Beacon Circuits (ALT_BUY)**\nThe recommended option ALT_BUY has the shortest maximum delay. It has more on-time orders than WAIT and TRANSFER. HYBRID has the most on-time orders, but ALT_BUY has a lower extra cost than HYBRID.\n\n## Trade-offs and risks\n- Still late with this option: SO02 (1 day, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- TRANSFER would decrease extra cost to $416. - HYBRID would increase on-time orders to 11 of 12.\n\n## Next step\nTo act on this, say: *\"Propose ALT_BUY\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: The recommended option ALT_BUY has the shortest maximum delay. It has more on-time orders than WAIT and TRANSFER. HYBRID has the most on-time orders, but ALT_BUY has a lower extra cost than HYBRID.\nTrade-offs: - TRANSFER would decrease extra cost to $416. - HYBRID would increase on-time orders to 11 of 12.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 7,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "How bad is this disruption?",
+    "view_type": null,
+    "tools": [
+      {
+        "name": "get_impact",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Answer\nThe disruption D01 causes 7 orders to be late. The first late order is SO02, which is 6 days late.\n\n## Evidence\n* Disruption D01 affects component C01 and causes 7 orders to be late: get_impact\n* The first late order is SO02, which is 6 days late: get_impact\n* Late orders and their due dates, delivery dates, and days late: get_impact",
+    "llm_text": "## Answer\nThe disruption D01 causes 7 orders to be late. The first late order is SO02, which is 6 days late.\n\n## Evidence\n* Disruption D01 affects component C01 and causes 7 orders to be late: get_impact\n* The first late order is SO02, which is 6 days late: get_impact\n* Late orders and their due dates, delivery dates, and days late: get_impact",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 8,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Which customers are hurt the most if we wait?",
+    "view_type": null,
+    "tools": [
+      {
+        "name": "get_impact",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Answer\nThe customers who are hurt the most if we wait are those with late orders. According to get_impact, the late orders are SO02, SO03, SO04, SO05, SO06, SO07, and SO08, belonging to customers CU02, CU03, CU04, CU05, CU06, CU07, and CU08, respectively.\n\n## Evidence\n* Late orders: SO02, SO03, SO04, SO05, SO06, SO07, SO08 (get_impact)\n* Customers with late orders: CU02, CU03, CU04, CU05, CU06, CU07, CU08 (get_impact)\n* Number of late orders: 7 (get_impact)",
+    "llm_text": "## Answer\nThe customers who are hurt the most if we wait are those with late orders. According to get_impact, the late orders are SO02, SO03, SO04, SO05, SO06, SO07, and SO08, belonging to customers CU02, CU03, CU04, CU05, CU06, CU07, and CU08, respectively.\n\n## Evidence\n* Late orders: SO02, SO03, SO04, SO05, SO06, SO07, SO08 (get_impact)\n* Customers with late orders: CU02, CU03, CU04, CU05, CU06, CU07, CU08 (get_impact)\n* Number of late orders: 7 (get_impact)",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 9,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Is it worth paying $1,306 for HYBRID?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "1306",
+          "objective": "cost"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost | Within $1,306 |\n|---|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 | yes |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 | yes |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 | yes |\n| **Move stock + buy 45 from Beacon Circuits (HYBRID) ★** | **11 of 12** | **5 of 6** | **2** | **$1,306** | **yes** |\n\n★ = recommended for: most on-time orders, within $1,306.\n\n## Recommendation\n**Move stock + buy 45 from Beacon Circuits (HYBRID)**\nThe HYBRID option has the most on-time orders within the $1,306 budget. HYBRID has more on-time orders than TRANSFER, ALT_BUY, and WAIT. HYBRID also has the most priority-1 on-time orders within the $1,306 budget.\n\n## Trade-offs and risks\n- Still late with this option: SO08 (2 days, priority 1).\n- WAIT would reduce extra cost to $0. - TRANSFER would reduce extra cost to $416.\n\n## Next step\nTo act on this, say: *\"Propose HYBRID\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: The HYBRID option has the most on-time orders within the $1,306 budget. HYBRID has more on-time orders than TRANSFER, ALT_BUY, and WAIT. HYBRID also has the most priority-1 on-time orders within the $1,306 budget.\nTrade-offs: - WAIT would reduce extra cost to $0. - TRANSFER would reduce extra cost to $416.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 10,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Why is SO05 late if we only move stock?",
+    "view_type": "order",
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "order_id": "SO05",
+          "scenario_id": "TRANSFER"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Answer\nSO05 is 5 days late under TRANSFER. On 2026-11-12, its latest on-time start date, it was waiting in the production queue behind SO04, which lacked 13 x C01. It starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-14).\n\n## Evidence\n- Option: TRANSFER\n- Customer CU05, priority 2, due 2026-11-14\n- Latest on-time start: 2026-11-12\n- Starts 2026-11-17, delivered 2026-11-19, 5 days late\n- Cause: waiting in the production queue behind SO04\n- Missing on 2026-11-12: 13 x C01 (Microcontroller)",
+    "llm_text": "The order SO05 is late if we only move stock because it was waiting in the production queue behind order SO04, which lacked 13 units of component C01. This caused a delay of 5 days, with the order starting on 2026-11-17 and being delivered on 2026-11-19, instead of the due date of 2026-11-14.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 11,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What happens to SO11 under HYBRID?",
+    "view_type": "order",
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "order_id": "SO11",
+          "scenario_id": "HYBRID"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Answer\nSO11 is on time under HYBRID: it starts on 2026-11-17 and is delivered on 2026-11-19 (due 2026-11-20).\n\n## Evidence\n- Option: HYBRID\n- Customer CU03, priority 1, due 2026-11-20\n- Latest on-time start: 2026-11-18\n- Starts 2026-11-17, delivered 2026-11-19, 0 days late",
+    "llm_text": "The order SO11 is on time under the HYBRID scenario. It starts on 2026-11-17 and is delivered on 2026-11-19, which is before its due date of 2026-11-20. The order requires 14 units of component C01, 7 units of component C03, 7 units of component C04, and 7 units of component C05. Since the order is on time, there is no cause for lateness.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 12,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What if the supplier is 3 days late instead?",
+    "view_type": "world_risk",
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late (if PO01 arrives on the announced date, Nov 17).\nWeights come from the Monte Carlo run in runs/demo. Each world is one possible course of the uncertain values: the delayed PO's receipt date, offer and lane delays and cause episodes. Time and cost are shown side by side. The engine does not pick an option.\n\n## Reading\nRead as: PO01 arrives on Nov 14.\n\"N days late\" counts from the original planned date (Nov 11). \"N days earlier\" or \"N days later\" counts from the announced date (Nov 17).\n\n## Time and cost by option\n| Option | Extra cost | Expected late orders | Range of the average | 90th percentile | Worst-10% average | Chance of no late order | Late if it arrives Nov 14 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | $0 | 7.42 | 6.26 to 8.38 | 10 | 10.88 | 0.0% | 4 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | $416 | 5.55 | 4.52 to 6.45 | 9 | 9.59 | 6.9% | 1 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | $1,250 | 4.65 | 3.64 to 5.80 | 8 | 9.50 | 3.7% | 1 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | $1,306 | 3.34 | 2.51 to 4.25 | 7 | 7.98 | 11.0% | 0 |\n\n## How sure is this\nRange of the average: where the expected value itself may lie (5% to 95% over the parameter draws). The history is short, so the rates behind the averages are uncertain.\nOne outcome varies more than the average: in 9 of 10 weighted cases late orders are at or below the 90th percentile, and the worst 10% of cases average the number in the Worst-10% average column.\nThe order by expected late orders (HYBRID, ALT_BUY, TRANSFER, WAIT) is the same in 957 of 1000 parameter draws.\nIn 43 draws the order is HYBRID, TRANSFER, ALT_BUY, WAIT.\n\n## Shared causes\n- K1 (affects PO01, OF02): chance that an episode starts in the decision window 9.5% (about 4.1 per year).\n  Expected late orders without / with it: WAIT 7.24 / 9.13, TRANSFER 5.38 / 7.17, ALT_BUY 4.41 / 6.99, HYBRID 3.12 / 5.40.\n  TRANSFER and ALT_BUY swap places when the chance is between 81.3% and 81.9% (about 67.9 to 69.3 per year). Now ALT_BUY has fewer expected late orders.\n- K2 (affects LN01, LN02): chance that an episode starts in the decision window 10.7% (about 8.3 per year).\n  Expected late orders without / with it: WAIT 7.42 / 7.40, TRANSFER 5.44 / 6.45, ALT_BUY 4.66 / 4.62, HYBRID 3.25 / 4.03.\n  No change in the order up to a chance of 99.0% (about 336.2 per year).\n- All causes together: no change in the order up to 40.53 times the estimated rates.\nThe thresholds come from re-running the model at each rate. They cannot be read off the without / with numbers, because a higher rate also changes how many episodes start and when.\n\n## Late orders by receipt date\nEach column sets only the receipt date of the delayed purchase order. Every other value stays at its base (no extra delay, no cause episode).\n\n| Option | Nov 11 | Nov 12 | Nov 13 | **Nov 14** | Nov 15 | Nov 16 | Nov 17 | Nov 18 | Nov 19 | Nov 20 | Nov 21 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | 0 | 1 | 3 | **4** | 5 | 7 | 7 | 8 | 10 | 10 | 11 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 0 | 0 | 1 | **1** | 2 | 4 | 4 | 5 | 7 | 7 | 8 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 0 | 1 | 1 | **1** | 1 | 3 | 3 | 4 | 6 | 6 | 7 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 0 | 0 | 0 | **0** | 0 | 1 | 1 | 2 | 4 | 4 | 5 |\n\n## Trade-offs\n- WAIT to TRANSFER: +$416, expected late orders -1.87, 90th percentile -1, worst-10% average -1.29, chance of no late order +6.9 points\n- TRANSFER to ALT_BUY: +$834, expected late orders -0.90, 90th percentile -1, worst-10% average -0.09, chance of no late order -3.2 points\n- ALT_BUY to HYBRID: +$56, expected late orders -1.31, 90th percentile -1, worst-10% average -1.52, chance of no late order +7.3 points\n\n## What this means\nIf the supplier is 3 days late instead, the expected number of late orders for the WAIT option is 4, according to the \"Late if it arrives Nov 14\" column. The HYBRID option has a higher Chance of no late order than TRANSFER, with 11.0% compared to 6.9%. HYBRID also has the lowest expected late orders, with 3.34, according to the Expected late orders column. The TRANSFER option has a lower 90th percentile than WAIT, with 9 compared to 10.\n\n## Assumptions\n- The history in data/history is synthetic: it was generated for this demo (see data/history/README.md), not recorded.\n- Which shipments share a cause is an assumption (data/causes.csv).\n- Episodes start at a constant rate with memoryless gaps, and each episode has one delay. The full list is in the README.\n\n## Notes\nTime and cost are shown side by side and never combined into one score.\n90th percentile: in 9 of 10 weighted cases late orders are at or below this number.\nWorst-10% average: the average number of late orders in the worst 10% of weighted cases.\n\n## Next step\nTo act on an option, say *\"Propose HYBRID\"* or another option code.",
+    "llm_text": "Answer: If the supplier is 3 days late instead, the expected number of late orders for the WAIT option is 4, according to the \"Late if it arrives Nov 14\" column. The HYBRID option has a higher Chance of no late order than TRANSFER, with 11.0% compared to 6.9%. HYBRID also has the lowest expected late orders, with 3.34, according to the Expected late orders column. The TRANSFER option has a lower 90th percentile than WAIT, with 9 compared to 10.",
+    "text_check": {
+      "explanation_status": "ok",
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 13,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "The supplier says it will arrive 2 days earlier. What changes?",
+    "view_type": "world_risk",
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "compare_scenarios",
+        "args": {},
+        "error": null
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "include_transfers": "true"
+        },
+        "error": null
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "error": null
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "offer_id": "OF02",
+          "qty": "65",
+          "include_transfers": "true"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late (if PO01 arrives on the announced date, Nov 17).\nWeights come from the Monte Carlo run in runs/demo. Each world is one possible course of the uncertain values: the delayed PO's receipt date, offer and lane delays and cause episodes. Time and cost are shown side by side. The engine does not pick an option.\n\n## Reading\nRead as: PO01 arrives on Nov 15.\n\"N days late\" counts from the original planned date (Nov 11). \"N days earlier\" or \"N days later\" counts from the announced date (Nov 17).\n\n## Time and cost by option\n| Option | Extra cost | Expected late orders | Range of the average | 90th percentile | Worst-10% average | Chance of no late order | Late if it arrives Nov 15 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | $0 | 7.42 | 6.26 to 8.38 | 10 | 10.88 | 0.0% | 5 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | $416 | 5.55 | 4.52 to 6.45 | 9 | 9.59 | 6.9% | 2 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | $1,250 | 4.65 | 3.64 to 5.80 | 8 | 9.50 | 3.7% | 1 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | $1,306 | 3.34 | 2.51 to 4.25 | 7 | 7.98 | 11.0% | 0 |\n\n## How sure is this\nRange of the average: where the expected value itself may lie (5% to 95% over the parameter draws). The history is short, so the rates behind the averages are uncertain.\nOne outcome varies more than the average: in 9 of 10 weighted cases late orders are at or below the 90th percentile, and the worst 10% of cases average the number in the Worst-10% average column.\nThe order by expected late orders (HYBRID, ALT_BUY, TRANSFER, WAIT) is the same in 957 of 1000 parameter draws.\nIn 43 draws the order is HYBRID, TRANSFER, ALT_BUY, WAIT.\n\n## Shared causes\n- K1 (affects PO01, OF02): chance that an episode starts in the decision window 9.5% (about 4.1 per year).\n  Expected late orders without / with it: WAIT 7.24 / 9.13, TRANSFER 5.38 / 7.17, ALT_BUY 4.41 / 6.99, HYBRID 3.12 / 5.40.\n  TRANSFER and ALT_BUY swap places when the chance is between 81.3% and 81.9% (about 67.9 to 69.3 per year). Now ALT_BUY has fewer expected late orders.\n- K2 (affects LN01, LN02): chance that an episode starts in the decision window 10.7% (about 8.3 per year).\n  Expected late orders without / with it: WAIT 7.42 / 7.40, TRANSFER 5.44 / 6.45, ALT_BUY 4.66 / 4.62, HYBRID 3.25 / 4.03.\n  No change in the order up to a chance of 99.0% (about 336.2 per year).\n- All causes together: no change in the order up to 40.53 times the estimated rates.\nThe thresholds come from re-running the model at each rate. They cannot be read off the without / with numbers, because a higher rate also changes how many episodes start and when.\n\n## Late orders by receipt date\nEach column sets only the receipt date of the delayed purchase order. Every other value stays at its base (no extra delay, no cause episode).\n\n| Option | Nov 11 | Nov 12 | Nov 13 | Nov 14 | **Nov 15** | Nov 16 | Nov 17 | Nov 18 | Nov 19 | Nov 20 | Nov 21 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | 0 | 1 | 3 | 4 | **5** | 7 | 7 | 8 | 10 | 10 | 11 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 0 | 0 | 1 | 1 | **2** | 4 | 4 | 5 | 7 | 7 | 8 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 0 | 1 | 1 | 1 | **1** | 3 | 3 | 4 | 6 | 6 | 7 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 0 | 0 | 0 | 0 | **0** | 1 | 1 | 2 | 4 | 4 | 5 |\n\n## Trade-offs\n- WAIT to TRANSFER: +$416, expected late orders -1.87, 90th percentile -1, worst-10% average -1.29, chance of no late order +6.9 points\n- TRANSFER to ALT_BUY: +$834, expected late orders -0.90, 90th percentile -1, worst-10% average -0.09, chance of no late order -3.2 points\n- ALT_BUY to HYBRID: +$56, expected late orders -1.31, 90th percentile -1, worst-10% average -1.52, chance of no late order +7.3 points\n\n## What this means\nThe number of late orders if the supplier arrives on Nov 15 is 5 for WAIT, 2 for TRANSFER, 1 for ALT_BUY, and 0 for HYBRID, according to the \"Late if it arrives Nov 15\" column. HYBRID has a higher Chance of no late order than TRANSFER. TRANSFER has a lower expected late orders than WAIT. The Extra cost for ALT_BUY is $1,250.\n\n## Assumptions\n- The history in data/history is synthetic: it was generated for this demo (see data/history/README.md), not recorded.\n- Which shipments share a cause is an assumption (data/causes.csv).\n- Episodes start at a constant rate with memoryless gaps, and each episode has one delay. The full list is in the README.\n\n## Notes\nTime and cost are shown side by side and never combined into one score.\n90th percentile: in 9 of 10 weighted cases late orders are at or below this number.\nWorst-10% average: the average number of late orders in the worst 10% of weighted cases.\n\n## Next step\nTo act on an option, say *\"Propose HYBRID\"* or another option code.",
+    "llm_text": "Answer: The number of late orders if the supplier arrives on Nov 15 is 5 for WAIT, 2 for TRANSFER, 1 for ALT_BUY, and 0 for HYBRID, according to the \"Late if it arrives Nov 15\" column. HYBRID has a higher Chance of no late order than TRANSFER. TRANSFER has a lower expected late orders than WAIT. The Extra cost for ALT_BUY is $1,250.",
+    "text_check": {
+      "explanation_status": "ok",
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 14,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Compare TRANSFER and ALT_BUY for priority customers.",
+    "view_type": "comparison",
+    "tools": [
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER"
+        },
+        "error": null
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "ALT_BUY"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |\n|---|---|---|---|---|\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 |\n\n## Comparison\nTRANSFER and ALT_BUY have different numbers of on-time orders, with ALT_BUY having 9 on-time orders and TRANSFER having 8. The two options also differ in their total days late, with ALT_BUY having 5 total days late and TRANSFER having 12.\n\n## Trade-offs and risks\n- ALT_BUY would increase extra cost to $1,250, - TRANSFER would increase total days late to 12.\n- TRANSFER: Still late with this option: SO05 (5 days), SO06 (3 days, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- ALT_BUY: Still late with this option: SO02 (1 day, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n\n## Next step\nTo act on one of them, say for example: *\"Propose TRANSFER\"*. To get a recommendation, add your budget or target.",
+    "llm_text": "Recommendation: TRANSFER and ALT_BUY have different numbers of on-time orders, with ALT_BUY having 9 on-time orders and TRANSFER having 8. The two options also differ in their total days late, with ALT_BUY having 5 total days late and TRANSFER having 12. \nTrade-offs: - ALT_BUY would increase extra cost to $1,250, - TRANSFER would increase total days late to 12.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 15,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "I'd like to approve nothing yet, just compare options.",
+    "view_type": "comparison",
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {},
+        "error": null
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "include_transfers": "true"
+        },
+        "error": null
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "error": null
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "offer_id": "OF02",
+          "qty": "65",
+          "include_transfers": "true"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |\n|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 |\n| Move stock + buy 35 from Beacon Circuits (OF02 x35 + transfers, found by search) | 10 of 12 | 5 of 6 | 4 | $1,126 |\n| Move stock + buy 40 from Beacon Circuits (OF02 x40 + transfers, found by search) | 11 of 12 | 5 of 6 | 2 | $1,216 |\n| Move stock + buy 65 from Beacon Circuits (OF02 x65 + transfers, found by search) | 12 of 12 | 6 of 6 | 0 | $1,666 |\n\n## Comparison\n(The AI explanation is not shown because it contains a comparison that could not be confirmed against the table.)\n\n## Trade-offs and risks\n- OF02 x65 + transfers would change the extra cost to $1,666 and result in 0 total days late, compared to HYBRID which has an extra cost of $1,306 and 2 total days late. - WAIT would change the number of on-time orders to 5 and the extra cost to $0, compared to TRANSFER which has 8 on-time orders and an extra cost of $416.\n- WAIT: Still late with this option: SO02 (6 days, priority 1), SO03 (5 days), SO04 (4 days, priority 1), SO05 (5 days), SO06 (3 days, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- TRANSFER: Still late with this option: SO05 (5 days), SO06 (3 days, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- ALT_BUY: Still late with this option: SO02 (1 day, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- HYBRID: Still late with this option: SO08 (2 days, priority 1).\n- OF02 x35 + transfers: Still late with this option: SO07 (2 days), SO08 (2 days, priority 1).\n- OF02 x40 + transfers: Still late with this option: SO08 (2 days, priority 1).\n- OF02 x65 + transfers: No orders are late with this option.\n\n## Next step\nTo act on one of them, say for example: *\"Propose WAIT\"*. To get a recommendation, add your budget or target.",
+    "llm_text": "Recommendation: The options differ in the number of on-time orders, with HYBRID and OF02 x65 + transfers having the most on-time orders, and WAIT having the lowest extra cost. The options also vary in the number of priority-1 orders that are on-time, with OF02 x65 + transfers having the most. The total days late and extra cost also differ between options, such as TRANSFER having fewer total days late than WAIT.\n\nTrade-offs: - OF02 x65 + transfers would change the extra cost to $1,666 and result in 0 total days late, compared to HYBRID which has an extra cost of $1,306 and 2 total days late. - WAIT would change the number of on-time orders to 5 and the extra cost to $0, compared to TRANSFER which has 8 on-time orders and an extra cost of $416.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "dropped",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 16,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What does HYBRID actually involve?",
+    "view_type": "option",
+    "tools": [
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "HYBRID"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Move stock + buy 45 from Beacon Circuits (HYBRID)\n\n### What it involves\n- Buy 45 x C01 (Microcontroller) from Beacon Circuits on 2026-11-09\n- Move 18 x C01 from North Buffer to Central Plant on 2026-11-09 (2 days in transit)\n- Move 14 x C01 from East Buffer to Central Plant on 2026-11-09 (4 days in transit)\n\n### Results\n- On-time orders: 11 of 12\n- Priority-1 on time: 5 of 6\n- Total days late: 2\n- Extra cost: $1,306\n- Still late with this option: SO08 (2 days, priority 1).\n\n## Next step\nTo act on this, say: *\"Propose HYBRID\"*. To see it next to the other options, ask *\"What should we do?\"*.",
+    "llm_text": "The HYBRID scenario involves a combination of transfer and alternative buy options. It includes the following priority-1 orders:\n\n* SO01: on time, due date 2026-11-11, start date 2026-11-09, delivery date 2026-11-10, quantity 12\n* SO02: on time, due date 2026-11-13, start date 2026-11-11, delivery date 2026-11-13, quantity 10\n* SO04: on time, due date 2026-11-14, start date 2026-11-12, delivery date 2026-11-13, quantity 15\n* SO06: on time, due date 2026-11-15, start date 2026-11-12, delivery date 2026-11-13, quantity 14\n* SO08: late, due date 2026-11-17, start date 2026-11-17, delivery date 2026-11-19, quantity 12, days late 2\n* SO11: on time, due date 2026-11-20, start date 2026-11-17, delivery date 2026-11-19, quantity 7\n\nThe customer impact is as follows:\n\n* CU01: 1 order, 0 late orders, 0 total late days\n* CU02: 1 order, 0 late orders, 0 total late days\n* CU04: 1 order, 0 late orders, 0 total late days\n* CU06: 1 order, 0 late orders, 0 total late days\n* CU08: 1 order, 1 late order, 2 total late days\n* CU03: 1 order, 0 late orders, 0 total late days\n\nNote that the scope of this analysis is limited to priority-1 orders only. For a comprehensive view of all late orders when no action is taken, use the get_impact function.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 17,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Let's go with TRANSFER.",
+    "view_type": "proposal",
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "reason": "recovery from disruption D01",
+          "scenario_id": "TRANSFER"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": true,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Proposal created\n**Move stock from North Buffer and East Buffer (TRANSFER)** is pending approval in the UI. Nothing has been executed.\n\n- On-time orders: 8 of 12\n- Total days late: 12\n- Extra cost: $416\n\n### Actions in this proposal\n- Move 18 x C01 from North Buffer to Central Plant on 2026-11-09 (2 days in transit)\n- Move 14 x C01 from East Buffer to Central Plant on 2026-11-09 (4 days in transit)\n\nProposal ID: 66638ed7-d07b-4210-ab7e-e076951f4e50\nReason given: recovery from disruption D01",
+    "llm_text": "The proposal for the TRANSFER scenario is pending approval. The proposed actions include transferring 18 units of component C01 from lane LN01 and 14 units from lane LN02, both on 2026-11-09. The metrics for this proposal show that 8 orders will be on time, 4 orders will be late, and the total extra cost will be $416. The proposal is currently pending approval and can be approved in the UI.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 18,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What should we do if money is no object?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {},
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |\n|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 |\n| **Move stock + buy 45 from Beacon Circuits (HYBRID) ★** | **11 of 12** | **5 of 6** | **2** | **$1,306** |\n\n★ = recommended for: most on-time orders.\n\n## Recommendation\n**Move stock + buy 45 from Beacon Circuits (HYBRID)**\nThe HYBRID option is recommended because it has the most on-time orders. HYBRID has more on-time orders than TRANSFER, ALT_BUY, and WAIT. HYBRID also has more priority-1 on-time orders than WAIT and TRANSFER.\n\n## Trade-offs and risks\n- Still late with this option: SO08 (2 days, priority 1).\n- TRANSFER would reduce extra cost to $416. - ALT_BUY would reduce extra cost to $1,250.\n\n## Next step\nTo act on this, say: *\"Propose HYBRID\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: The HYBRID option is recommended because it has the most on-time orders. HYBRID has more on-time orders than TRANSFER, ALT_BUY, and WAIT. HYBRID also has more priority-1 on-time orders than WAIT and TRANSFER.\nTrade-offs: - TRANSFER would reduce extra cost to $416. - ALT_BUY would reduce extra cost to $1,250.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 18,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Propose that.",
+    "view_type": "proposal",
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "reason": "Based on the comparison of scenarios, HYBRID is the best option as it has the most on-time orders and meets the objective of minimizing delays.",
+          "scenario_id": "HYBRID"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": true,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Proposal created\n**Move stock + buy 45 from Beacon Circuits (HYBRID)** is pending approval in the UI. Nothing has been executed.\n\n- On-time orders: 11 of 12\n- Total days late: 2\n- Extra cost: $1,306\n\n### Actions in this proposal\n- Buy 45 x C01 (Microcontroller) from Beacon Circuits on 2026-11-09\n- Move 18 x C01 from North Buffer to Central Plant on 2026-11-09 (2 days in transit)\n- Move 14 x C01 from East Buffer to Central Plant on 2026-11-09 (4 days in transit)\n\nProposal ID: 1e8a6476-2487-4ae1-8c4d-4d1299880b61\nReason given: Based on the comparison of scenarios, HYBRID is the best option as it has the most on-time orders and meets the objective of minimizing delays.",
+    "llm_text": "The proposal for the HYBRID scenario has been successfully submitted and is pending approval. The proposal includes purchasing 45 units of Microcontroller (C01) from Beacon Circuits and transferring 18 units from North Buffer and 14 units from East Buffer. This plan is expected to result in 11 on-time orders, 1 late order, and a total of 2 order days late, with a maximum order delay of 2 days. The total extra cost for this option is $1306. \n\nPlease note that this proposal is pending approval and will not be executed until it is approved in the UI.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 19,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Our budget is 1,000 dollars. What should we do?",
+    "view_type": "recommendation",
+    "tools": [
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "1000"
+        },
+        "error": null
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "include_transfers": "true",
+          "budget": "1000"
+        },
+        "error": null
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "20"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n## Options compared\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost | Within $1,000 |\n|---|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 | yes |\n| **Move stock from North Buffer and East Buffer (TRANSFER) ★** | **8 of 12** | **4 of 6** | **12** | **$416** | **yes** |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 | no |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 | no |\n| Move stock + buy 35 from Beacon Circuits (OF02 x35 + transfers, found by search) | 10 of 12 | 5 of 6 | 4 | $1,126 | no |\n| Move stock + buy 40 from Beacon Circuits (OF02 x40 + transfers, found by search) | 11 of 12 | 5 of 6 | 2 | $1,216 | no |\n| Move stock + buy 65 from Beacon Circuits (OF02 x65 + transfers, found by search) | 12 of 12 | 6 of 6 | 0 | $1,666 | no |\n\n★ = recommended for: most on-time orders, within $1,000.\n\n## Recommendation\n**Move stock from North Buffer and East Buffer (TRANSFER)**\nThe engine recommends TRANSFER, which has the most on-time orders within the budget. TRANSFER has more on-time orders than WAIT and the lowest extra cost among options with at least 8 on-time orders.\n\n## Trade-offs and risks\n- Still late with this option: SO05 (5 days), SO06 (3 days, priority 1), SO07 (2 days), SO08 (2 days, priority 1).\n- ALT_BUY would increase extra cost and have more on-time orders than TRANSFER, but would be over the budget.\n- HYBRID would increase extra cost and have more on-time orders than TRANSFER, but would be over the budget.\n\n## Next step\nTo act on this, say: *\"Propose TRANSFER\"*. Nothing is executed until it is approved in the UI.",
+    "llm_text": "Recommendation: The engine recommends TRANSFER, which has the most on-time orders within the budget. TRANSFER has more on-time orders than WAIT and the lowest extra cost among options with at least 8 on-time orders. \nTrade-offs: - ALT_BUY would increase extra cost and have more on-time orders than TRANSFER, but would be over the budget.\n- HYBRID would increase extra cost and have more on-time orders than TRANSFER, but would be over the budget.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": {
+        "rationale": "ok",
+        "tradeoff_lines_dropped": 0
+      }
+    }
+  },
+  {
+    "conversation": 19,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Why is SO06 still late with that?",
+    "view_type": "order",
+    "tools": [
+      {
+        "name": "get_order_detail",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "20",
+          "order_id": "SO06"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Answer\nSO06 is 3 days late under Transfers + buy 20 x OF02. On 2026-11-14, its latest on-time start date, it lacked 11 x C01. It starts on 2026-11-17 and is delivered on 2026-11-18 (due 2026-11-15).\n\n## Evidence\n- Option: Transfers + buy 20 x OF02\n- Customer CU06, priority 1, due 2026-11-15\n- Latest on-time start: 2026-11-14\n- Starts 2026-11-17, delivered 2026-11-18, 3 days late\n- Cause: not enough components on the latest on-time start date\n- Missing on 2026-11-14: 11 x C01 (Microcontroller)",
+    "llm_text": "SO06 is late because it was short 11 units of component C01 on its latest start date of Nov 14. It started 3 days later than it could have, on Nov 17, and was delivered on Nov 18, which is 3 days after its due date of Nov 15.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 19,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Go with it.",
+    "view_type": "proposal",
+    "tools": [
+      {
+        "name": "propose_action",
+        "args": {
+          "include_transfers": "true",
+          "offer_id": "OF02",
+          "qty": "20",
+          "reason": "recommended by recovery advisor"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": true,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Proposal created\n**Move stock + buy 20 from Beacon Circuits (OF02 x20 + transfers)** is pending approval in the UI. Nothing has been executed.\n\n- On-time orders: 8 of 12\n- Total days late: 8\n- Extra cost: $856\n\n### Actions in this proposal\n- Buy 20 x C01 (Microcontroller) from Beacon Circuits on 2026-11-09\n- Move 18 x C01 from North Buffer to Central Plant on 2026-11-09 (2 days in transit)\n- Move 14 x C01 from East Buffer to Central Plant on 2026-11-09 (4 days in transit)\n\nProposal ID: d2a88256-e7f6-4dec-bb9f-46a33b6c9c8a\nReason given: recommended by recovery advisor",
+    "llm_text": "The proposed action is to transfer available stock and buy 20 units of offer OF02. This proposal is pending approval. Please approve it in the UI.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 20,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "How risky is each option if the arrival date of PO01 is uncertain?",
+    "view_type": "world_risk",
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late (if PO01 arrives on the announced date, Nov 17).\nWeights come from the Monte Carlo run in runs/demo. Each world is one possible course of the uncertain values: the delayed PO's receipt date, offer and lane delays and cause episodes. Time and cost are shown side by side. The engine does not pick an option.\n\n## Time and cost by option\n| Option | Extra cost | Expected late orders | Range of the average | 90th percentile | Worst-10% average | Chance of no late order |\n| --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | $0 | 7.42 | 6.26 to 8.38 | 10 | 10.88 | 0.0% |\n| Move stock from North Buffer and East Buffer (TRANSFER) | $416 | 5.55 | 4.52 to 6.45 | 9 | 9.59 | 6.9% |\n| Buy 65 from Beacon Circuits (ALT_BUY) | $1,250 | 4.65 | 3.64 to 5.80 | 8 | 9.50 | 3.7% |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | $1,306 | 3.34 | 2.51 to 4.25 | 7 | 7.98 | 11.0% |\n\n## How sure is this\nRange of the average: where the expected value itself may lie (5% to 95% over the parameter draws). The history is short, so the rates behind the averages are uncertain.\nOne outcome varies more than the average: in 9 of 10 weighted cases late orders are at or below the 90th percentile, and the worst 10% of cases average the number in the Worst-10% average column.\nThe order by expected late orders (HYBRID, ALT_BUY, TRANSFER, WAIT) is the same in 957 of 1000 parameter draws.\nIn 43 draws the order is HYBRID, TRANSFER, ALT_BUY, WAIT.\n\n## Shared causes\n- K1 (affects PO01, OF02): chance that an episode starts in the decision window 9.5% (about 4.1 per year).\n  Expected late orders without / with it: WAIT 7.24 / 9.13, TRANSFER 5.38 / 7.17, ALT_BUY 4.41 / 6.99, HYBRID 3.12 / 5.40.\n  TRANSFER and ALT_BUY swap places when the chance is between 81.3% and 81.9% (about 67.9 to 69.3 per year). Now ALT_BUY has fewer expected late orders.\n- K2 (affects LN01, LN02): chance that an episode starts in the decision window 10.7% (about 8.3 per year).\n  Expected late orders without / with it: WAIT 7.42 / 7.40, TRANSFER 5.44 / 6.45, ALT_BUY 4.66 / 4.62, HYBRID 3.25 / 4.03.\n  No change in the order up to a chance of 99.0% (about 336.2 per year).\n- All causes together: no change in the order up to 40.53 times the estimated rates.\nThe thresholds come from re-running the model at each rate. They cannot be read off the without / with numbers, because a higher rate also changes how many episodes start and when.\n\n## Late orders by receipt date\nEach column sets only the receipt date of the delayed purchase order. Every other value stays at its base (no extra delay, no cause episode).\n\n| Option | Nov 11 | Nov 12 | Nov 13 | Nov 14 | Nov 15 | Nov 16 | Nov 17 | Nov 18 | Nov 19 | Nov 20 | Nov 21 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | 0 | 1 | 3 | 4 | 5 | 7 | 7 | 8 | 10 | 10 | 11 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 0 | 0 | 1 | 1 | 2 | 4 | 4 | 5 | 7 | 7 | 8 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 0 | 1 | 1 | 1 | 1 | 3 | 3 | 4 | 6 | 6 | 7 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 2 | 4 | 4 | 5 |\n\n## Trade-offs\n- WAIT to TRANSFER: +$416, expected late orders -1.87, 90th percentile -1, worst-10% average -1.29, chance of no late order +6.9 points\n- TRANSFER to ALT_BUY: +$834, expected late orders -0.90, 90th percentile -1, worst-10% average -0.09, chance of no late order -3.2 points\n- ALT_BUY to HYBRID: +$56, expected late orders -1.31, 90th percentile -1, worst-10% average -1.52, chance of no late order +7.3 points\n\n## What this means\nThe risk of each option can be evaluated based on the Expected late orders, with HYBRID having the lowest value of 3.34, and WAIT having the highest value of 7.42. The Chance of no late order column shows that HYBRID has a chance of 11.0%, while WAIT has a chance of 0.0%. TRANSFER has a higher Chance of no late order than ALT_BUY.\n\n## Assumptions\n- The history in data/history is synthetic: it was generated for this demo (see data/history/README.md), not recorded.\n- Which shipments share a cause is an assumption (data/causes.csv).\n- Episodes start at a constant rate with memoryless gaps, and each episode has one delay. The full list is in the README.\n\n## Notes\nTime and cost are shown side by side and never combined into one score.\n90th percentile: in 9 of 10 weighted cases late orders are at or below this number.\nWorst-10% average: the average number of late orders in the worst 10% of weighted cases.\n\n## Next step\nTo act on an option, say *\"Propose HYBRID\"* or another option code.",
+    "llm_text": "Answer: The risk of each option can be evaluated based on the Expected late orders, with HYBRID having the lowest value of 3.34, and WAIT having the highest value of 7.42. The Chance of no late order column shows that HYBRID has a chance of 11.0%, while WAIT has a chance of 0.0%. TRANSFER has a higher Chance of no late order than ALT_BUY.",
+    "text_check": {
+      "explanation_status": "ok",
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 21,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What is the chance of no late orders with TRANSFER?",
+    "view_type": "world_risk",
+    "tools": [
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER",
+          "include_transfers": "true"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late (if PO01 arrives on the announced date, Nov 17).\nWeights come from the Monte Carlo run in runs/demo. Each world is one possible course of the uncertain values: the delayed PO's receipt date, offer and lane delays and cause episodes. Time and cost are shown side by side. The engine does not pick an option.\n\n## Time and cost by option\n| Option | Extra cost | Expected late orders | Range of the average | 90th percentile | Worst-10% average | Chance of no late order |\n| --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | $0 | 7.42 | 6.26 to 8.38 | 10 | 10.88 | 0.0% |\n| Move stock from North Buffer and East Buffer (TRANSFER) | $416 | 5.55 | 4.52 to 6.45 | 9 | 9.59 | 6.9% |\n| Buy 65 from Beacon Circuits (ALT_BUY) | $1,250 | 4.65 | 3.64 to 5.80 | 8 | 9.50 | 3.7% |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | $1,306 | 3.34 | 2.51 to 4.25 | 7 | 7.98 | 11.0% |\n\n## How sure is this\nRange of the average: where the expected value itself may lie (5% to 95% over the parameter draws). The history is short, so the rates behind the averages are uncertain.\nOne outcome varies more than the average: in 9 of 10 weighted cases late orders are at or below the 90th percentile, and the worst 10% of cases average the number in the Worst-10% average column.\nThe order by expected late orders (HYBRID, ALT_BUY, TRANSFER, WAIT) is the same in 957 of 1000 parameter draws.\nIn 43 draws the order is HYBRID, TRANSFER, ALT_BUY, WAIT.\n\n## Shared causes\n- K1 (affects PO01, OF02): chance that an episode starts in the decision window 9.5% (about 4.1 per year).\n  Expected late orders without / with it: WAIT 7.24 / 9.13, TRANSFER 5.38 / 7.17, ALT_BUY 4.41 / 6.99, HYBRID 3.12 / 5.40.\n  TRANSFER and ALT_BUY swap places when the chance is between 81.3% and 81.9% (about 67.9 to 69.3 per year). Now ALT_BUY has fewer expected late orders.\n- K2 (affects LN01, LN02): chance that an episode starts in the decision window 10.7% (about 8.3 per year).\n  Expected late orders without / with it: WAIT 7.42 / 7.40, TRANSFER 5.44 / 6.45, ALT_BUY 4.66 / 4.62, HYBRID 3.25 / 4.03.\n  No change in the order up to a chance of 99.0% (about 336.2 per year).\n- All causes together: no change in the order up to 40.53 times the estimated rates.\nThe thresholds come from re-running the model at each rate. They cannot be read off the without / with numbers, because a higher rate also changes how many episodes start and when.\n\n## Late orders by receipt date\nEach column sets only the receipt date of the delayed purchase order. Every other value stays at its base (no extra delay, no cause episode).\n\n| Option | Nov 11 | Nov 12 | Nov 13 | Nov 14 | Nov 15 | Nov 16 | Nov 17 | Nov 18 | Nov 19 | Nov 20 | Nov 21 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | 0 | 1 | 3 | 4 | 5 | 7 | 7 | 8 | 10 | 10 | 11 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 0 | 0 | 1 | 1 | 2 | 4 | 4 | 5 | 7 | 7 | 8 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 0 | 1 | 1 | 1 | 1 | 3 | 3 | 4 | 6 | 6 | 7 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 2 | 4 | 4 | 5 |\n\n## Trade-offs\n- WAIT to TRANSFER: +$416, expected late orders -1.87, 90th percentile -1, worst-10% average -1.29, chance of no late order +6.9 points\n- TRANSFER to ALT_BUY: +$834, expected late orders -0.90, 90th percentile -1, worst-10% average -0.09, chance of no late order -3.2 points\n- ALT_BUY to HYBRID: +$56, expected late orders -1.31, 90th percentile -1, worst-10% average -1.52, chance of no late order +7.3 points\n\n## What this means\nThe chance of no late orders with TRANSFER is 6.9% from the Chance of no late order column. TRANSFER has a higher Chance of no late order than ALT_BUY. HYBRID has the highest Chance of no late order at 11.0%.\n\n## Assumptions\n- The history in data/history is synthetic: it was generated for this demo (see data/history/README.md), not recorded.\n- Which shipments share a cause is an assumption (data/causes.csv).\n- Episodes start at a constant rate with memoryless gaps, and each episode has one delay. The full list is in the README.\n\n## Notes\nTime and cost are shown side by side and never combined into one score.\n90th percentile: in 9 of 10 weighted cases late orders are at or below this number.\nWorst-10% average: the average number of late orders in the worst 10% of weighted cases.\n\n## Next step\nTo act on an option, say *\"Propose HYBRID\"* or another option code.",
+    "llm_text": "Answer: The chance of no late orders with TRANSFER is 6.9% from the Chance of no late order column. TRANSFER has a higher Chance of no late order than ALT_BUY. HYBRID has the highest Chance of no late order at 11.0%.",
+    "text_check": {
+      "explanation_status": "ok",
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 22,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What if PO01 arrives on Nov 19?",
+    "view_type": "world_risk",
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late (if PO01 arrives on the announced date, Nov 17).\nWeights come from the Monte Carlo run in runs/demo. Each world is one possible course of the uncertain values: the delayed PO's receipt date, offer and lane delays and cause episodes. Time and cost are shown side by side. The engine does not pick an option.\n\n## Reading\nRead as: PO01 arrives on Nov 19.\n\n## Time and cost by option\n| Option | Extra cost | Expected late orders | Range of the average | 90th percentile | Worst-10% average | Chance of no late order | Late if it arrives Nov 19 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | $0 | 7.42 | 6.26 to 8.38 | 10 | 10.88 | 0.0% | 10 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | $416 | 5.55 | 4.52 to 6.45 | 9 | 9.59 | 6.9% | 7 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | $1,250 | 4.65 | 3.64 to 5.80 | 8 | 9.50 | 3.7% | 6 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | $1,306 | 3.34 | 2.51 to 4.25 | 7 | 7.98 | 11.0% | 4 |\n\n## How sure is this\nRange of the average: where the expected value itself may lie (5% to 95% over the parameter draws). The history is short, so the rates behind the averages are uncertain.\nOne outcome varies more than the average: in 9 of 10 weighted cases late orders are at or below the 90th percentile, and the worst 10% of cases average the number in the Worst-10% average column.\nThe order by expected late orders (HYBRID, ALT_BUY, TRANSFER, WAIT) is the same in 957 of 1000 parameter draws.\nIn 43 draws the order is HYBRID, TRANSFER, ALT_BUY, WAIT.\n\n## Shared causes\n- K1 (affects PO01, OF02): chance that an episode starts in the decision window 9.5% (about 4.1 per year).\n  Expected late orders without / with it: WAIT 7.24 / 9.13, TRANSFER 5.38 / 7.17, ALT_BUY 4.41 / 6.99, HYBRID 3.12 / 5.40.\n  TRANSFER and ALT_BUY swap places when the chance is between 81.3% and 81.9% (about 67.9 to 69.3 per year). Now ALT_BUY has fewer expected late orders.\n- K2 (affects LN01, LN02): chance that an episode starts in the decision window 10.7% (about 8.3 per year).\n  Expected late orders without / with it: WAIT 7.42 / 7.40, TRANSFER 5.44 / 6.45, ALT_BUY 4.66 / 4.62, HYBRID 3.25 / 4.03.\n  No change in the order up to a chance of 99.0% (about 336.2 per year).\n- All causes together: no change in the order up to 40.53 times the estimated rates.\nThe thresholds come from re-running the model at each rate. They cannot be read off the without / with numbers, because a higher rate also changes how many episodes start and when.\n\n## Late orders by receipt date\nEach column sets only the receipt date of the delayed purchase order. Every other value stays at its base (no extra delay, no cause episode).\n\n| Option | Nov 11 | Nov 12 | Nov 13 | Nov 14 | Nov 15 | Nov 16 | Nov 17 | Nov 18 | **Nov 19** | Nov 20 | Nov 21 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | 0 | 1 | 3 | 4 | 5 | 7 | 7 | 8 | **10** | 10 | 11 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 0 | 0 | 1 | 1 | 2 | 4 | 4 | 5 | **7** | 7 | 8 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 0 | 1 | 1 | 1 | 1 | 3 | 3 | 4 | **6** | 6 | 7 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 2 | **4** | 4 | 5 |\n\n## Trade-offs\n- WAIT to TRANSFER: +$416, expected late orders -1.87, 90th percentile -1, worst-10% average -1.29, chance of no late order +6.9 points\n- TRANSFER to ALT_BUY: +$834, expected late orders -0.90, 90th percentile -1, worst-10% average -0.09, chance of no late order -3.2 points\n- ALT_BUY to HYBRID: +$56, expected late orders -1.31, 90th percentile -1, worst-10% average -1.52, chance of no late order +7.3 points\n\n## What this means\nIf PO01 arrives on Nov 19, the number of late orders will be 10 for WAIT, 7 for TRANSFER, 6 for ALT_BUY, and 4 for HYBRID, according to the \"Late if it arrives Nov 19\" column. HYBRID has the lowest expected late orders. TRANSFER has a higher Chance of no late order than ALT_BUY.\n\n## Assumptions\n- The history in data/history is synthetic: it was generated for this demo (see data/history/README.md), not recorded.\n- Which shipments share a cause is an assumption (data/causes.csv).\n- Episodes start at a constant rate with memoryless gaps, and each episode has one delay. The full list is in the README.\n\n## Notes\nTime and cost are shown side by side and never combined into one score.\n90th percentile: in 9 of 10 weighted cases late orders are at or below this number.\nWorst-10% average: the average number of late orders in the worst 10% of weighted cases.\n\n## Next step\nTo act on an option, say *\"Propose HYBRID\"* or another option code.",
+    "llm_text": "Answer: If PO01 arrives on Nov 19, the number of late orders will be 10 for WAIT, 7 for TRANSFER, 6 for ALT_BUY, and 4 for HYBRID, according to the \"Late if it arrives Nov 19\" column. HYBRID has the lowest expected late orders. TRANSFER has a higher Chance of no late order than ALT_BUY.",
+    "text_check": {
+      "explanation_status": "ok",
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 23,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "Our budget is $500. How risky is each option?",
+    "view_type": "world_risk",
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "compare_scenarios",
+        "args": {
+          "budget": "500"
+        },
+        "error": null
+      },
+      {
+        "name": "get_offers",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      },
+      {
+        "name": "explore_purchase_qty",
+        "args": {
+          "offer_id": "OF02",
+          "include_transfers": "true",
+          "budget": "500",
+          "objective": "cost"
+        },
+        "error": null
+      },
+      {
+        "name": "get_priority_view",
+        "args": {
+          "scenario_id": "TRANSFER"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Situation\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late (if PO01 arrives on the announced date, Nov 17).\nWeights come from the Monte Carlo run in runs/demo. Each world is one possible course of the uncertain values: the delayed PO's receipt date, offer and lane delays and cause episodes. Time and cost are shown side by side. The engine does not pick an option.\n\n## Time and cost by option\n| Option | Extra cost | Expected late orders | Range of the average | 90th percentile | Worst-10% average | Chance of no late order | Within $500 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | $0 | 7.42 | 6.26 to 8.38 | 10 | 10.88 | 0.0% | Yes |\n| Move stock from North Buffer and East Buffer (TRANSFER) | $416 | 5.55 | 4.52 to 6.45 | 9 | 9.59 | 6.9% | Yes |\n| Buy 65 from Beacon Circuits (ALT_BUY) | $1,250 | 4.65 | 3.64 to 5.80 | 8 | 9.50 | 3.7% | No |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | $1,306 | 3.34 | 2.51 to 4.25 | 7 | 7.98 | 11.0% | No |\n\n## How sure is this\nRange of the average: where the expected value itself may lie (5% to 95% over the parameter draws). The history is short, so the rates behind the averages are uncertain.\nOne outcome varies more than the average: in 9 of 10 weighted cases late orders are at or below the 90th percentile, and the worst 10% of cases average the number in the Worst-10% average column.\nThe order by expected late orders (HYBRID, ALT_BUY, TRANSFER, WAIT) is the same in 957 of 1000 parameter draws.\nIn 43 draws the order is HYBRID, TRANSFER, ALT_BUY, WAIT.\n\n## Shared causes\n- K1 (affects PO01, OF02): chance that an episode starts in the decision window 9.5% (about 4.1 per year).\n  Expected late orders without / with it: WAIT 7.24 / 9.13, TRANSFER 5.38 / 7.17, ALT_BUY 4.41 / 6.99, HYBRID 3.12 / 5.40.\n  TRANSFER and ALT_BUY swap places when the chance is between 81.3% and 81.9% (about 67.9 to 69.3 per year). Now ALT_BUY has fewer expected late orders.\n- K2 (affects LN01, LN02): chance that an episode starts in the decision window 10.7% (about 8.3 per year).\n  Expected late orders without / with it: WAIT 7.42 / 7.40, TRANSFER 5.44 / 6.45, ALT_BUY 4.66 / 4.62, HYBRID 3.25 / 4.03.\n  No change in the order up to a chance of 99.0% (about 336.2 per year).\n- All causes together: no change in the order up to 40.53 times the estimated rates.\nThe thresholds come from re-running the model at each rate. They cannot be read off the without / with numbers, because a higher rate also changes how many episodes start and when.\n\n## Late orders by receipt date\nEach column sets only the receipt date of the delayed purchase order. Every other value stays at its base (no extra delay, no cause episode).\n\n| Option | Nov 11 | Nov 12 | Nov 13 | Nov 14 | Nov 15 | Nov 16 | Nov 17 | Nov 18 | Nov 19 | Nov 20 | Nov 21 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| Wait for the delayed delivery (WAIT) | 0 | 1 | 3 | 4 | 5 | 7 | 7 | 8 | 10 | 10 | 11 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 0 | 0 | 1 | 1 | 2 | 4 | 4 | 5 | 7 | 7 | 8 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 0 | 1 | 1 | 1 | 1 | 3 | 3 | 4 | 6 | 6 | 7 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 2 | 4 | 4 | 5 |\n\n## Trade-offs\n- WAIT to TRANSFER: +$416, expected late orders -1.87, 90th percentile -1, worst-10% average -1.29, chance of no late order +6.9 points\n- TRANSFER to ALT_BUY: +$834, expected late orders -0.90, 90th percentile -1, worst-10% average -0.09, chance of no late order -3.2 points\n- ALT_BUY to HYBRID: +$56, expected late orders -1.31, 90th percentile -1, worst-10% average -1.52, chance of no late order +7.3 points\n\n## What this means\nThe TRANSFER option has an Extra cost of $416 and the HYBRID option is not Within $500. WAIT has the highest Expected late orders, and HYBRID has the highest Chance of no late order. TRANSFER has a lower 90th percentile than WAIT.\n\n## Assumptions\n- The history in data/history is synthetic: it was generated for this demo (see data/history/README.md), not recorded.\n- Which shipments share a cause is an assumption (data/causes.csv).\n- Episodes start at a constant rate with memoryless gaps, and each episode has one delay. The full list is in the README.\n\n## Notes\nTime and cost are shown side by side and never combined into one score.\n90th percentile: in 9 of 10 weighted cases late orders are at or below this number.\nWorst-10% average: the average number of late orders in the worst 10% of weighted cases.\n\n## Next step\nTo act on an option, say *\"Propose HYBRID\"* or another option code.",
+    "llm_text": "Answer: The TRANSFER option has an Extra cost of $416 and the HYBRID option is not Within $500. WAIT has the highest Expected late orders, and HYBRID has the highest Chance of no late order. TRANSFER has a lower 90th percentile than WAIT.",
+    "text_check": {
+      "explanation_status": "ok",
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 24,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What if the supplier is 2 weeks late?",
+    "view_type": "unsupported",
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Answer\nRead as: PO01 arrives on Nov 25.\n\"N days late\" counts from the original planned date (Nov 11). \"N days earlier\" or \"N days later\" counts from the announced date (Nov 17).\nNov 25 is after the last simulated day (Nov 21). Dates after the window are planned for stage 2.\n\nOnly disruption D01 is modelled. Receipt dates of PO01 from 2026-11-11 to 2026-11-21 can be computed. Later dates, other disruptions and other changes are not supported yet.\n\n## Current D01 situation (recorded 6-day delay)\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |\n|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 |\n\n## Next step\nAsk about the recorded case, for example *\"What should we do?\"*.",
+    "llm_text": "The disruption D01 is caused by a supplier equipment outage, which has delayed the receipt of component C01 by 6 days, from the original date of 2026-11-11 to the revised date of 2026-11-17. The disruption affects purchase order PO01, which has a quantity of 145 units.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  },
+  {
+    "conversation": 25,
+    "model": "meta-llama/llama-3-3-70b-instruct",
+    "run": "runs/demo",
+    "run_outputs": {
+      "grid.json": "e394cac15044b922938492ca2f6beb6f6109e4c24acceb64f9647611224e4ffe",
+      "results.csv": "bbc8166ffe60a6776d8b5c3001a7af757881d37c031ae51afdf8b8e2e77eec07",
+      "row_map.csv": "1c88c07b7e8886746fe66dbb0370f4aadfb9d68a6dc92211b69552edb755ff09",
+      "run_record.json": "e82ff5731131c6b050b95e3d499626a2ae8d7fed7712de848dede3e92ad2db79"
+    },
+    "question": "What happens with disruption D02?",
+    "view_type": "unsupported",
+    "tools": [
+      {
+        "name": "get_disruption",
+        "args": {
+          "disruption_id": "D01"
+        },
+        "error": null
+      }
+    ],
+    "proposal_created": false,
+    "table_mismatches": [],
+    "ungrounded": [],
+    "error": null,
+    "answer": "## Answer\nOnly disruption D01 is modelled. Receipt dates of PO01 from 2026-11-11 to 2026-11-21 can be computed. Later dates, other disruptions and other changes are not supported yet.\n\n## Current D01 situation (recorded 6-day delay)\nA supplier equipment outage at Aster Silicon delays 145 units of Microcontroller (C01, order PO01) from Nov 11 to Nov 17, a delay of 6 days. With no action, 7 of 12 customer orders will be late.\n\n| Option | On-time orders | Priority-1 on time | Total days late | Extra cost |\n|---|---|---|---|---|\n| Wait for the delayed delivery (WAIT) | 5 of 12 | 2 of 6 | 27 | $0 |\n| Move stock from North Buffer and East Buffer (TRANSFER) | 8 of 12 | 4 of 6 | 12 | $416 |\n| Buy 65 from Beacon Circuits (ALT_BUY) | 9 of 12 | 4 of 6 | 5 | $1,250 |\n| Move stock + buy 45 from Beacon Circuits (HYBRID) | 11 of 12 | 5 of 6 | 2 | $1,306 |\n\n## Next step\nAsk about the recorded case, for example *\"What should we do?\"*.",
+    "llm_text": "The disruption D01 is a supplier equipment outage that affects purchase order PO01. The original receipt date was 2026-11-11, but it has been revised to 2026-11-17 due to a 6-day delay. The disruption affects component C01 with a quantity of 145. \n\nNote that only disruption D01 is modeled, and receipt dates of PO01 from 2026-11-11 to 2026-11-21 can be computed. Later dates, other disruptions, and other changes are not supported yet.",
+    "text_check": {
+      "explanation_status": null,
+      "explanation_drop_reason": null,
+      "narrative_check": null
+    }
+  }
+]

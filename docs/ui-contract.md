@@ -91,6 +91,31 @@ One row per option. Each row has:
 Mark the row whose `code` equals `view["recommended"]` with a star.
 `settings["budget"]` is the user's budget or `None`. Use it for a "within budget" column if you want one.
 
+### AI text in `recommendation` and `comparison`
+
+The model writes two parts of `markdown`: the short reasoning under "Recommendation" (or "Comparison") and the lines it adds under "Trade-offs and risks". The lines "Still late with this option: ..." are written by the code.
+
+Before the text is shown, the code checks every comparison in it against `rows` (`agent/claims.py`): higher/lower, more/fewer, most/fewest, cheaper, "3 fewer", "save $416", "ranging from ... to ...", "within the budget". A comparison that disagrees with the rows, or that the code cannot tie to a column and to options on both sides, is not shown.
+
+`view["narrative_check"]` reports the result:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `rationale` | `"ok"`, `"dropped"`, `"unavailable"` | `dropped`: the reasoning was replaced by a fixed line in `markdown`. `unavailable`: the model returned no text |
+| `tradeoff_lines_dropped` | `0`, `1`, ... | Number of AI trade-off lines left out. When it is not 0, `markdown` has one fixed line saying so |
+
+How the code reads a sentence (so a dropped text can be understood):
+- "the most / the lowest" covers every row of the table, unless the limit stands in the same phrase ("the most on-time orders within the budget", "the lowest cost among options with at least 10 on-time orders"). "has the most on-time orders, and is within the budget" is read as a claim about every row.
+- "other options", also in "other options like WAIT", means every other row.
+- A trade-off line that names one option and no second one is compared with the starred option. In a comparison (no star) this works only when the table has two rows.
+- The budget is the one in `settings["budget"]`. A sentence about a budget when the request has none is not shown.
+
+Limits:
+- Only the listed comparison words, any "... than ...", and "the <word>est" are recognised. A comparison made in other words ("has an edge over") is not seen.
+- A correct sentence can be left out when the code cannot read it. A sentence is never shown on the benefit of the doubt.
+- A number that is attached to the wrong option or the wrong column is not checked, unless it is part of a comparison ("increase on-time orders to 9").
+- Answers without a view (impact, customer and general questions) are free text and are not checked this way.
+
 ### `world_risk`
 
 Three modes share one layout. `view["mode"]` is `overview` (from `get_overview()`), `general` (a risk question) or `date` (a question that names one receipt date).
@@ -109,7 +134,8 @@ Three modes share one layout. `view["mode"]` is `overview` (from `get_overview()
 | `common_scale` | `{"reference_cause": "K2", "crossings": [], "max_m": 40.53}` or `None` | All cause rates multiplied by the same factor m. `None` without a threshold grid |
 | `assumptions` | list of strings or `[]` | Assumption lines shown under "Assumptions". Show them as they are |
 | `explanation` | `"ALT_BUY expects 2.99 ..."` or `None` | The AI paragraph, only when `explanation_status` is `"ok"` |
-| `explanation_status` | `"ok"`, `"dropped"`, `"unavailable"` or `None` | `dropped` means the code removed the paragraph because it used a number or option that is not in the tables. `None` in overview |
+| `explanation_status` | `"ok"`, `"dropped"`, `"unavailable"` or `None` | `dropped` means the code removed the paragraph. `None` in overview |
+| `explanation_drop_reason` | `"number"`, `"comparison"` or `None` | Why the paragraph was removed. `number`: it used a number or option that is not in the tables. `comparison`: a comparison in it disagrees with the tables or could not be confirmed (same check and limits as "AI text in `recommendation` and `comparison`"; "late orders" without a column name must hold in every late-orders column; values are compared as printed) |
 | `scope_note` | `"Weights come from data/worlds.csv ..."` | Where the weights come from |
 | `suggested_questions` | list of 4 strings | Overview only, else `[]` |
 | `settings` | `{"budget": 500}` or `{"budget": None}` | The budget the user stated |

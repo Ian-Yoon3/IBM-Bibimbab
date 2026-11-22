@@ -109,6 +109,13 @@ def run_conversation(turns: list[str], llm) -> list[dict]:
             "error": r.get("error"),
             "answer": r["answer"],
             "llm_text": capture.last_text,
+            # Result of the comparison check on the AI text (agent/claims.py).
+            "text_check": {
+                "explanation_status": (r.get("view") or {}).get("explanation_status"),
+                "explanation_drop_reason":
+                    (r.get("view") or {}).get("explanation_drop_reason"),
+                "narrative_check": (r.get("view") or {}).get("narrative_check"),
+            },
         })
     return out
 
@@ -150,9 +157,19 @@ def main() -> None:
                 flags.append(f"UNGROUNDED {t['ungrounded'][:5]}")
             if t["error"]:
                 flags.append("LLM ERROR")
+            tc = t["text_check"]
+            nc = tc["narrative_check"] or {}
+            notes = []
+            if tc["explanation_status"] == "dropped":
+                notes.append(f"explanation dropped ({tc['explanation_drop_reason']})")
+            if nc.get("rationale") == "dropped":
+                notes.append("rationale dropped")
+            if nc.get("tradeoff_lines_dropped"):
+                notes.append(f"{nc['tradeoff_lines_dropped']} trade-off line(s) dropped")
             tools = ", ".join(x["name"] for x in t["tools"]) or "(none)"
             print(f"    -> view={t['view_type']}  proposal={t['proposal_created']}  "
-                  f"tools={tools}  {' '.join(flags) or 'ok'}")
+                  f"tools={tools}  {' '.join(flags) or 'ok'}"
+                  + (f"  [{'; '.join(notes)}]" if notes else ""))
             results.append({"conversation": i, "model": model_id, **run_id, **t})
 
     os.makedirs("eval_results", exist_ok=True)
