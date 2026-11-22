@@ -625,10 +625,10 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
             cid = entry["cause_id"]
             rc = record_causes.get(cid, {})
 
-            # per_year_mean from run_record
-            if "T_free_days" in rc and rc["T_free_days"] > 0:
-                raw_pym = rc.get("rate_shape", 1) / rc["T_free_days"] * 365
-                entry["per_year_mean"] = _round_half_away_float(raw_pym, 1)
+            # per_year_mean from run_record (stays None when the record has
+            # no value; never filled with a default).
+            if rc.get("per_year_mean") is not None:
+                entry["per_year_mean"] = _round_half_away_float(rc["per_year_mean"], 1)
             # open_episode from run_record
             oe = rc.get("open_episode")
             if oe is not None:
@@ -678,53 +678,32 @@ def evaluate_run(disruption_id: str, db: dict, run_dir,
                     "max_per_year": max_per_year,
                 }
 
-        # common_scale
+        # common_scale: the grid points already store the multiplier m.
         if scale_family_dict is not None:
-            ref_cause = scale_family_dict.get("reference_cause")
-            D0_r = scale_family_dict.get("D0_days", 1)
-            # lam_bar: from run_record causes[ref_cause] rate_shape/T_free_days
-            lam_bar = None
-            if ref_cause and ref_cause in record_causes:
-                rc_ref = record_causes[ref_cause]
-                T_ref = rc_ref.get("T_free_days", 0)
-                if T_ref > 0:
-                    lam_bar = rc_ref.get("rate_shape", 1) / T_ref
-
+            m_at_p = {pt["p"]: pt["m"] for pt in scale_family_dict.get("points", [])
+                      if "m" in pt}
             crossings_out = []
-            if lam_bar is not None and lam_bar > 0:
-                for cr in scale_family_dict.get("crossings", []):
-                    pair = cr["pair"]
-                    if all(p in dis_scenario_ids for p in pair):
-                        p_lo = cr["p_lo"]
-                        p_hi = cr["p_hi"]
-                        # Find m values at p_lo and p_hi from scale points
-                        m_at: dict = {}
-                        for pt in scale_family_dict.get("points", []):
-                            if pt.get("p") in (p_lo, p_hi):
-                                m_at[pt["p"]] = pt.get("m")
-                        m_lo = m_at.get(p_lo)
-                        m_hi = m_at.get(p_hi)
-                        entry_cr = {"pair": pair}
-                        if m_lo is not None:
-                            entry_cr["m_lo"] = m_lo / (lam_bar * D0_r)
-                        if m_hi is not None:
-                            entry_cr["m_hi"] = m_hi / (lam_bar * D0_r)
-                        crossings_out.append(entry_cr)
-
-            # max_m from scale points
-            max_m_raw = max(
-                (pt.get("m", 0.0) for pt in scale_family_dict.get("points", [])
-                 if pt.get("kind") == "grid"),
-                default=None,
-            )
-            max_m = None
-            if max_m_raw is not None and lam_bar is not None and lam_bar > 0:
-                max_m = _round_half_away_float(max_m_raw / (lam_bar * D0_r), 2)
-
+            for cr in scale_family_dict.get("crossings", []):
+                pair = cr["pair"]
+                if all(p in dis_scenario_ids for p in pair):
+                    if cr["p_lo"] not in m_at_p or cr["p_hi"] not in m_at_p:
+                        raise ValueError(
+                            f"evaluate_run: grid.json scale crossing {pair} has no "
+                            f"recorded point at p={cr['p_lo']} or p={cr['p_hi']}"
+                        )
+                    crossings_out.append({
+                        "pair": pair,
+                        "p_lo": cr["p_lo"],
+                        "p_hi": cr["p_hi"],
+                        "m_lo": _round_half_away_float(m_at_p[cr["p_lo"]], 2),
+                        "m_hi": _round_half_away_float(m_at_p[cr["p_hi"]], 2),
+                    })
+            grid_ms = [pt["m"] for pt in scale_family_dict.get("points", [])
+                       if pt.get("kind") == "grid" and "m" in pt]
             result["common_scale"] = {
-                "reference_cause": ref_cause,
+                "reference_cause": scale_family_dict.get("reference_cause"),
                 "crossings": crossings_out,
-                "max_m": max_m,
+                "max_m": _round_half_away_float(max(grid_ms), 2) if grid_ms else None,
             }
 
     # Add run path.

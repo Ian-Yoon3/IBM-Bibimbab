@@ -30,6 +30,19 @@ def _append_line(path, line):
         fh.write(line + "\n")
 
 
+
+# Fields that only a run can fill (from run_record.json and grid.json);
+# evaluate_worlds leaves them null.  Compared separately in test_world_causes.
+_RUN_ONLY_CAUSE_FIELDS = ("per_year_mean", "open_episode", "grid")
+
+
+def _without_run_only(key, val):
+    """Strip run-only fields so a run result compares to evaluate_worlds."""
+    if key == "causes":
+        return [{k: v for k, v in c.items() if k not in _RUN_ONLY_CAUSE_FIELDS}
+                for c in val]
+    return val
+
 class TestRuns(unittest.TestCase):
 
     @classmethod
@@ -70,11 +83,14 @@ class TestRuns(unittest.TestCase):
         for key, val in direct.items():
             if key == "weights_source":
                 self.assertEqual(run_result["weights_source"], "run")
+            elif key == "common_scale":
+                continue  # run-only (grid); null in evaluate_worlds
             else:
                 self.assertIn(key, run_result,
                               msg=f"Key {key!r} missing from run_result")
                 self.assertEqual(
-                    run_result[key], val,
+                    _without_run_only(key, run_result[key]),
+                    _without_run_only(key, val),
                     msg=f"Key {key!r}: expected {val!r}, got {run_result[key]!r}"
                 )
         # run key is extra
@@ -398,12 +414,13 @@ class TestRuns(unittest.TestCase):
                     shutil.rmtree(direct_copy, ignore_errors=True)
 
                 for key, val in direct.items():
-                    if key == "weights_source":
+                    if key in ("weights_source", "common_scale"):
                         continue
                     self.assertIn(key, run_result,
                                   msg=f"[{did}] Key {key!r} missing")
                     self.assertEqual(
-                        run_result[key], val,
+                        _without_run_only(key, run_result[key]),
+                        _without_run_only(key, val),
                         msg=f"[{did}] Key {key!r}: expected {val!r}, got {run_result[key]!r}"
                     )
 
