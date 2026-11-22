@@ -714,5 +714,131 @@ class TestFindPlanStateKeys(unittest.TestCase):
         self.assertIsNone(_st_stub_fp.session_state["fp_status"])
 
 
+
+# ===========================================================================
+# Regression test: NameError fix — from agent.loop import run_agent
+#
+# Verifies the real app call path:
+#   nav_find_plan → number_input(3800) → form submit
+#   → agent.loop.run_agent called once with the correct message
+#   → recommendation card rendered, no screen error
+#
+# agent.loop.run_agent is replaced with a MagicMock for the full test.
+# A fake WX_API_KEY is set so the app proceeds past the key-missing guard.
+# No real API call is made.
+# ===========================================================================
+
+class TestRunAgentCallPath(unittest.TestCase):
+    """Regression: app.py must import and call run_agent without NameError."""
+
+    # Minimal mock result — budget matches 3800, extra_cost within budget
+    _MOCK_RESULT = {
+        "answer": (
+            "## Situation\nA supplier delay affects deliveries.\n\n"
+            "## Recommendation\nUse TRANSFER."
+        ),
+        "view": {
+            "type": "recommendation",
+            "situation": "A supplier delay.",
+            "recommended": "TRANSFER",
+            "settings": {
+                "budget": 3800,
+                "objective": "on_time_orders",
+                "min_on_time": None,
+            },
+            "rows": [
+                {
+                    "code": "TRANSFER",
+                    "name": "Move stock from North Buffer and East Buffer",
+                    "found_by_search": False,
+                    "on_time_orders": 8,
+                    "total_orders": 12,
+                    "priority_on_time": 4,
+                    "priority_total": 6,
+                    "total_days_late": 12,
+                    "extra_cost": 416,
+                    "late_orders": [],
+                    "scenario_id": "TRANSFER",
+                    "offer_id": None,
+                    "qty": None,
+                    "include_transfers": False,
+                }
+            ],
+        },
+        "proposal": None,
+        "tool_trace": [],
+    }
+
+    def _boot_and_submit(self, budget: int = 3800):
+        """Boot the app, navigate to find_plan, submit budget via the form.
+
+        Patches agent.loop.run_agent with a MagicMock and sets a fake
+        WX_API_KEY so the app proceeds to the real run_agent call path.
+        Returns (AppTest, mock).
+        """
+        import os
+        from unittest.mock import MagicMock, patch
+
+        mock_run = MagicMock(return_value=self._MOCK_RESULT)
+
+        os.environ["WX_API_KEY"] = "fake-key-for-test"
+        try:
+            with patch("agent.loop.run_agent", mock_run):
+                at = AppTest.from_file(_APP_PATH, default_timeout=_TIMEOUT)
+                at.run()
+                at.button(key="nav_find_plan").click()
+                at.run()
+                at.number_input(key="find_plan_budget_widget").set_value(budget)
+                at.form_submit_button(
+                    key="FormSubmitter:find_plan_form-Find a recovery plan"
+                ).click()
+                at.run()
+        finally:
+            os.environ.pop("WX_API_KEY", None)
+
+        return at, mock_run
+
+    def test_no_nameerror_on_submit(self):
+        """app.py must not raise NameError when run_agent is called."""
+        at, _ = self._boot_and_submit()
+        self.assertEqual(len(at.exception), 0,
+                         f"App raised exception(s): {list(at.exception)}")
+
+    def test_run_agent_called_exactly_once(self):
+        """run_agent must be called exactly once per form submission."""
+        at, mock_run = self._boot_and_submit(3800)
+        self.assertEqual(len(at.exception), 0)
+        self.assertEqual(mock_run.call_count, 1,
+                         f"run_agent called {mock_run.call_count} times, expected 1")
+
+    def test_budget_3800_in_message(self):
+        """The message passed to run_agent must contain '3800'."""
+        at, mock_run = self._boot_and_submit(3800)
+        self.assertEqual(len(at.exception), 0)
+        call_args = mock_run.call_args
+        self.assertIsNotNone(call_args, "run_agent was not called")
+        # First positional arg is user_message
+        user_message = call_args.args[0] if call_args.args else call_args.kwargs.get("user_message", "")
+        self.assertIn("3800", user_message,
+                      f"Budget 3800 not found in run_agent message: {user_message!r}")
+
+    def test_recommendation_card_rendered(self):
+        """The recommendation card must be visible after a successful submission."""
+        at, _ = self._boot_and_submit(3800)
+        self.assertEqual(len(at.exception), 0)
+        self.assertEqual(at.session_state.get("fp_status"), "ok",
+                         f"fp_status is {at.session_state.get('fp_status')!r}, expected 'ok'")
+        rendered = " ".join(m.value for m in at.markdown)
+        self.assertIn("TRANSFER", rendered,
+                      "Recommended option TRANSFER not rendered in recommendation card")
+
+    def test_fp_status_ok_after_valid_response(self):
+        """fp_status must be 'ok' after a valid within-budget recommendation."""
+        at, _ = self._boot_and_submit(3800)
+        self.assertEqual(len(at.exception), 0)
+        self.assertEqual(at.session_state.get("fp_status"), "ok")
+        self.assertIsNotNone(at.session_state.get("fp_result"))
+        self.assertEqual(at.session_state.get("fp_budget"), 3800)
+
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,10 @@ from ui.renderers import (
 )
 from ui.state import init_state, navigate_to, reset_conversation, switch_mode
 
+# UI contract: the only agent import allowed from app.py.
+# Imported at module level so it is available whenever WX_API_KEY is set.
+from agent.loop import run_agent
+
 # ---------------------------------------------------------------------------
 # Streamlit page config
 # ---------------------------------------------------------------------------
