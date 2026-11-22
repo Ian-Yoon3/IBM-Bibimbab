@@ -6,7 +6,7 @@
   "total_samples": 200000,
   "rows": 156609,
   "distinct_worlds": 44006,
-  "run_time_s": 6.725,
+  "run_time_s": 6.429,
   "DAY0": "2026-11-09",
   "causes": {
     "K1": {
@@ -15,7 +15,10 @@
       "duration_prior_share": 0.2,
       "severity_prior_share": 0.2222222222222222,
       "slots": 4,
-      "overflow": 0
+      "overflow": 0,
+      "rate_shape": 4,
+      "per_year_mean": 4.089636,
+      "open_episode": null
     },
     "K2": {
       "open_on_day0": false,
@@ -23,7 +26,10 @@
       "duration_prior_share": 0.13333333333333333,
       "severity_prior_share": 0.15384615384615385,
       "slots": 4,
-      "overflow": 0
+      "overflow": 0,
+      "rate_shape": 8,
+      "per_year_mean": 8.295455,
+      "open_episode": null
     }
   },
   "variables": {
@@ -48,7 +54,7 @@
   },
   "history_shipments": 43,
   "history_episodes": 10,
-  "created_at": "2026-11-21T04:31:00.205180+00:00",
+  "created_at": "2026-11-22T04:31:49.977656+00:00",
   "result_table": {
     "distinct_worlds": 44006,
     "scenarios": [
@@ -57,6 +63,6 @@
       "ALT_BUY",
       "HYBRID"
     ],
-    "evaluation_time_s": 64.417
+    "evaluation_time_s": 58.636
   }
 }
