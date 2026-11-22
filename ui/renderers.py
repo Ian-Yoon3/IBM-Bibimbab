@@ -724,6 +724,77 @@ def world_risk_chart_rows(view: dict, field: str) -> list[tuple[str, float]]:
     return result
 
 
+def render_add_file(info: dict) -> None:
+    """Body of the "Add a file" dialog, from agent.overview.get_data_overview().
+
+    Top: the drop area.  The upload control is disabled while
+    info["upload"]["enabled"] is False, and the reason is shown next to it.
+    Below: which files the numbers come from now and whether the selected
+    Monte Carlo run matches them.  Every value shown is a field of *info*;
+    nothing is computed here.
+    """
+    upload = info.get("upload") or {}
+    enabled = bool(upload.get("enabled", False))
+    st.file_uploader(
+        "Drop files here, or click below",
+        accept_multiple_files=True,
+        type=["csv"],
+        disabled=not enabled,
+        key="data_upload",
+    )
+    if upload.get("note"):
+        if enabled:
+            st.caption(upload["note"])
+        else:
+            st.warning(upload["note"])
+
+    st.markdown("#### Data in use now")
+    run = info.get("run") or {}
+    status = run.get("status")
+    message = run.get("message", "")
+    if status == "match":
+        st.success(message)
+    elif status == "none":
+        st.info(message)
+    else:
+        st.warning(message)
+    if run.get("detail"):
+        with st.expander("Details of the check", expanded=False):
+            st.code(run["detail"], language=None)
+
+    settings = run.get("settings")
+    if settings:
+        parts = [f"{key}: {value}" for key, value in settings.items()]
+        if run.get("grid") is not None:
+            parts.append(f"threshold grid: {run['grid']}")
+        if run.get("created_at"):
+            parts.append(f"created: {run['created_at']}")
+        st.caption("Run settings. " + " · ".join(parts))
+
+    if info.get("synthetic_history"):
+        st.info(
+            "The delivery history in this data set is synthetic. It was written for "
+            "the demo and is not a record of real shipments."
+        )
+
+    files = info.get("files") or []
+    for group, title in (("inputs", "Input files"), ("history", "History files")):
+        rows = [f for f in files if f.get("group") == group]
+        if not rows:
+            continue
+        with st.expander(title, expanded=False):
+            body = "".join(
+                f"<tr><td>{f.get('name', '')}</td><td>{f.get('rows', '')}</td></tr>"
+                for f in rows
+            )
+            st.markdown(
+                "<table class='cmp-table'><thead><tr><th>File</th><th>Data rows</th>"
+                f"</tr></thead><tbody>{body}</tbody></table>",
+                unsafe_allow_html=True,
+            )
+    st.caption(f"Folder: {info.get('data_dir', '')}")
+
+
 def render_world_risk(view: dict) -> None:
     """Render a world_risk view directly on the page (not inside a chat message).
 

@@ -10,6 +10,7 @@ You do not need an API key either. Use `ui_fixtures/agent_results.json` until th
 from agent.loop import run_agent                 # ask the agent (needs .env)
 from agent.decisions import record_decision, list_decisions   # approve / reject (no .env)
 from agent.overview import get_overview          # first screen (no .env, no credits)
+from agent.overview import get_data_overview     # data files and run state (no .env, no credits)
 ```
 
 The UI calls nothing else in `agent/` or `engine/`.
@@ -52,6 +53,35 @@ It returns a `world_risk` view in `overview` mode (see below).
 It makes no watsonx.ai call, costs no credits and needs no `.env`.
 It shows the current situation and the risk of each option, so the manager can read the state first and then ask.
 Its `suggested_questions` can be shown as clickable examples. Each click is a normal question, so in live mode it calls `run_agent`.
+
+### 4. `get_data_overview()`
+
+Call it to show which data the numbers come from, for example in an "Add a file" dialog.
+It makes no watsonx.ai call, costs no credits and changes nothing.
+
+| Field | Example | Meaning |
+|---|---|---|
+| `data_dir` | `"data"` | The folder the engine loads |
+| `files` | `[{"name": "orders.csv", "group": "inputs", "rows": 12}, {"name": "history/shipments.csv", "group": "history", "rows": 43}]` | Every CSV file in the folder. `rows` counts data rows without the header. `group` is `inputs` or `history` |
+| `run` | see below | The selected Monte Carlo run and whether it matches the data |
+| `synthetic_history` | `true` | The history files are synthetic (read from `data/history/README.md`). Say so on the screen |
+| `upload` | `{"enabled": false, "note": "Not connected in this demo. ..."}` | Whether a data set can be uploaded through the UI. It is `false`: a new data set needs a new Monte Carlo run before any number can change |
+
+`run`:
+
+| Field | Example | Meaning |
+|---|---|---|
+| `status` | `"match"`, `"stale"`, `"invalid"` or `"none"` | Same check as `python -m engine.runs --check`. `stale`: data or code changed after the run. `invalid`: the selection file cannot be read. `none`: no run is selected |
+| `name` | `"runs/demo"` or `None` | The run folder |
+| `message` | `"Monte Carlo run runs/demo: inputs, code and outputs match."` | One sentence for the screen. Show as is |
+| `detail` | `""` or the text of the failed check | What differs, for an expander |
+| `settings` | `{"M": 1000, "N": 200, "seed": 20261109, "method": "lhs"}` or `None` | Only when `status` is `match` |
+| `grid` | `"present"`, `"absent"` or `None` | Whether the run has a threshold grid |
+| `created_at` | `"2026-11-22T05:31:21+00:00"` or `None` | When the run was made |
+
+Rules
+- While `upload["enabled"]` is `false`, keep the upload control and its confirm button disabled and show `upload["note"]` next to them. Do not read or store a file.
+- When `status` is not `match`, show `message` as a warning. Do not present the risk numbers as current.
 
 The agent cannot call `record_decision`. Only the UI can. That is the "a human approves every action" rule.
 

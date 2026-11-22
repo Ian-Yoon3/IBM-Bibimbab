@@ -5,7 +5,7 @@ Entry point for the Streamlit application.
 Permitted agent imports (UI contract):
     from agent.loop import run_agent
     from agent.decisions import record_decision, list_decisions
-    from agent.overview import get_overview
+    from agent.overview import get_overview, get_data_overview
 
 On Streamlit Community Cloud, copy Streamlit secrets into os.environ so
 that agent/llm.py can find them. Done inside try/except so a local run
@@ -54,6 +54,7 @@ from ui.renderers import (
     render_live_unavailable,
     render_result,
     render_unmatched_message,
+    render_add_file,
     render_world_risk,
 )
 from ui.state import init_state, navigate_to, reset_conversation, switch_mode
@@ -61,7 +62,7 @@ from ui.state import init_state, navigate_to, reset_conversation, switch_mode
 # UI contract: permitted agent imports.
 from agent.loop import run_agent
 from agent.decisions import record_decision, list_decisions
-from agent.overview import get_overview
+from agent.overview import get_overview, get_data_overview
 
 # ---------------------------------------------------------------------------
 # Streamlit page config
@@ -192,6 +193,32 @@ def _sidebar() -> None:
 # ===========================================================================
 # Overview screen
 # ===========================================================================
+@st.dialog("Add a file", width="large")
+def _add_file_dialog() -> None:
+    """Dialog opened by "Add a file here" on the overview page.
+
+    It shows where a data set is added and which data is in use now.  The
+    upload is not connected in this demo: a new data set needs a new Monte
+    Carlo run before any number can change, so the upload control and the Add
+    button are disabled and the dialog says why.  No file is read or stored,
+    and no watsonx.ai call is made.
+    """
+    try:
+        info = get_data_overview()
+    except Exception as exc:
+        st.error(str(exc))
+        return
+    render_add_file(info)
+
+    enabled = bool((info.get("upload") or {}).get("enabled", False))
+    add_col, cancel_col, _spacer = st.columns([1, 1, 4])
+    with add_col:
+        st.button("Add", key="add_file_confirm", type="primary", disabled=not enabled)
+    with cancel_col:
+        if st.button("Cancel", key="add_file_cancel"):
+            st.rerun()
+
+
 def _page_overview() -> None:
     # Breadcrumb
     st.markdown(
@@ -225,6 +252,10 @@ def _page_overview() -> None:
 """,
             unsafe_allow_html=True,
         )
+
+        # Data entry point.  It opens the "Add a file" dialog in both modes.
+        if st.button("Add a file here", key="cta_add_file", icon=":material/upload_file:"):
+            _add_file_dialog()
 
         if st.session_state.mode == "fixtures":
             if st.button(
