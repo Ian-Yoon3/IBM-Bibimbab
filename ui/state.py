@@ -16,6 +16,12 @@ active_proposal     dict | None — proposal from active_result (None if none)
 submitted_request   dict | None — snapshot: {budget, objective, fixture_id, question, mode}
 request_pending     bool — True while a live call is in flight
 last_failed_request dict | None — snapshot of the last failed request (for retry)
+
+Find-a-plan page (budget form) keys
+-------------------------------------
+fp_budget           int | None — budget value most recently submitted (USD)
+fp_result           dict | None — result dict from the last run_agent call on find_plan
+fp_status           str | None — one of "ok"|"no_match"|"unverifiable"|"api_error"|None
 """
 from __future__ import annotations
 
@@ -36,6 +42,10 @@ _SCALAR_DEFAULTS: dict = {
     "submitted_request": None,
     "request_pending": False,
     "last_failed_request": None,
+    # Find-a-plan budget form
+    "fp_budget": None,
+    "fp_result": None,
+    "fp_status": None,
 }
 
 
@@ -58,8 +68,9 @@ def reset_conversation() -> None:
     """Clear conversation state without deleting the decision log.
 
     Resets: display_messages, agent_history, active_result, active_proposal,
-    submitted_request, request_pending, last_failed_request, and any
-    last_handled_selector_* tracking keys (Regression B).
+    submitted_request, request_pending, last_failed_request,
+    fp_budget, fp_result, fp_status,
+    and any last_handled_selector_* tracking keys (Regression B).
     Does NOT reset: mode, current_page, or anything outside the conversation.
     """
     st.session_state.display_messages = []
@@ -69,6 +80,10 @@ def reset_conversation() -> None:
     st.session_state.submitted_request = None
     st.session_state.request_pending = False
     st.session_state.last_failed_request = None
+    # Find-a-plan form state
+    st.session_state.fp_budget = None
+    st.session_state.fp_result = None
+    st.session_state.fp_status = None
     # Clear selection-tracking keys (Regression B fix) so that returning to
     # Fixtures after a "New conversation" does not replay the old selection.
     _prefix = "last_handled_selector_"

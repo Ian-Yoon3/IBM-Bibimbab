@@ -66,6 +66,12 @@ def _go_to_find_plan(at: AppTest) -> AppTest:
     return at
 
 
+def _go_to_compare(at: AppTest) -> AppTest:
+    at.button(key="nav_compare").click()
+    at.run()
+    return at
+
+
 # ==========================================================================
 # Defect 2 — Typed question answer persists across reruns
 # ==========================================================================
@@ -75,10 +81,10 @@ class TestTypedQuestionPersistence(unittest.TestCase):
     def test_answer_visible_after_submit(self):
         """Submitting a matched typed question shows messages immediately."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.text_input(key="free_text_find_plan").input(_QUESTION_MATCHED)
+        _go_to_compare(at)
+        at.text_input(key="free_text_compare").input(_QUESTION_MATCHED)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
         msgs = at.session_state.get("display_messages", [])
@@ -88,10 +94,10 @@ class TestTypedQuestionPersistence(unittest.TestCase):
     def test_answer_persists_after_ordinary_rerun(self):
         """The answer survives a plain rerun without change."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.text_input(key="free_text_find_plan").input(_QUESTION_MATCHED)
+        _go_to_compare(at)
+        at.text_input(key="free_text_compare").input(_QUESTION_MATCHED)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
         count_after_submit = len(at.session_state.get("display_messages", []))
@@ -109,8 +115,8 @@ class TestTypedQuestionPersistence(unittest.TestCase):
     def test_repeated_reruns_do_not_duplicate_messages(self):
         """Three consecutive reruns must not inflate message count."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
         base = len(at.session_state.get("display_messages", []))
         self.assertGreater(base, 0)
@@ -123,8 +129,8 @@ class TestTypedQuestionPersistence(unittest.TestCase):
     def test_fixture_selection_stores_in_display_messages(self):
         """Selecting a fixture populates display_messages with user + assistant msgs."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
         msgs = at.session_state.get("display_messages", [])
         types = [m["type"] for m in msgs]
@@ -134,8 +140,8 @@ class TestTypedQuestionPersistence(unittest.TestCase):
     def test_navigation_preserves_conversation(self):
         """Navigating away and back keeps existing display_messages."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
         count_before = len(at.session_state.get("display_messages", []))
         self.assertGreater(count_before, 0)
@@ -151,8 +157,8 @@ class TestTypedQuestionPersistence(unittest.TestCase):
     def test_new_conversation_clears_state(self):
         """New conversation resets messages, active_result, proposal, and selection."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
         self.assertGreater(len(at.session_state.get("display_messages", [])), 0)
 
@@ -164,7 +170,7 @@ class TestTypedQuestionPersistence(unittest.TestCase):
         self.assertIsNone(at.session_state.get("active_proposal"))
         self.assertIsNone(at.session_state.get("submitted_request"))
         # Selector widget key must have been removed
-        self.assertNotIn("fixture_selector_find_plan", at.session_state)
+        self.assertNotIn("fixture_selector_compare", at.session_state)
         self.assertEqual(at.session_state.get("current_page"), "overview")
 
 
@@ -177,7 +183,7 @@ class TestLiveModeBlocking(unittest.TestCase):
     def test_live_mode_shows_unavailable_warning(self):
         """Switching to Live on the find_plan page shows the unavailable warning."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
         at.radio(key="mode_radio").set_value("Live agent")
         at.run()
         warnings = [w.value for w in at.warning]
@@ -189,7 +195,7 @@ class TestLiveModeBlocking(unittest.TestCase):
     def test_live_mode_hides_fixture_selector(self):
         """In Live mode the fixture selectbox must not be rendered."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
         at.radio(key="mode_radio").set_value("Live agent")
         at.run()
         self.assertEqual(len(at.selectbox), 0, "Fixture selector visible in Live mode")
@@ -197,7 +203,7 @@ class TestLiveModeBlocking(unittest.TestCase):
     def test_live_mode_hides_text_input(self):
         """In Live mode the free-text question form must not be rendered."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
         at.radio(key="mode_radio").set_value("Live agent")
         at.run()
         self.assertEqual(len(at.text_input), 0, "Text input visible in Live mode")
@@ -205,8 +211,8 @@ class TestLiveModeBlocking(unittest.TestCase):
     def test_live_mode_clears_prior_fixture_result(self):
         """Switching to Live clears active_result loaded while in Fixtures mode."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
         self.assertIsNotNone(at.session_state.get("active_result"))
 
@@ -217,8 +223,8 @@ class TestLiveModeBlocking(unittest.TestCase):
     def test_live_mode_clears_prior_proposal(self):
         """Switching to Live removes an active_proposal from a proposal fixture."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_PROPOSAL)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_PROPOSAL)
         at.run()
         self.assertIsNotNone(at.session_state.get("active_proposal"))
 
@@ -229,8 +235,8 @@ class TestLiveModeBlocking(unittest.TestCase):
     def test_live_mode_clears_display_messages(self):
         """Switching to Live removes all display_messages."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
         self.assertGreater(len(at.session_state.get("display_messages", [])), 0)
 
@@ -241,13 +247,13 @@ class TestLiveModeBlocking(unittest.TestCase):
     def test_live_mode_clears_selector_widget(self):
         """Switching to Live deletes the selector widget key from session_state."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
 
         at.radio(key="mode_radio").set_value("Live agent")
         at.run()
-        self.assertNotIn("fixture_selector_find_plan", at.session_state)
+        self.assertNotIn("fixture_selector_compare", at.session_state)
 
     def test_live_mode_blocked_on_all_non_overview_pages(self):
         """The live guard fires on compare and impact pages too."""
@@ -292,7 +298,7 @@ class TestLiveModeBlocking(unittest.TestCase):
         self.assertIsNone(at.session_state.get("active_result"))
 
         # Navigating to find_plan should show the fixture selector.
-        _go_to_find_plan(at)
+        _go_to_compare(at)
         self.assertGreater(len(at.selectbox), 0, "No fixture selector after returning to Fixtures")
 
 
@@ -305,10 +311,10 @@ class TestDuplicateQuestionFixtures(unittest.TestCase):
     def test_error_and_success_fixture_independently_selectable(self):
         """Select success fixture first, new conversation, then select error fixture."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Select the success fixture (index 1)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
         success_msgs = list(at.session_state.get("display_messages", []))
         self.assertTrue(success_msgs, "No messages after selecting success fixture")
@@ -318,8 +324,8 @@ class TestDuplicateQuestionFixtures(unittest.TestCase):
         # New conversation then select error fixture (index 23)
         at.button(key="new_conv").click()
         at.run()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR_500)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR_500)
         at.run()
         error_msgs = list(at.session_state.get("display_messages", []))
         self.assertTrue(error_msgs, "No messages after selecting error fixture")
@@ -343,10 +349,10 @@ class TestUnmatchedInput(unittest.TestCase):
     def test_unmatched_input_shows_limitation_message(self):
         """Submitting an unmatched question shows the info limitation message."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.text_input(key="free_text_find_plan").input(_QUESTION_UNMATCHED)
+        _go_to_compare(at)
+        at.text_input(key="free_text_compare").input(_QUESTION_UNMATCHED)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
         infos = [i.value for i in at.info]
@@ -358,10 +364,10 @@ class TestUnmatchedInput(unittest.TestCase):
     def test_unmatched_input_does_not_set_active_result(self):
         """Submitting an unmatched question must not populate active_result."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.text_input(key="free_text_find_plan").input(_QUESTION_UNMATCHED)
+        _go_to_compare(at)
+        at.text_input(key="free_text_compare").input(_QUESTION_UNMATCHED)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
         self.assertIsNone(
@@ -372,10 +378,10 @@ class TestUnmatchedInput(unittest.TestCase):
     def test_unmatched_message_persists_after_rerun(self):
         """The unmatched limitation message is stored and persists on rerun."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.text_input(key="free_text_find_plan").input(_QUESTION_UNMATCHED)
+        _go_to_compare(at)
+        at.text_input(key="free_text_compare").input(_QUESTION_UNMATCHED)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
         msgs1 = len(at.session_state.get("display_messages", []))
@@ -410,8 +416,8 @@ class TestRegressionA_FirstSelectionDisplaysAnswer(unittest.TestCase):
     def _check_fixture_at_index(self, idx: int) -> None:
         """Select fixture at *idx* in a fresh session and verify answer rendered."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(idx)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(idx)
         at.run()
 
         self.assertEqual(len(at.exception), 0,
@@ -455,10 +461,10 @@ class TestRegressionB_SelectorDoesNotOverrideTypedQuestion(unittest.TestCase):
     def test_typed_500_then_800_keeps_800_as_current(self):
         """Select $500 fixture, then type the $800 question; $800 must stay current."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Select $500 fixture (selector index 1)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         self.assertEqual(
             at.session_state.get("submitted_request", {}).get("fixture_id"),
@@ -467,9 +473,9 @@ class TestRegressionB_SelectorDoesNotOverrideTypedQuestion(unittest.TestCase):
         )
 
         # Type the $800 question through the form
-        at.text_input(key="free_text_find_plan").input(_Q_800)
+        at.text_input(key="free_text_compare").input(_Q_800)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
 
@@ -504,11 +510,11 @@ class TestRegressionB_SelectorDoesNotOverrideTypedQuestion(unittest.TestCase):
     def test_consecutive_different_fixtures_shows_newest(self):
         """Selecting A then B shows B as the current answer."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_B)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_B)
         at.run()
 
         self.assertEqual(
@@ -521,13 +527,13 @@ class TestRegressionB_SelectorDoesNotOverrideTypedQuestion(unittest.TestCase):
     def test_explicit_a_b_a_selection_sequence(self):
         """Explicit A → B → A selector sequence keeps A as current result."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_B)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_B)
         at.run()
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
 
         # 6 messages: A user+assistant, B user+assistant, A user+assistant
@@ -554,9 +560,9 @@ class TestRegressionB_SelectorDoesNotOverrideTypedQuestion(unittest.TestCase):
     def test_ordinary_rerun_does_not_add_messages_after_selection(self):
         """An ordinary rerun after fixture selection does not add messages."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         base = len(at.session_state.get("display_messages", []))
         self.assertGreater(base, 0)
@@ -577,19 +583,19 @@ class TestRegressionC_RepeatedErrorFixturesNoCrash(unittest.TestCase):
     def test_error_success_error_no_crash(self):
         """Error → success → error accumulates 6 messages without exception."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
         self.assertEqual(len(at.exception), 0,
                          f"Exception after first error: {list(at.exception)}")
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         self.assertEqual(len(at.exception), 0,
                          f"Exception after success: {list(at.exception)}")
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
         self.assertEqual(len(at.exception), 0,
                          f"Exception after second error (Regression C): {list(at.exception)}")
@@ -606,9 +612,9 @@ class TestRegressionC_RepeatedErrorFixturesNoCrash(unittest.TestCase):
     def test_error_banner_text_distinct_from_app_exception(self):
         """The error fixture shows a warning banner, not an unhandled exception."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
 
         # Must have zero unhandled exceptions
@@ -623,14 +629,14 @@ class TestRegressionC_RepeatedErrorFixturesNoCrash(unittest.TestCase):
     def test_retry_button_has_no_exception_for_accumulated_errors(self):
         """Retry buttons for accumulated error messages raise no exception."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Accumulate two error fixtures
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
 
         # Verify no duplicate-key exception from rendering two retry banners
@@ -650,15 +656,15 @@ class TestRegressionG_UnmatchedInputAfterResult(unittest.TestCase):
     def test_unmatched_after_fixture_keeps_limitation_message(self):
         """After a fixture selection, an unmatched typed question shows limitation."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         self.assertIsNotNone(at.session_state.get("active_result"))
 
-        at.text_input(key="free_text_find_plan").input(_QUESTION_UNMATCHED)
+        at.text_input(key="free_text_compare").input(_QUESTION_UNMATCHED)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
 
@@ -685,17 +691,17 @@ class TestRegressionH_NewConversationClearsTracking(unittest.TestCase):
     def test_new_conversation_clears_last_handled_selector(self):
         """New conversation deletes last_handled_selector_* keys."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
-        self.assertIn("last_handled_selector_find_plan", at.session_state)
+        self.assertIn("last_handled_selector_compare", at.session_state)
 
         at.button(key="new_conv").click()
         at.run()
 
-        self.assertNotIn("last_handled_selector_find_plan", at.session_state,
-                         "last_handled_selector_find_plan persisted after New conversation")
+        self.assertNotIn("last_handled_selector_compare", at.session_state,
+                         "last_handled_selector_compare persisted after New conversation")
         self.assertEqual(at.session_state.get("display_messages"), [])
         self.assertIsNone(at.session_state.get("active_result"))
         self.assertIsNone(at.session_state.get("submitted_request"))
@@ -703,14 +709,14 @@ class TestRegressionH_NewConversationClearsTracking(unittest.TestCase):
     def test_new_conversation_then_re_select_works(self):
         """After New conversation, re-selecting the same fixture works again."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         at.button(key="new_conv").click()
         at.run()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
 
         msgs = at.session_state.get("display_messages", [])
@@ -722,16 +728,15 @@ class TestRegressionH_NewConversationClearsTracking(unittest.TestCase):
 class TestRegressionI_LiveModeBlockedAllPages(unittest.TestCase):
     """Regression I: Live mode remains blocked on every page."""
 
-    def test_live_blocks_find_plan_fixture_controls(self):
-        """Live mode on find_plan blocks the fixture selector."""
+    def test_find_plan_has_no_fixture_selector(self):
+        """find_plan uses a budget form; there is no fixture selectbox on that page."""
         at = _boot()
-        at.radio(key="mode_radio").set_value("Live agent")
-        at.run()
         at.button(key="nav_find_plan").click()
         at.run()
 
+        # The budget form renders a number_input, not a selectbox.
         self.assertEqual(len(at.selectbox), 0,
-                         "Fixture selector visible in Live mode (find_plan)")
+                         "Unexpected selectbox on find_plan page")
         self.assertEqual(len(at.exception), 0)
 
     def test_live_blocks_compare_fixture_controls(self):
@@ -765,8 +770,8 @@ class TestRegressionJ_ReturnFromLiveToFixtures(unittest.TestCase):
     def test_fixtures_live_fixtures_clean_start(self):
         """Fixtures → Live → Fixtures gives an empty conversation."""
         at = _boot()
-        _go_to_find_plan(at)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        _go_to_compare(at)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         self.assertGreater(len(at.session_state.get("display_messages", [])), 0)
 
@@ -780,7 +785,7 @@ class TestRegressionJ_ReturnFromLiveToFixtures(unittest.TestCase):
         self.assertIsNone(at.session_state.get("active_result"))
         self.assertIsNone(at.session_state.get("submitted_request"))
         # last_handled_selector must also be cleared
-        self.assertNotIn("last_handled_selector_find_plan", at.session_state,
+        self.assertNotIn("last_handled_selector_compare", at.session_state,
                          "last_handled_selector not cleared after mode switch cycle")
 
 
@@ -792,8 +797,8 @@ class TestRegressionK_SeparateSessionsDoNotShareState(unittest.TestCase):
         at1 = _boot()
         at2 = _boot()
 
-        _go_to_find_plan(at1)
-        at1.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        _go_to_compare(at1)
+        at1.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at1.run()
 
         # at2 must still have an empty conversation
@@ -834,10 +839,10 @@ class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
     def test_clicking_retry_appends_fixture_response(self):
         """Clicking the retry button on an error message appends a new entry."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Load the error fixture
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
 
         msgs_before = list(at.session_state.get("display_messages", []))
@@ -873,9 +878,9 @@ class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
     def test_retry_adds_exactly_one_pair(self):
         """Clicking retry once adds exactly 2 messages (user + assistant)."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
         count_before = len(at.session_state.get("display_messages", []))
 
@@ -892,16 +897,16 @@ class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
     def test_retry_updates_submitted_request(self):
         """Clicking retry updates submitted_request to the retried fixture_id."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Load error fixture first
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
         error_fixture_id = at.session_state.get("submitted_request", {}).get("fixture_id")
 
         # Then load a different fixture (success $500 is conv1_t1_i0 — same question
         # but different fixture_id, so it will be a different submitted_request)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_SUCCESS_500)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_SUCCESS_500)
         at.run()
         self.assertNotEqual(
             at.session_state.get("submitted_request", {}).get("fixture_id"),
@@ -922,16 +927,16 @@ class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
     def test_retry_after_different_fixture_retries_original_error(self):
         """Historical error retry works even after another fixture is selected."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Step 1: load error fixture (messages: [user idx0, asst idx1])
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
         msgs_step1 = at.session_state.get("display_messages", [])
         error_fixture_id = msgs_step1[-1].get("fixture_id")
 
         # Step 2: load success fixture (messages: [.., user idx2, asst idx3])
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         msgs_step2 = at.session_state.get("display_messages", [])
         self.assertEqual(len(msgs_step2), 4)
@@ -962,9 +967,9 @@ class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
     def test_no_additional_messages_on_rerun_after_retry(self):
         """An ordinary rerun after retry does not add more messages."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR)
         at.run()
         at.button(key="retry_1").click()
         at.run()
@@ -984,10 +989,10 @@ class TestIssue1_RetryButtonProcessesFixture(unittest.TestCase):
         """Retry uses fixture_id, not question text: retrying an error fixture
         always reproduces the error, even if a success fixture shares the question."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Load the error fixture (index 23), which shares question with success (index 1)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR_500)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_ERROR_500)
         at.run()
         msgs = at.session_state.get("display_messages", [])
         error_msg = msgs[-1]
@@ -1030,10 +1035,10 @@ class TestIssue2_ExplicitReselectionProcessed(unittest.TestCase):
         and submitted_request points to the $500 fixture_id.
         """
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Step 1: select $500 fixture
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         self.assertEqual(len(at.session_state.get("display_messages", [])), 2)
         self.assertEqual(
@@ -1042,9 +1047,9 @@ class TestIssue2_ExplicitReselectionProcessed(unittest.TestCase):
         )
 
         # Step 2: submit the saved $800 question through the text form
-        at.text_input(key="free_text_find_plan").input(_Q_800)
+        at.text_input(key="free_text_compare").input(_Q_800)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
         self.assertEqual(len(at.session_state.get("display_messages", [])), 4)
@@ -1055,14 +1060,14 @@ class TestIssue2_ExplicitReselectionProcessed(unittest.TestCase):
         )
 
         # Step 3: select the placeholder
-        at.selectbox(key="fixture_selector_find_plan").select_index(0)
+        at.selectbox(key="fixture_selector_compare").select_index(0)
         at.run()
         # Messages and submitted_request must remain unchanged after placeholder
         self.assertEqual(len(at.session_state.get("display_messages", [])), 4,
                          "Placeholder selection changed message count")
 
         # Step 4: explicitly re-select $500
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
 
         msgs = at.session_state.get("display_messages", [])
@@ -1096,24 +1101,24 @@ class TestIssue2_ExplicitReselectionProcessed(unittest.TestCase):
         self.assertEqual(len(at.exception), 0)
 
     def test_cross_page_reselection_appends_response(self):
-        """Select $500 on Find a plan, go to Compare and select $800,
-        return to Find a plan and explicitly re-select $500.
+        """Select $500 on Compare, go to Impact and select $800,
+        return to Compare and explicitly re-select $500.
 
         Expected: $500 response is appended, conversation has 6 messages,
         submitted_request = conv1_t1_i0.
         """
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
-        # Step 1: select $500 on find_plan
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        # Step 1: select $500 on compare
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
         self.assertEqual(len(at.session_state.get("display_messages", [])), 2)
 
-        # Step 2: navigate to compare and select $800
-        at.button(key="nav_compare").click()
+        # Step 2: navigate to impact and select $800
+        at.button(key="nav_impact").click()
         at.run()
-        at.selectbox(key="fixture_selector_compare").select_index(_IDX_B)
+        at.selectbox(key="fixture_selector_impact").select_index(_IDX_B)
         at.run()
         self.assertEqual(len(at.session_state.get("display_messages", [])), 4)
         self.assertEqual(
@@ -1121,15 +1126,15 @@ class TestIssue2_ExplicitReselectionProcessed(unittest.TestCase):
             "conv2_t1_i1",
         )
 
-        # Step 3: return to find_plan — the selector defaults back to placeholder (index=0)
-        at.button(key="nav_find_plan").click()
+        # Step 3: return to compare — the selector defaults back to placeholder (index=0)
+        at.button(key="nav_compare").click()
         at.run()
         # Messages preserved
         self.assertEqual(len(at.session_state.get("display_messages", [])), 4,
                          "Navigation cleared display_messages")
 
-        # Step 4: explicitly re-select $500 on find_plan
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        # Step 4: explicitly re-select $500 on compare
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
 
         msgs = at.session_state.get("display_messages", [])
@@ -1167,16 +1172,16 @@ class TestIssue2_ExplicitReselectionProcessed(unittest.TestCase):
         """Regression B behaviour preserved: an ordinary rerun after form
         submission does not replay the stale selector value."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Select $500 fixture (selector index 1)
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
 
         # Type the $800 question through the form
-        at.text_input(key="free_text_find_plan").input(_Q_800)
+        at.text_input(key="free_text_compare").input(_Q_800)
         at.form_submit_button(
-            key="FormSubmitter:free_text_form_find_plan-Submit"
+            key="FormSubmitter:free_text_form_compare-Submit"
         ).click()
         at.run()
         self.assertEqual(len(at.session_state.get("display_messages", [])), 4)
@@ -1198,14 +1203,14 @@ class TestIssue2_ExplicitReselectionProcessed(unittest.TestCase):
     def test_no_duplicates_after_explicit_reselection_reruns(self):
         """After explicit reselection + rerun, no additional messages appear."""
         at = _boot()
-        _go_to_find_plan(at)
+        _go_to_compare(at)
 
         # Select, go to placeholder, re-select
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
-        at.selectbox(key="fixture_selector_find_plan").select_index(0)
+        at.selectbox(key="fixture_selector_compare").select_index(0)
         at.run()
-        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.selectbox(key="fixture_selector_compare").select_index(_IDX_A)
         at.run()
 
         count = len(at.session_state.get("display_messages", []))

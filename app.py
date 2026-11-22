@@ -42,7 +42,11 @@ from ui.fixtures import (
     load_fixtures,
 )
 from ui.renderers import (
+    DEMO_CSS,
+    inject_css,
+    render_api_key_missing,
     render_error_retry_banner,
+    render_find_plan_result,
     render_live_unavailable,
     render_result,
     render_unmatched_message,
@@ -63,6 +67,11 @@ st.set_page_config(
 # Session-state bootstrap
 # ---------------------------------------------------------------------------
 init_state()
+
+# ---------------------------------------------------------------------------
+# Inject shared CSS once per session
+# ---------------------------------------------------------------------------
+inject_css()
 
 # ---------------------------------------------------------------------------
 # Load fixtures once per session (cached so disk is read only on first load)
@@ -94,7 +103,14 @@ def _overview_situation() -> str:
 # ===========================================================================
 def _sidebar() -> None:
     with st.sidebar:
-        st.markdown("## Navigation")
+        # Brand block
+        st.markdown(
+            '<div class="sidebar-brand">'
+            '<span class="sidebar-brand-icon">🔗</span>'
+            '<span class="sidebar-brand-text">Supply Chain<br>Recovery Agent</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
         # --- Page links ---
         pages = [
@@ -113,7 +129,7 @@ def _sidebar() -> None:
 
         # Decision log — marked as upcoming
         st.button(
-            "📋 Decision log  *(upcoming)*",
+            "📋 Saved examples",
             key="nav_log",
             use_container_width=True,
             disabled=True,
@@ -163,63 +179,98 @@ def _sidebar() -> None:
 # Overview screen
 # ===========================================================================
 def _page_overview() -> None:
-    st.title("Supply Chain Recovery Decision Agent")
+    # Breadcrumb
     st.markdown(
-        "Compare recovery options for a supplier delay and record your decision."
+        '<div class="breadcrumb">Overview</div>',
+        unsafe_allow_html=True,
     )
 
-    # Prominent demo / mode indicator
+    # Hero section
     if st.session_state.mode == "fixtures":
-        st.info(
-            "**Demo mode — saved examples**  \n"
-            "You are viewing real responses captured from a previous agent run. "
-            "No AI service calls are made in this mode.",
-            icon="🗂",
-        )
+        mode_badge = '<span class="demo-badge">Demo mode</span>'
     else:
-        # Live mode is unavailable throughout Stage A.
-        render_live_unavailable()
-        return
+        mode_badge = '<span class="demo-badge" style="background:#fff3cd;color:#856404;border-color:#ffc107">Live agent</span>'
 
-    # D01 disruption context
     situation = _overview_situation()
-    if situation:
-        st.markdown("### Example case — Disruption D01")
+    situation_text = (
+        situation
+        if situation
+        else "A key supplier has a delay in delivering materials, which could disrupt downstream production and customer deliveries."
+    )
+
+    # Two-column hero layout
+    hero_col, _spacer = st.columns([3, 2])
+    with hero_col:
         st.markdown(
-            f"> {situation}  \n"
-            "> *(Dates are from the saved example, not today's date.)*"
+            f"""
+<div class="hero-section">
+  {mode_badge}
+  <div class="hero-title">Supply Chain<br>Recovery</div>
+  <div class="hero-subtitle">{situation_text}</div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
+
+        if st.session_state.mode == "fixtures":
+            if st.button(
+                "Find a recovery plan  →",
+                key="cta_find",
+                type="primary",
+                use_container_width=False,
+            ):
+                navigate_to("find_plan")
+                st.rerun()
+        else:
+            render_live_unavailable()
+            return
 
     st.divider()
 
-    # Three starting actions
-    st.markdown("### Where would you like to start?")
-    col1, col2, col3 = st.columns(3)
+    # Secondary action cards
+    st.markdown(
+        "<p style='font-size:0.9rem;color:#57606a;margin-bottom:1rem'>"
+        "Or explore another angle:</p>",
+        unsafe_allow_html=True,
+    )
 
-    with col1:
-        st.markdown("**🔍 Find a recovery plan**")
-        st.markdown(
-            "Get a recommendation for the best recovery option given your budget."
-        )
-        if st.button("Find a recovery plan", key="cta_find", use_container_width=True):
-            navigate_to("find_plan")
-            st.rerun()
+    card_col1, card_col2 = st.columns(2)
 
-    with col2:
-        st.markdown("**⚖️ Compare options**")
+    with card_col1:
         st.markdown(
-            "See all recovery options side by side, without committing to one."
+            """
+<div class="action-card">
+  <div class="action-card-icon">⚖️</div>
+  <div class="action-card-body">
+    <div class="action-card-title">Compare options</div>
+    <div class="action-card-desc">Review and contrast viable recovery scenarios.</div>
+  </div>
+  <div class="action-card-arrow">›</div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
-        if st.button("Compare options", key="cta_compare", use_container_width=True):
+        if st.button("Go to Compare options", key="cta_compare",
+                     use_container_width=True, type="secondary"):
             navigate_to("compare")
             st.rerun()
 
-    with col3:
-        st.markdown("**📊 Understand the impact**")
+    with card_col2:
         st.markdown(
-            "Learn which customers and orders are affected by the disruption."
+            """
+<div class="action-card">
+  <div class="action-card-icon">📊</div>
+  <div class="action-card-body">
+    <div class="action-card-title">Understand the impact</div>
+    <div class="action-card-desc">See how each option could affect orders and delivery.</div>
+  </div>
+  <div class="action-card-arrow">›</div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
-        if st.button("Understand the impact", key="cta_impact", use_container_width=True):
+        if st.button("Go to Understand the impact", key="cta_impact",
+                     use_container_width=True, type="secondary"):
             navigate_to("impact")
             st.rerun()
 
@@ -420,7 +471,7 @@ def _fixture_selector(page_hint: str) -> None:
     that tracking key, so a form submission or ordinary rerun cannot replay
     a stale widget value and overwrite the current conversation.
     """
-    st.markdown("#### Choose a saved example")
+    st.markdown("#### Saved examples")
     st.caption(
         "Select an entry from the list below. "
         "The successful response and the connection-error response share the same "
@@ -505,6 +556,15 @@ def _free_text_input(page_hint: str) -> None:
 
 def _render_fixtures_page(page_hint: str, header: str, description: str) -> None:
     """Render a fixture-based chat page (Find plan / Compare / Impact)."""
+    # Breadcrumb
+    st.markdown(
+        '<div class="breadcrumb">'
+        '<a href="#">Overview</a>'
+        '<span>›</span>'
+        f'{header.lstrip("🔍⚖️📊 ")}'
+        '</div>',
+        unsafe_allow_html=True,
+    )
     st.header(header)
     st.markdown(description)
     _fixture_selector(page_hint)
@@ -513,15 +573,168 @@ def _render_fixtures_page(page_hint: str, header: str, description: str) -> None
 
 
 # ===========================================================================
-# Page: Find a recovery plan
+# Page: Find a recovery plan  (budget form — Stage B+)
 # ===========================================================================
-def _page_find_plan() -> None:
-    _render_fixtures_page(
-        "find_plan",
-        "🔍 Find a recovery plan",
-        "Select a saved example to see how the agent recommends a recovery option "
-        "for a given budget. Budget forms and live submissions will be available in "
-        "Stage B.",
+
+def _build_find_plan_message(budget: int) -> str:
+    """Build the user message sent to run_agent for a budget query."""
+    return (
+        f"Our budget is {budget} dollars. "
+        "What should we do to maximise on-time orders?"
+    )
+
+
+def _validate_find_plan_result(result: dict, budget: int) -> str:
+    """Validate a run_agent result for the find_plan budget form.
+
+    Returns one of: "ok" | "over_budget" | "unsupported" | "unverifiable" | "api_error"
+
+    Status meanings
+    ---------------
+    "api_error"    — result contains an "error" key (live call failed).
+    "unsupported"  — view type is "unsupported"; backend shows its scope note.
+    "unverifiable" — response lacks the structured data needed to verify:
+                       · no view, or view type is not "recommendation"
+                       · view settings budget != submitted budget
+                       · recommended field is absent or empty (no explanation given)
+                       · recommended row not found in rows, or extra_cost missing
+    "over_budget"  — a recommendation exists but its extra_cost exceeds budget.
+    "ok"           — recommendation exists and extra_cost is within budget.
+
+    Note: "no_match" is intentionally not returned here.  The backend has no
+    signal in the current fixture set that is specific to "no plans within
+    budget" that cannot be confused with other reasons.  UI callers should
+    treat "unsupported" and "unverifiable" as the two distinct non-ok paths.
+    """
+    if "error" in result:
+        return "api_error"
+
+    view = result.get("view")
+
+    # Backend explicitly says the scenario is out of scope → show scope note
+    if view and view.get("type") == "unsupported":
+        return "unsupported"
+
+    if not view or view.get("type") != "recommendation":
+        return "unverifiable"
+
+    settings = view.get("settings") or {}
+    response_budget = settings.get("budget")
+    if response_budget is None or int(response_budget) != int(budget):
+        return "unverifiable"
+
+    recommended_code = view.get("recommended")
+    rows = view.get("rows", [])
+
+    # Recommended field absent or empty: reason unknown → unverifiable
+    if not recommended_code:
+        return "unverifiable"
+
+    rec_row = next((r for r in rows if r.get("code") == recommended_code), None)
+    if rec_row is None:
+        return "unverifiable"
+
+    extra_cost = rec_row.get("extra_cost")
+    if extra_cost is None:
+        return "unverifiable"
+    if int(extra_cost) > int(budget):
+        return "over_budget"
+
+    return "ok"
+
+
+def _page_find_plan(*, _run_agent_fn=None) -> None:
+    """Budget input form for finding a recovery plan.
+
+    Parameters
+    ----------
+    _run_agent_fn:
+        Injectable override for run_agent — used exclusively by unit tests.
+        Must never be passed from app code or the sidebar.
+        When None (default), the real run_agent is used (requires WX_API_KEY).
+    """
+    # Breadcrumb
+    st.markdown(
+        '''<div class="breadcrumb">'''
+        '''<a href="#">Overview</a>'''
+        '''<span>›</span>'''
+        "Find a recovery plan"
+        '''</div>''',
+        unsafe_allow_html=True,
+    )
+    st.header("🔍 Find a recovery plan")
+    st.markdown(
+        "Enter your maximum additional budget (USD) and click the button to "
+        "get a recovery recommendation."
+    )
+
+    # --- Budget input form ---
+    with st.form(key="find_plan_form", clear_on_submit=False):
+        budget_input = st.number_input(
+            "Budget (USD)",
+            min_value=0,
+            max_value=1_000_000,
+            value=st.session_state.get("fp_budget") or 500,
+            step=100,
+            help="Maximum additional spend allowed for a recovery action.",
+            key="find_plan_budget_widget",
+        )
+        submitted = st.form_submit_button(
+            "Find a recovery plan",
+            type="primary",
+            use_container_width=False,
+        )
+
+    if submitted:
+        budget = int(budget_input)
+
+        # Determine which run_agent to call
+        api_fn = _run_agent_fn
+        if api_fn is None:
+            # Check whether the real API key is configured.
+            import os
+            if not os.environ.get("WX_API_KEY"):
+                # Clear any stale result so the previous answer is not shown.
+                st.session_state.fp_budget = budget
+                st.session_state.fp_result = None
+                st.session_state.fp_status = "key_missing"
+                st.rerun()
+                return
+            api_fn = run_agent
+
+        # Clear previous result before calling so stale data never bleeds through.
+        st.session_state.fp_budget = budget
+        st.session_state.fp_result = None
+        st.session_state.fp_status = None
+
+        user_message = _build_find_plan_message(budget)
+        try:
+            result = api_fn(user_message)
+        except Exception:
+            st.session_state.fp_status = "api_error"
+            st.rerun()
+            return
+
+        status = _validate_find_plan_result(result, budget)
+        # Store the full result for "ok" and "unsupported" so the renderer
+        # can display the recommendation card or the scope note respectively.
+        st.session_state.fp_result = result if status in ("ok", "unsupported") else None
+        st.session_state.fp_status = status
+        st.rerun()
+
+    # --- Render result / guidance ---
+    status = st.session_state.get("fp_status")
+    if status is None:
+        # Nothing submitted yet — show API key guidance if key is absent.
+        import os
+        if _run_agent_fn is None and not os.environ.get("WX_API_KEY"):
+            render_api_key_missing()
+        return
+
+    render_find_plan_result(
+        status=status,
+        budget=st.session_state.get("fp_budget"),
+        result=st.session_state.get("fp_result"),
     )
 
 
@@ -573,14 +786,17 @@ def main() -> None:
         _page_overview()
         return
 
-    # For all non-overview pages: block entirely in Live mode.
+    if page == "find_plan":
+        # find_plan handles its own API-key check; skip the Live mode guard.
+        _page_find_plan()
+        return
+
+    # For all other non-overview pages: block entirely in Live mode.
     if _live_mode_guard():
         render_live_unavailable()
         return
 
-    if page == "find_plan":
-        _page_find_plan()
-    elif page == "compare":
+    if page == "compare":
         _page_compare()
     elif page == "impact":
         _page_impact()
