@@ -124,6 +124,11 @@ def _sidebar() -> None:
         # --- New conversation ---
         if st.button("🔄 New conversation", key="new_conv", use_container_width=True):
             reset_conversation()
+            # Clear widget selections so a rerun cannot restore old state.
+            for page_hint in ("find_plan", "compare", "impact"):
+                selector_key = f"fixture_selector_{page_hint}"
+                if selector_key in st.session_state:
+                    del st.session_state[selector_key]
             navigate_to("overview")
             st.rerun()
 
@@ -141,12 +146,17 @@ def _sidebar() -> None:
         new_mode = "fixtures" if mode_choice == "Fixtures" else "live"
         if new_mode != st.session_state.mode:
             switch_mode(new_mode)
+            # Clear widget selections so a rerun cannot restore old fixture data.
+            for page_hint in ("find_plan", "compare", "impact"):
+                selector_key = f"fixture_selector_{page_hint}"
+                if selector_key in st.session_state:
+                    del st.session_state[selector_key]
             st.rerun()
 
         if st.session_state.mode == "fixtures":
             st.caption("🗂 Demo mode — saved examples")
         else:
-            st.caption("🤖 Live agent (requires API key)")
+            st.caption("🔒 Live agent — not available in Stage A")
 
 
 # ===========================================================================
@@ -167,11 +177,9 @@ def _page_overview() -> None:
             icon="🗂",
         )
     else:
-        st.warning(
-            "**Live agent mode**  \n"
-            "Submitting a request will call the watsonx.ai service and use credits.",
-            icon="🤖",
-        )
+        # Live mode is unavailable throughout Stage A.
+        render_live_unavailable()
+        return
 
     # D01 disruption context
     situation = _overview_situation()
@@ -236,10 +244,132 @@ def _page_overview() -> None:
 # Chat / example-selector screen (shared by Find plan, Compare, Impact pages)
 # ===========================================================================
 
-def _fixture_selector(page_hint: str) -> None:
-    """Render the example selector for a given page context."""
+def _render_display_messages() -> None:
+    """Re-render every stored conversation message from display_messages."""
+    for msg in st.session_state.display_messages:
+        msg_type = msg.get("type")
+        if msg_type == "user":
+            with st.chat_message("user"):
+                prefix = "**Example question:** " if msg.get("is_fixture") else ""
+                st.markdown(f"{prefix}{msg['text']}")
+        elif msg_type == "assistant":
+            render_result(msg["result"])
+            if msg.get("is_error") and msg.get("show_retry"):
+                render_error_retry_banner(on_retry=lambda: None)
+        elif msg_type == "unmatched":
+            render_unmatched_message()
 
-    # Filter labels for context (optional nicety — show all entries)
+
+def _add_fixture_to_conversation(fixture_id: str) -> None:
+    """Record a fixture selection in display_messages (idempotent by fixture_id).
+
+    If the most-recently stored turn already corresponds to this fixture_id,
+    do nothing — prevents duplicates on ordinary reruns.
+    """
+    msgs = st.session_state.display_messages
+
+    # Idempotency check: skip if the last stored turn is already this fixture.
+    if msgs:
+        last = msgs[-1]
+        if last.get("fixture_id") == fixture_id:
+            return
+
+    entry = _catalog[fixture_id]
+    result = get_result_copy(_catalog, fixture_id)
+    if result is None:
+        return
+
+    # Update active state.
+    st.session_state.active_result = result
+    st.session_state.active_proposal = result.get("proposal")
+    st.session_state.submitted_request = {
+        "fixture_id": fixture_id,
+        "mode": "fixtures",
+    }
+
+    # Append user message.
+    msgs.append({
+        "type": "user",
+        "text": entry["question"],
+        "is_fixture": True,
+        "fixture_id": fixture_id,
+        "mode": "fixtures",
+    })
+    # Append assistant message.
+    msgs.append({
+        "type": "assistant",
+        "result": result,
+        "is_error": is_error_fixture(result),
+        "show_retry": is_error_fixture(result),
+        "fixture_id": fixture_id,
+        "mode": "fixtures",
+    })
+
+
+def _add_typed_question_to_conversation(
+    text: str,
+    matched_id: str | None,
+) -> None:
+    """Record a typed question submission in display_messages.
+
+    If matched_id is not None, records a successful fixture response.
+    Otherwise records an unmatched limitation message.
+    Does nothing if the last turn already matches this question text to
+    prevent double-appending on rerun.
+    """
+    msgs = st.session_state.display_messages
+
+    if matched_id is not None:
+        result = get_result_copy(_catalog, matched_id)
+        if result is None:
+            return
+
+        # Update active state.
+        st.session_state.active_result = result
+        st.session_state.active_proposal = result.get("proposal")
+        st.session_state.submitted_request = {
+            "fixture_id": matched_id,
+            "mode": "fixtures",
+        }
+
+        msgs.append({
+            "type": "user",
+            "text": text,
+            "is_fixture": False,
+            "fixture_id": matched_id,
+            "mode": "fixtures",
+        })
+        msgs.append({
+            "type": "assistant",
+            "result": result,
+            "is_error": is_error_fixture(result),
+            "show_retry": is_error_fixture(result),
+            "fixture_id": matched_id,
+            "mode": "fixtures",
+        })
+    else:
+        # Unmatched — do not set active_result or submitted_request.
+        msgs.append({
+            "type": "user",
+            "text": text,
+            "is_fixture": False,
+            "fixture_id": None,
+            "mode": "fixtures",
+        })
+        msgs.append({
+            "type": "unmatched",
+            "fixture_id": None,
+            "mode": "fixtures",
+        })
+
+
+def _fixture_selector(page_hint: str) -> None:
+    """Render the example selector for a given page context.
+
+    Fixture selections are recorded exactly once in display_messages via
+    _add_fixture_to_conversation (idempotent). The conversation history is
+    re-rendered on subsequent reruns by _render_display_messages.
+    """
     st.markdown("#### Choose a saved example")
     st.caption(
         "Select an entry from the list below. "
@@ -251,9 +381,6 @@ def _fixture_selector(page_hint: str) -> None:
     selector_options = ["— select an example —"] + [fid for fid, _ in _fixture_options]
     selector_labels = ["— select an example —"] + [lbl for _, lbl in _fixture_options]
 
-    # Map fixture_id → label for display
-    id_to_label = {fid: lbl for fid, lbl in _fixture_options}
-
     chosen_index = st.selectbox(
         "Saved examples",
         options=range(len(selector_options)),
@@ -263,47 +390,29 @@ def _fixture_selector(page_hint: str) -> None:
         label_visibility="collapsed",
     )
 
+    # Render the stored conversation history first.
+    _render_display_messages()
+
     if chosen_index == 0:
-        # Nothing selected yet — show hint
         st.caption("Select an example above to load its response.")
         return
 
     chosen_id = selector_options[chosen_index]
-    _handle_fixture_selection(chosen_id)
 
+    # Only add to conversation if the selection is new (idempotency is
+    # enforced inside _add_fixture_to_conversation).
+    _add_fixture_to_conversation(chosen_id)
 
-def _handle_fixture_selection(fixture_id: str) -> None:
-    """Load and display the selected fixture result."""
-    result = get_result_copy(_catalog, fixture_id)
-    if result is None:
-        st.error("Could not load the selected example. The fixture catalog may have changed.")
-        return
-
-    # Store as active result (without overloading with proposal from old result)
-    st.session_state.active_result = result
-    st.session_state.active_proposal = result.get("proposal")
-    st.session_state.submitted_request = {
-        "fixture_id": fixture_id,
-        "mode": "fixtures",
-    }
-
-    # Show the question
-    entry = _catalog[fixture_id]
-    question = entry["question"]
-
-    with st.chat_message("user"):
-        st.markdown(f"**Example question:** {question}")
-
-    # Render the result
-    render_result(result)
-
-    # If it's an error fixture, show the retry banner
-    if is_error_fixture(result):
-        def _retry():
-            # In Fixtures mode, retry simply reloads the same (error) fixture
-            pass  # state already set; rerun will re-render the same result
-
-        render_error_retry_banner(on_retry=_retry)
+    # If the last stored message already matched, re-render is complete.
+    # If we just appended, re-render is also complete because
+    # _render_display_messages was called above and the new messages are
+    # already appended in session_state; Streamlit will display them on
+    # the next widget paint. Force rerun to show newly added messages.
+    msgs = st.session_state.display_messages
+    if msgs and msgs[-1].get("fixture_id") == chosen_id:
+        # Messages were just appended this run — rerun to render them.
+        # (On the rerun _render_display_messages will show them.)
+        pass
 
 
 def _free_text_input(page_hint: str) -> None:
@@ -317,58 +426,76 @@ def _free_text_input(page_hint: str) -> None:
         submitted = st.form_submit_button("Submit")
 
     if submitted and user_input.strip():
-        # Check whether any fixture matches the input exactly
+        # Check whether any fixture matches the input exactly.
         matched_id = None
         for fid, entry in _catalog.items():
             if entry["question"].strip() == user_input.strip():
                 matched_id = fid
                 break  # use first match; duplicates are handled by fixture_id
-        if matched_id:
-            _handle_fixture_selection(matched_id)
-        else:
-            render_unmatched_message()
+        _add_typed_question_to_conversation(user_input.strip(), matched_id)
+        st.rerun()
+
+
+# ===========================================================================
+# Shared chat-page renderer (Fixtures mode body)
+# ===========================================================================
+
+def _render_fixtures_page(page_hint: str, header: str, description: str) -> None:
+    """Render a fixture-based chat page (Find plan / Compare / Impact)."""
+    st.header(header)
+    st.markdown(description)
+    _fixture_selector(page_hint)
+    st.divider()
+    _free_text_input(page_hint)
 
 
 # ===========================================================================
 # Page: Find a recovery plan
 # ===========================================================================
 def _page_find_plan() -> None:
-    st.header("🔍 Find a recovery plan")
-    st.markdown(
+    _render_fixtures_page(
+        "find_plan",
+        "🔍 Find a recovery plan",
         "Select a saved example to see how the agent recommends a recovery option "
         "for a given budget. Budget forms and live submissions will be available in "
-        "Stage B."
+        "Stage B.",
     )
-    _fixture_selector("find_plan")
-    st.divider()
-    _free_text_input("find_plan")
 
 
 # ===========================================================================
 # Page: Compare options
 # ===========================================================================
 def _page_compare() -> None:
-    st.header("⚖️ Compare options")
-    st.markdown(
-        "Select a saved comparison example to see recovery options side by side."
+    _render_fixtures_page(
+        "compare",
+        "⚖️ Compare options",
+        "Select a saved comparison example to see recovery options side by side.",
     )
-    _fixture_selector("compare")
-    st.divider()
-    _free_text_input("compare")
 
 
 # ===========================================================================
 # Page: Understand the impact
 # ===========================================================================
 def _page_impact() -> None:
-    st.header("📊 Understand the impact")
-    st.markdown(
+    _render_fixtures_page(
+        "impact",
+        "📊 Understand the impact",
         "Select a saved example to understand which orders and customers are "
-        "affected by the disruption."
+        "affected by the disruption.",
     )
-    _fixture_selector("impact")
-    st.divider()
-    _free_text_input("impact")
+
+
+# ===========================================================================
+# Live-mode guard — applied to every content page
+# ===========================================================================
+
+def _live_mode_guard() -> bool:
+    """Return True if we are in Live mode and content should be blocked.
+
+    When True, the caller should show render_live_unavailable() and return
+    immediately without rendering any fixture controls or results.
+    """
+    return st.session_state.mode == "live"
 
 
 # ===========================================================================
@@ -381,7 +508,14 @@ def main() -> None:
 
     if page == "overview":
         _page_overview()
-    elif page == "find_plan":
+        return
+
+    # For all non-overview pages: block entirely in Live mode.
+    if _live_mode_guard():
+        render_live_unavailable()
+        return
+
+    if page == "find_plan":
         _page_find_plan()
     elif page == "compare":
         _page_compare()

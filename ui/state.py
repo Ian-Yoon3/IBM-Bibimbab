@@ -24,10 +24,12 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 # Default values
 # ---------------------------------------------------------------------------
-_DEFAULTS: dict = {
+# Scalar and None defaults are safe to share across sessions.
+# Mutable defaults (lists, dicts) are produced fresh on each init call so
+# that multiple sessions in the same process never share the same object.
+_SCALAR_DEFAULTS: dict = {
     "mode": "fixtures",
     "current_page": "overview",
-    "display_messages": [],
     "agent_history": None,
     "active_result": None,
     "active_proposal": None,
@@ -41,10 +43,15 @@ def init_state() -> None:
     """Initialise every session-state key that does not yet exist.
 
     Safe to call on every Streamlit rerun — existing keys are untouched.
+    Mutable defaults (lists) are created fresh for each session so that
+    multiple concurrent sessions never share the same object.
     """
-    for key, default in _DEFAULTS.items():
+    for key, default in _SCALAR_DEFAULTS.items():
         if key not in st.session_state:
             st.session_state[key] = default
+    # display_messages must be a fresh list for each session.
+    if "display_messages" not in st.session_state:
+        st.session_state["display_messages"] = []
 
 
 def reset_conversation() -> None:

@@ -7,11 +7,14 @@ This document explains how to set up and run the Streamlit application on a loca
 ## Prerequisites
 
 - macOS (arm64) or any POSIX system
-- Python 3.9 or later (the system Python at `/usr/bin/python3` works)
+- **Python 3.11 or newer** (required for the full project, including backend engine)
 - Git checkout of the `ui` branch
 
 The application does **not** require a watsonx.ai API key to run in
 Fixtures (demo) mode.
+
+> **Virtual environments and secrets** must remain outside commits.
+> Neither `.venv311/` nor `.env` is tracked in version control.
 
 ---
 
@@ -21,18 +24,17 @@ Fixtures (demo) mode.
 # 1. Enter the project directory
 cd /Users/hyunsoo/Downloads/IBM-Bibimbab-ui   # adjust path as needed
 
-# 2. Create a virtual environment
-python3 -m venv .venv
+# 2. Create a virtual environment (Python 3.11 or newer)
+python3.11 -m venv .venv311
 
 # 3. Activate it
-source .venv/bin/activate
+source .venv311/bin/activate
 
 # 4. Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-The virtual environment `.venv/` is excluded from version control (see
-`.gitignore`). Repeat steps 2–4 on a fresh checkout.
+The project uses `.venv311/` as the canonical environment name.
 
 ---
 
@@ -40,7 +42,7 @@ The virtual environment `.venv/` is excluded from version control (see
 
 ```bash
 # From the project root with the virtual environment active:
-source .venv/bin/activate   # skip if already active
+source .venv311/bin/activate   # skip if already active
 python -m streamlit run app.py
 ```
 
@@ -52,32 +54,36 @@ in a browser.
 ## Running without activating the virtual environment
 
 ```bash
-.venv/bin/python -m streamlit run app.py
+.venv311/bin/python -m streamlit run app.py
 ```
 
 ---
 
 ## Running the test suites
 
-### Existing backend tests (Python 3.9 known issue)
+### Backend tests
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
+.venv311/bin/python -m unittest discover -s tests -v
 ```
 
-**Note:** On Python 3.9 there are 7 pre-existing import errors and 1 test
-failure caused by `str | None` union-type syntax in `engine/simulate.py`.
-These failures exist on the `ui` branch before any UI work and are not
-introduced by this implementation. The 5 candidate tests that do not
-import engine code pass.
+Result: **291 tests, 0 failures, 0 errors** on Python 3.11.
 
-### New UI tests
+### UI unit and regression tests
 
 ```bash
-.venv/bin/python -m unittest discover -s ui/tests -v
+.venv311/bin/python -m unittest discover -s ui/tests -v
 ```
 
-All 34 UI tests pass on Python 3.9.
+Result: **54 tests, 0 failures, 0 errors** (34 unit tests + 20 AppTest
+regression tests).
+
+Both test suites may be run together in a single discovery:
+
+```bash
+.venv311/bin/python -m unittest discover -s tests -v && \
+.venv311/bin/python -m unittest discover -s ui/tests -v
+```
 
 ---
 
@@ -91,10 +97,24 @@ The original fixture file is **never modified** by the running application.
 
 ---
 
-## Live agent mode (requires API key — Stage D)
+## Live agent mode — unavailable in Stage A
 
-Live mode is visible in the mode selector but intentionally unavailable in
-Stage A. Submitting a live request requires:
+**Live mode is unavailable throughout Stage A, even when a `WX_API_KEY`
+is present in the environment or in `.env`.**
+
+Selecting "Live agent" in the mode selector will display an explanation
+and block all fixture controls and question forms.  No AI service calls
+are made.
+
+Live mode will be enabled in Stage D once the API connection has been
+validated.
+
+---
+
+## Configuration for future live mode (Stage D)
+
+When live mode is enabled, the following environment variables are
+required:
 
 ```
 WX_API_KEY      (your IBM Cloud API key)
@@ -106,7 +126,8 @@ WX_MODEL_ID     (e.g. meta-llama/llama-3-3-70b-instruct)
 Copy `.env.example` to `.env` and fill in those values. The application
 reads them at startup via `python-dotenv`.
 
-**Never commit `.env` or paste a key into this file.**
+**Never commit `.env` or paste a key into this file or any source file.**
+The `.env` file and `.venv311/` directory must remain outside commits.
 
 ---
 
@@ -121,13 +142,11 @@ Secrets are entered in the app's hosting settings, not in the repository.
 
 ## Known limitations (Stage A)
 
+- **Live mode is blocked.** Even with an API key, live calls are not made.
+  Stage D will enable live integration.
 - Structured result cards (tables, KPI metrics) are not yet rendered.
   Stage B will add them.
 - Proposal approval/rejection controls are not yet wired. Stage C will
   add them.
-- Live agent mode is blocked until Stage D.
 - Decision log screen is marked *upcoming*.
 - File-based decision records are lost when the hosted app restarts.
-- The backend (`engine/`) uses `str | None` type hints that are not
-  supported on Python 3.9; use Python 3.10+ or the system interpreter if
-  the backend tests are needed.

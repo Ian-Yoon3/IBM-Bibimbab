@@ -7,6 +7,13 @@ Covers (without Streamlit runtime — uses a minimal st stub):
 - switch_mode changes mode and clears conversation.
 - navigate_to changes page without resetting conversation.
 - Switching modes does not carry over history or active_proposal.
+
+Isolation note
+--------------
+The fake Streamlit module is installed into sys.modules only for the
+duration of this module's import of ui.state.  It is restored afterwards
+so that AppTest-based tests (which need the *real* Streamlit) are not
+contaminated.
 """
 import sys
 import types
@@ -39,12 +46,40 @@ def _build_st_stub():
     return mod
 
 
-# Inject the stub before importing ui.state
+# ---------------------------------------------------------------------------
+# Scoped injection: install the stub, import ui.state, then restore BOTH
+# sys.modules["streamlit"] AND sys.modules["ui.state"] so that AppTest-based
+# tests get a fresh ui.state that uses real Streamlit.
+# ---------------------------------------------------------------------------
 _st_stub = _build_st_stub()
+_real_streamlit = sys.modules.get("streamlit")        # may be None or real module
+_real_ui_state  = sys.modules.get("ui.state")         # None on first import
+
 sys.modules["streamlit"] = _st_stub
 
-# Now import state (it will use the stub)
-from ui.state import init_state, navigate_to, reset_conversation, switch_mode  # noqa: E402
+# Import ui.state while the stub is in place.
+import ui.state as _ui_state_module  # noqa: E402
+
+# --- Restore real Streamlit -------------------------------------------------
+if _real_streamlit is None:
+    sys.modules.pop("streamlit", None)
+else:
+    sys.modules["streamlit"] = _real_streamlit
+
+# --- Restore ui.state -------------------------------------------------------
+# Remove the stub-linked cached module so that the next importer (AppTest's
+# script runner) gets a fresh module object bound to real Streamlit.
+if _real_ui_state is None:
+    sys.modules.pop("ui.state", None)
+else:
+    sys.modules["ui.state"] = _real_ui_state
+
+# Bring the public helpers into this test module's namespace.
+# They still work because _ui_state_module keeps a reference to _st_stub.
+init_state = _ui_state_module.init_state
+navigate_to = _ui_state_module.navigate_to
+reset_conversation = _ui_state_module.reset_conversation
+switch_mode = _ui_state_module.switch_mode
 
 
 class TestInitState(unittest.TestCase):

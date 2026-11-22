@@ -52,3 +52,46 @@ the file here as `session1_stage_a.json` or similar.
 
 **Next stage:** Stage B — budget form, exact fixture-settings matching,
 structured renderers (tables, KPI cards).
+
+---
+
+### Session 2 — Stage A UI Repair (2026-11-21)
+
+**Task:** Fix verified Stage A UI defects on the `ui` branch (commit 9b2be78).
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `app.py` | Rewrote fixture selection/rendering to use `display_messages`; added live mode guard; selector key cleanup on mode switch and New conversation |
+| `ui/state.py` | Fixed shared mutable default for `display_messages` (fresh list per session) |
+| `ui/tests/test_state.py` | Scoped fake Streamlit stub — restores `sys.modules["streamlit"]` and `sys.modules["ui.state"]` after import |
+| `ui/tests/test_app_regression.py` | New: 20 AppTest regression tests covering both defects |
+| `docs/ui-runbook.md` | Updated: Python 3.11, `.venv311/`, removed Python 3.9 claims, clarified Live mode unavailability |
+| `docs/ui-validation.md` | Replaced: documents defects, fixes, actual test counts |
+| `bob_sessions/hyunsoo/README.md` | This file |
+
+**Defects fixed:**
+
+1. **Live mode did not block fixture interactions** — Switching to Live mode
+   left the previously selected fixture visible. The overview page showed a
+   misleading watsonx.ai credit warning. Non-overview pages had no guard.
+   Fixed by adding `_live_mode_guard()`, returning early with
+   `render_live_unavailable()` on all pages in Live mode, and explicitly
+   deleting selector widget keys on mode switch.
+
+2. **Typed question answers disappeared on rerun** — `display_messages` was
+   never populated; results were rendered only once on the submission run.
+   Fixed by recording every submission in `display_messages` and replaying
+   via `_render_display_messages()` on every render pass. Also fixed a shared
+   mutable default (`display_messages = []` in `_DEFAULTS`) that caused
+   cross-session contamination between AppTest instances.
+
+**Test results:**
+- Backend tests: 291 / 291 pass
+- UI tests: 54 / 54 pass (34 unit + 20 AppTest regression)
+- Reference verification: PASS
+- Browser verification: **not performed** — AppTest only
+
+**Reviewed commit:** 9b2be7893602514a38000b67ff14a4c159d944d9
+**Changes are local only.** No commit, push, or PR was made.
