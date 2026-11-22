@@ -385,5 +385,437 @@ class TestUnmatchedInput(unittest.TestCase):
         self.assertGreater(msgs1, 0, "No messages recorded for unmatched input")
 
 
+# ===========================================================================
+# Stage A Regression Tests — Cases A through K
+# Added to fix regressions A, B, and C (commit 495b7f5)
+# ===========================================================================
+
+# Indices in the find_plan selectbox (0 = placeholder):
+_IDX_A = 1   # conv1_t1_i0  — $500 recommendation
+_IDX_B = 2   # conv2_t1_i1  — $800 recommendation
+_IDX_ERROR = 23  # converror_t1_i22 — error fixture (same question as _IDX_A)
+
+# Exact question texts for the two non-error 500/800 fixtures
+_Q_500 = "Our budget is 500 dollars. What should we do?"
+_Q_800 = "We can spend up to $800. Which option?"
+
+# Total number of non-placeholder fixture options
+_TOTAL_FIXTURES = 23
+
+
+class TestRegressionA_FirstSelectionDisplaysAnswer(unittest.TestCase):
+    """Regression A: Every fixture displays its answer immediately after one
+    selection interaction — no extra click or rerun required."""
+
+    def _check_fixture_at_index(self, idx: int) -> None:
+        """Select fixture at *idx* in a fresh session and verify answer rendered."""
+        at = _boot()
+        _go_to_find_plan(at)
+        at.selectbox(key="fixture_selector_find_plan").select_index(idx)
+        at.run()
+
+        self.assertEqual(len(at.exception), 0,
+                         f"App raised exception for fixture index {idx}: {list(at.exception)}")
+
+        msgs = at.session_state.get("display_messages", [])
+        self.assertGreaterEqual(len(msgs), 2,
+                                f"Expected ≥2 messages for fixture {idx}, got {len(msgs)}")
+
+        # Verify the assistant answer is actually rendered as markdown.
+        # The last assistant message's answer text must appear in the
+        # rendered markdown elements.
+        last_assistant = next(
+            (m for m in reversed(msgs) if m.get("type") == "assistant"), None
+        )
+        self.assertIsNotNone(last_assistant,
+                             f"No assistant message in display_messages for fixture {idx}")
+
+        # For error fixtures, the safe error answer is rendered.
+        expected_answer = last_assistant["result"].get("answer", "")
+        # At least the first 60 characters of the answer must appear in
+        # the rendered markdown elements.
+        rendered_texts = " ".join(m.value for m in at.markdown)
+        snippet = expected_answer[:60]
+        self.assertIn(snippet, rendered_texts,
+                      f"Answer not rendered for fixture {idx}.\n"
+                      f"Expected snippet: {snippet!r}\n"
+                      f"Rendered: {rendered_texts[:300]!r}")
+
+    def test_all_23_fixtures_display_answer_immediately(self):
+        """All 23 fixtures show their answer after exactly one selection."""
+        for idx in range(1, _TOTAL_FIXTURES + 1):
+            with self.subTest(selector_index=idx):
+                self._check_fixture_at_index(idx)
+
+
+class TestRegressionB_SelectorDoesNotOverrideTypedQuestion(unittest.TestCase):
+    """Regression B: A stale selector value does not override a new typed
+    question on subsequent reruns."""
+
+    def test_typed_500_then_800_keeps_800_as_current(self):
+        """Select $500 fixture, then type the $800 question; $800 must stay current."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Select $500 fixture (selector index 1)
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv1_t1_i0",
+            "submitted_request should point to $500 fixture after selection",
+        )
+
+        # Type the $800 question through the form
+        at.text_input(key="free_text_find_plan").input(_Q_800)
+        at.form_submit_button(
+            key="FormSubmitter:free_text_form_find_plan-Submit"
+        ).click()
+        at.run()
+
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv2_t1_i1",
+            "submitted_request should point to $800 fixture after form submission",
+        )
+
+        # Ordinary rerun — the selector widget still shows $500 but must
+        # not replay that old selection.
+        at.run()
+        at.run()
+
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv2_t1_i1",
+            "submitted_request reverted to $500 on ordinary rerun (Regression B)",
+        )
+        msgs = at.session_state.get("display_messages", [])
+        self.assertEqual(len(msgs), 4,
+                         f"Expected exactly 4 messages (A+B), got {len(msgs)}")
+
+        # Verify the $800 answer is rendered
+        rendered_texts = " ".join(m.value for m in at.markdown)
+        self.assertIn("$800", rendered_texts,
+                      "$800 answer text not found after ordinary rerun")
+
+        self.assertEqual(len(at.exception), 0,
+                         f"App raised exception: {list(at.exception)}")
+
+    def test_consecutive_different_fixtures_shows_newest(self):
+        """Selecting A then B shows B as the current answer."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_B)
+        at.run()
+
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv2_t1_i1",
+            "After A→B, submitted_request should be B",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+    def test_explicit_a_b_a_selection_sequence(self):
+        """Explicit A → B → A selector sequence keeps A as current result."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_B)
+        at.run()
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+
+        # 6 messages: A user+assistant, B user+assistant, A user+assistant
+        msgs = at.session_state.get("display_messages", [])
+        self.assertEqual(len(msgs), 6,
+                         f"Expected 6 messages for A→B→A, got {len(msgs)}")
+
+        self.assertEqual(
+            at.session_state.get("submitted_request", {}).get("fixture_id"),
+            "conv1_t1_i0",
+            "submitted_request should be A after explicit A→B→A selection",
+        )
+
+        user_fixture_ids = [
+            m.get("fixture_id") for m in msgs if m.get("type") == "user"
+        ]
+        self.assertEqual(
+            user_fixture_ids,
+            ["conv1_t1_i0", "conv2_t1_i1", "conv1_t1_i0"],
+            "Conversation order incorrect for A→B→A",
+        )
+        self.assertEqual(len(at.exception), 0)
+
+    def test_ordinary_rerun_does_not_add_messages_after_selection(self):
+        """An ordinary rerun after fixture selection does not add messages."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        base = len(at.session_state.get("display_messages", []))
+        self.assertGreater(base, 0)
+
+        at.run()
+        at.run()
+        self.assertEqual(
+            len(at.session_state.get("display_messages", [])),
+            base,
+            "Ordinary rerun added messages (selector replay — Regression B)",
+        )
+
+
+class TestRegressionC_RepeatedErrorFixturesNoCrash(unittest.TestCase):
+    """Regression C: Multiple historical error fixtures in one conversation
+    must not crash with a duplicate element ID error."""
+
+    def test_error_success_error_no_crash(self):
+        """Error → success → error accumulates 6 messages without exception."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+        self.assertEqual(len(at.exception), 0,
+                         f"Exception after first error: {list(at.exception)}")
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        self.assertEqual(len(at.exception), 0,
+                         f"Exception after success: {list(at.exception)}")
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+        self.assertEqual(len(at.exception), 0,
+                         f"Exception after second error (Regression C): {list(at.exception)}")
+
+        msgs = at.session_state.get("display_messages", [])
+        self.assertEqual(len(msgs), 6,
+                         f"Expected 6 messages for error→success→error, got {len(msgs)}")
+
+        # Both error messages should be marked as errors
+        error_msgs = [m for m in msgs if m.get("type") == "assistant" and m.get("is_error")]
+        self.assertEqual(len(error_msgs), 2,
+                         f"Expected 2 error assistant messages, got {len(error_msgs)}")
+
+    def test_error_banner_text_distinct_from_app_exception(self):
+        """The error fixture shows a warning banner, not an unhandled exception."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+
+        # Must have zero unhandled exceptions
+        self.assertEqual(len(at.exception), 0,
+                         f"Unhandled exception: {list(at.exception)}")
+
+        # The error answer text must be rendered
+        rendered = " ".join(m.value for m in at.markdown)
+        self.assertIn("AI service could not be reached", rendered,
+                      "Error answer text not rendered")
+
+    def test_retry_button_has_no_exception_for_accumulated_errors(self):
+        """Retry buttons for accumulated error messages raise no exception."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        # Accumulate two error fixtures
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_ERROR)
+        at.run()
+
+        # Verify no duplicate-key exception from rendering two retry banners
+        self.assertEqual(len(at.exception), 0,
+                         f"Exception after accumulating two error messages: {list(at.exception)}")
+
+        # Verify retry buttons are present (there should be 2 — one per error message)
+        retry_buttons = [b for b in at.button if "retry_" in (b.key or "")]
+        self.assertEqual(len(retry_buttons), 2,
+                         f"Expected 2 retry buttons, got {len(retry_buttons)}: "
+                         f"{[b.key for b in retry_buttons]}")
+
+
+class TestRegressionG_UnmatchedInputAfterResult(unittest.TestCase):
+    """Regression G: Unmatched input does not reuse the previous active result."""
+
+    def test_unmatched_after_fixture_keeps_limitation_message(self):
+        """After a fixture selection, an unmatched typed question shows limitation."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        self.assertIsNotNone(at.session_state.get("active_result"))
+
+        at.text_input(key="free_text_find_plan").input(_QUESTION_UNMATCHED)
+        at.form_submit_button(
+            key="FormSubmitter:free_text_form_find_plan-Submit"
+        ).click()
+        at.run()
+
+        # active_result remains from the previous fixture (not cleared by unmatched)
+        # but the limitation message must be shown — the previous answer is NOT
+        # presented as the response to the new unmatched question.
+        infos = [i.value for i in at.info]
+        self.assertTrue(
+            any("saved examples" in i.lower() for i in infos),
+            f"Limitation message not shown after unmatched input; infos: {infos}",
+        )
+
+        msgs = at.session_state.get("display_messages", [])
+        last_msg = msgs[-1] if msgs else None
+        self.assertIsNotNone(last_msg)
+        self.assertEqual(last_msg.get("type"), "unmatched",
+                         "Last message should be 'unmatched' type")
+        self.assertEqual(len(at.exception), 0)
+
+
+class TestRegressionH_NewConversationClearsTracking(unittest.TestCase):
+    """Regression H: New conversation clears selection-tracking state."""
+
+    def test_new_conversation_clears_last_handled_selector(self):
+        """New conversation deletes last_handled_selector_* keys."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        self.assertIn("last_handled_selector_find_plan", at.session_state)
+
+        at.button(key="new_conv").click()
+        at.run()
+
+        self.assertNotIn("last_handled_selector_find_plan", at.session_state,
+                         "last_handled_selector_find_plan persisted after New conversation")
+        self.assertEqual(at.session_state.get("display_messages"), [])
+        self.assertIsNone(at.session_state.get("active_result"))
+        self.assertIsNone(at.session_state.get("submitted_request"))
+
+    def test_new_conversation_then_re_select_works(self):
+        """After New conversation, re-selecting the same fixture works again."""
+        at = _boot()
+        _go_to_find_plan(at)
+
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        at.button(key="new_conv").click()
+        at.run()
+        _go_to_find_plan(at)
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+
+        msgs = at.session_state.get("display_messages", [])
+        self.assertEqual(len(msgs), 2,
+                         "Re-selecting after New conversation should produce 2 messages")
+        self.assertEqual(len(at.exception), 0)
+
+
+class TestRegressionI_LiveModeBlockedAllPages(unittest.TestCase):
+    """Regression I: Live mode remains blocked on every page."""
+
+    def test_live_blocks_find_plan_fixture_controls(self):
+        """Live mode on find_plan blocks the fixture selector."""
+        at = _boot()
+        at.radio(key="mode_radio").set_value("Live agent")
+        at.run()
+        at.button(key="nav_find_plan").click()
+        at.run()
+
+        self.assertEqual(len(at.selectbox), 0,
+                         "Fixture selector visible in Live mode (find_plan)")
+        self.assertEqual(len(at.exception), 0)
+
+    def test_live_blocks_compare_fixture_controls(self):
+        """Live mode on compare blocks the fixture selector."""
+        at = _boot()
+        at.radio(key="mode_radio").set_value("Live agent")
+        at.run()
+        at.button(key="nav_compare").click()
+        at.run()
+
+        self.assertEqual(len(at.selectbox), 0,
+                         "Fixture selector visible in Live mode (compare)")
+        self.assertEqual(len(at.exception), 0)
+
+    def test_live_blocks_impact_fixture_controls(self):
+        """Live mode on impact blocks the fixture selector."""
+        at = _boot()
+        at.radio(key="mode_radio").set_value("Live agent")
+        at.run()
+        at.button(key="nav_impact").click()
+        at.run()
+
+        self.assertEqual(len(at.selectbox), 0,
+                         "Fixture selector visible in Live mode (impact)")
+        self.assertEqual(len(at.exception), 0)
+
+
+class TestRegressionJ_ReturnFromLiveToFixtures(unittest.TestCase):
+    """Regression J: Returning from Live to Fixtures starts cleanly."""
+
+    def test_fixtures_live_fixtures_clean_start(self):
+        """Fixtures → Live → Fixtures gives an empty conversation."""
+        at = _boot()
+        _go_to_find_plan(at)
+        at.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at.run()
+        self.assertGreater(len(at.session_state.get("display_messages", [])), 0)
+
+        at.radio(key="mode_radio").set_value("Live agent")
+        at.run()
+        at.radio(key="mode_radio").set_value("Fixtures")
+        at.run()
+
+        self.assertEqual(at.session_state.get("display_messages"), [],
+                         "Messages not cleared after Fixtures→Live→Fixtures")
+        self.assertIsNone(at.session_state.get("active_result"))
+        self.assertIsNone(at.session_state.get("submitted_request"))
+        # last_handled_selector must also be cleared
+        self.assertNotIn("last_handled_selector_find_plan", at.session_state,
+                         "last_handled_selector not cleared after mode switch cycle")
+
+
+class TestRegressionK_SeparateSessionsDoNotShareState(unittest.TestCase):
+    """Regression K: Separate sessions do not share mutable conversation state."""
+
+    def test_two_independent_sessions(self):
+        """Two AppTest instances start with independent empty conversation state."""
+        at1 = _boot()
+        at2 = _boot()
+
+        _go_to_find_plan(at1)
+        at1.selectbox(key="fixture_selector_find_plan").select_index(_IDX_A)
+        at1.run()
+
+        # at2 must still have an empty conversation
+        msgs2 = at2.session_state.get("display_messages", [])
+        self.assertEqual(msgs2, [],
+                         "Session 2 inherited state from Session 1 (shared mutable default)")
+
+    def test_session1_mutation_not_visible_in_session2(self):
+        """Mutations to session 1's display_messages do not affect session 2."""
+        at1 = _boot()
+        at2 = _boot()
+
+        # Add a message to session 1
+        at1.session_state["display_messages"].append({"type": "user", "text": "test"})
+
+        # Session 2 must remain empty
+        msgs2 = at2.session_state.get("display_messages", [])
+        self.assertEqual(msgs2, [],
+                         "Mutating session 1 display_messages affected session 2")
+
+
+
+
 if __name__ == "__main__":
     unittest.main()

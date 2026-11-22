@@ -246,7 +246,7 @@ def _page_overview() -> None:
 
 def _render_display_messages() -> None:
     """Re-render every stored conversation message from display_messages."""
-    for msg in st.session_state.display_messages:
+    for idx, msg in enumerate(st.session_state.display_messages):
         msg_type = msg.get("type")
         if msg_type == "user":
             with st.chat_message("user"):
@@ -255,7 +255,10 @@ def _render_display_messages() -> None:
         elif msg_type == "assistant":
             render_result(msg["result"])
             if msg.get("is_error") and msg.get("show_retry"):
-                render_error_retry_banner(on_retry=lambda: None)
+                # Regression C fix: pass a unique key per message so that
+                # multiple historical error banners do not collide on the
+                # same Streamlit element ID.
+                render_error_retry_banner(on_retry=lambda: None, msg_key=str(idx))
         elif msg_type == "unmatched":
             render_unmatched_message()
 
@@ -366,9 +369,14 @@ def _add_typed_question_to_conversation(
 def _fixture_selector(page_hint: str) -> None:
     """Render the example selector for a given page context.
 
-    Fixture selections are recorded exactly once in display_messages via
-    _add_fixture_to_conversation (idempotent). The conversation history is
-    re-rendered on subsequent reruns by _render_display_messages.
+    Regression A fix: selection is processed BEFORE rendering so that the
+    resulting messages are visible on the same interaction (via st.rerun()).
+
+    Regression B fix: ``last_handled_selector_{page_hint}`` tracks which
+    fixture_id was most recently *processed*, independently of the widget
+    value.  A selection is only processed when the chosen_id differs from
+    that tracking key, so a form submission or ordinary rerun cannot replay
+    a stale widget value and overwrite the current conversation.
     """
     st.markdown("#### Choose a saved example")
     st.caption(
@@ -390,29 +398,29 @@ def _fixture_selector(page_hint: str) -> None:
         label_visibility="collapsed",
     )
 
-    # Render the stored conversation history first.
-    _render_display_messages()
+    handled_key = f"last_handled_selector_{page_hint}"
 
     if chosen_index == 0:
+        # Render the existing conversation and show the prompt.
+        _render_display_messages()
         st.caption("Select an example above to load its response.")
         return
 
     chosen_id = selector_options[chosen_index]
 
-    # Only add to conversation if the selection is new (idempotency is
-    # enforced inside _add_fixture_to_conversation).
-    _add_fixture_to_conversation(chosen_id)
+    # Regression B: only process a selection when it is a *new* event —
+    # i.e. the chosen_id has not already been handled in a previous render.
+    # This prevents a stale widget value from replaying after a form
+    # submission or an ordinary rerun.
+    if st.session_state.get(handled_key) != chosen_id:
+        _add_fixture_to_conversation(chosen_id)
+        st.session_state[handled_key] = chosen_id
+        # Regression A: immediately rerun so that _render_display_messages
+        # on the next pass shows the newly added messages.
+        st.rerun()
 
-    # If the last stored message already matched, re-render is complete.
-    # If we just appended, re-render is also complete because
-    # _render_display_messages was called above and the new messages are
-    # already appended in session_state; Streamlit will display them on
-    # the next widget paint. Force rerun to show newly added messages.
-    msgs = st.session_state.display_messages
-    if msgs and msgs[-1].get("fixture_id") == chosen_id:
-        # Messages were just appended this run — rerun to render them.
-        # (On the rerun _render_display_messages will show them.)
-        pass
+    # On subsequent reruns the selection is already handled; just render.
+    _render_display_messages()
 
 
 def _free_text_input(page_hint: str) -> None:

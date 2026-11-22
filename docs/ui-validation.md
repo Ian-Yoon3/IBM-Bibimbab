@@ -1,7 +1,7 @@
-# UI Validation Report — Stage A (Repaired)
+# UI Validation Report — Stage A (Repaired, Session 3)
 
-**Date:** 2026-11-21  
-**Branch:** ui (commit 9b2be78 + local Stage A repairs)  
+**Date:** 2026-11-22  
+**Branch:** ui (commit 495b7f5 + local Stage A repairs, Session 3)  
 **Python:** 3.11.18 (virtual environment `.venv311/`)  
 **Streamlit:** 1.67.0
 
@@ -22,16 +22,16 @@
 
 ---
 
-## 2. Historical context — Python 3.9 environment (prior session)
+## 2. Historical context
 
-A previous validation session used Python 3.9.6 with a `.venv/` environment.
-On that version, 7 import errors and 1 test failure occurred due to `str | None`
-union-type syntax in `engine/simulate.py`, which is not supported on Python 3.9.
-Those failures were pre-existing and not introduced by UI work.
+### Session 1 — Stage A Implementation (Python 3.9.6, `.venv/`)
+A previous session used Python 3.9.6. On that version, 7 import errors and 1 test failure
+occurred due to `str | None` union-type syntax in `engine/simulate.py`. Those are pre-existing
+and not introduced by UI work. **This session uses Python 3.11.18.** All 291 backend tests pass.
 
-**The current session uses Python 3.11.18.** All 291 backend tests pass on this
-version. The Python 3.9 incompatibility is not an `engine/simulate.py` defect
-requiring code changes — it is a Python version requirement.
+### Session 2 — Stage A Repair (Commit 495b7f5 base)
+Two defects were fixed: Live mode did not block fixture interactions, and typed question answers
+disappeared on rerun. 54 UI tests passed after those fixes.
 
 ---
 
@@ -46,54 +46,84 @@ Result: **291 tests, 0 failures, 0 errors — ALL PASS**
 
 ---
 
-## 4. Reproduced defects
+## 4. Reproduced Stage A regressions (Session 3)
 
-The following two defects were identified by real app interaction testing
-on the reviewed commit (9b2be78) and have been fixed in this repair session.
+The following three regressions were identified against commit 495b7f5 and fixed in this session.
 
-### Defect 1 — Live mode did not block fixture interactions
+### Regression A — First fixture selection did not display its answer
 
-**Cause:**
-- `switch_mode()` cleared conversation state correctly, but the mode radio
-  widget's previous value remained in `st.session_state`, causing a rerun to
-  immediately reload the previously selected fixture.
-- The overview page displayed a misleading "Submitting a request will call
-  watsonx.ai" warning even though live integration is not implemented.
-- Non-overview pages (`find_plan`, `compare`, `impact`) had no rendering guard
-  for Live mode; fixture selectors and question forms were still shown.
+**Symptom:**
+1. Start a fresh session in Fixtures mode.
+2. Navigate to "Find a recovery plan".
+3. Select the first saved example once.
+4. Inspect the rendered page.
 
-**Fix:**
-- Added a `_live_mode_guard()` check in `main()` that returns early with
-  `render_live_unavailable()` for all non-overview pages when in Live mode.
-- Overview page now calls `render_live_unavailable()` and returns early
-  when in Live mode (removes the misleading watsonx.ai warning).
-- Mode switch and "New conversation" now explicitly delete selector widget
-  keys (`fixture_selector_<page_hint>`) from `st.session_state` to prevent
-  Streamlit from restoring the old selection on the next rerun.
-- Sidebar caption updated from "🤖 Live agent (requires API key)" to
-  "🔒 Live agent — not available in Stage A".
+Observed: two messages stored in `display_messages`, but the answer was not rendered.
+An additional ordinary rerun made it visible.
 
-### Defect 2 — Typed question answers disappeared on rerun
-
-**Cause:**
-- `_handle_fixture_selection()` and `_free_text_input()` rendered results
-  imperatively on the submission run only. `display_messages` was never
-  populated, so subsequent reruns had nothing to re-render.
-- `_DEFAULTS["display_messages"] = []` assigned a single shared list to all
-  sessions; multiple AppTest instances in the same process shared the same
-  list object, causing cross-test contamination.
+**Root cause:**
+`_fixture_selector()` called `_render_display_messages()` *before* `_add_fixture_to_conversation()`.
+The `pass` statement at the end that was supposed to `st.rerun()` never triggered a rerun.
 
 **Fix:**
-- Introduced `display_messages` as the persistent conversation store.
-  Each submitted question (typed or selector) is recorded via
-  `_add_typed_question_to_conversation()` or `_add_fixture_to_conversation()`.
-- Added `_render_display_messages()`, called on every render pass, to
-  replay all stored messages from `display_messages`.
-- Idempotency check in `_add_fixture_to_conversation()` prevents
-  duplicate messages on repeated reruns with the same fixture selected.
-- Fixed `ui/state.py`: `display_messages` is now created as a **fresh list**
-  per session (`if "display_messages" not in st.session_state: ... = []`)
-  instead of assigning the shared `_DEFAULTS` list object.
+- In `_fixture_selector()`, call `_add_fixture_to_conversation()` first.
+- After adding new messages, call `st.rerun()` immediately so the new messages are rendered on
+  the very next pass.
+- Only rerun when the selection is new (guarded by the `last_handled_selector_*` check), to
+  avoid unconditional rerun loops.
+
+---
+
+### Regression B — Previous selector value overrode a new typed question
+
+**Symptom:**
+1. Select the saved $500 example.
+2. Submit "We can spend up to $800. Which option?" through the text form.
+3. Perform an ordinary rerun.
+
+Observed: the $800 answer appeared, then the $500 fixture was automatically appended again;
+`active_result` reverted to $500; the conversation became A → B → A without the user selecting A again.
+
+**Root cause:**
+The selector widget was processed on every render. The idempotency check only looked at the
+*last message's* `fixture_id`, which was now `conv2_t1_i1` ($800). Since `conv1_t1_i0` ($500)
+differed from that last ID, `_add_fixture_to_conversation()` appended it again.
+
+**Fix:**
+- Added `last_handled_selector_{page_hint}` as a session state key.
+- `_fixture_selector()` only calls `_add_fixture_to_conversation()` when `chosen_id` differs
+  from `last_handled_selector_{page_hint}`.
+- After processing, sets `last_handled_selector_{page_hint} = chosen_id`.
+- `reset_conversation()` in `ui/state.py` clears all `last_handled_selector_*` keys so that
+  "New conversation" and mode switches start cleanly.
+
+**Preserved behaviour:**
+- Explicit A → B → A selector sequence still adds three entries to the conversation.
+- After submitting typed question B while selector shows A, ordinary reruns do not replay A.
+
+---
+
+### Regression C — Repeated error examples crashed with duplicate button IDs
+
+**Symptom:**
+1. Select the error fixture.
+2. Select a normal fixture.
+3. Select the error fixture again.
+4. Render the accumulated conversation.
+
+Observed: Streamlit raised a duplicate element ID error — multiple historical error messages
+each called `st.button("Try again")` without a unique key.
+
+**Root cause:**
+`render_error_retry_banner()` in `ui/renderers.py` created `st.button("Try again")` without
+a `key=` argument. When multiple error messages were in `display_messages`, each rendered its
+own unkeyed button, and Streamlit detected the collision.
+
+**Fix:**
+- Added a `msg_key: str = "0"` keyword argument to `render_error_retry_banner()`.
+- Changed `st.button("Try again", ...)` to `st.button("Try again", key=f"retry_{msg_key}", ...)`.
+- In `_render_display_messages()`, enumerate messages and pass `msg_key=str(idx)` to the
+  renderer, giving each retry banner a stable unique identity per message position.
 
 ---
 
@@ -104,7 +134,7 @@ Command:
 .venv311/bin/python -m unittest discover -s ui/tests -v
 ```
 
-Result: **54 tests, 0 failures, 0 errors — ALL PASS**
+Result: **71 tests, 0 failures, 0 errors — ALL PASS**
 
 | Test module / class | Tests | Result |
 |---|---|---|
@@ -120,46 +150,62 @@ Result: **54 tests, 0 failures, 0 errors — ALL PASS**
 | `test_state.TestSwitchMode` | 5 | ✅ |
 | `test_state.TestNavigateTo` | 2 | ✅ |
 | `test_app_regression.TestTypedQuestionPersistence` | 6 | ✅ |
-| `test_app_regression.TestLiveModeBlocking` | 11 | ✅ |
+| `test_app_regression.TestLiveModeBlocking` | **10** | ✅ |
 | `test_app_regression.TestDuplicateQuestionFixtures` | 1 | ✅ |
 | `test_app_regression.TestUnmatchedInput` | 3 | ✅ |
+| `test_app_regression.TestRegressionA_FirstSelectionDisplaysAnswer` | 1 | ✅ |
+| `test_app_regression.TestRegressionB_SelectorDoesNotOverrideTypedQuestion` | 4 | ✅ |
+| `test_app_regression.TestRegressionC_RepeatedErrorFixturesNoCrash` | 3 | ✅ |
+| `test_app_regression.TestRegressionG_UnmatchedInputAfterResult` | 1 | ✅ |
+| `test_app_regression.TestRegressionH_NewConversationClearsTracking` | 2 | ✅ |
+| `test_app_regression.TestRegressionI_LiveModeBlockedAllPages` | 3 | ✅ |
+| `test_app_regression.TestRegressionJ_ReturnFromLiveToFixtures` | 1 | ✅ |
+| `test_app_regression.TestRegressionK_SeparateSessionsDoNotShareState` | 2 | ✅ |
 
-**test_state.py isolation note:** The fake Streamlit module stub is now
-scoped — both `sys.modules["streamlit"]` and `sys.modules["ui.state"]` are
-restored after the import, so AppTest-based tests in the same discovery
-run get a fresh `ui.state` bound to real Streamlit.
+**Note on `TestLiveModeBlocking`:** This class contains **10** tests, not 11 as stated in the
+Session 2 report. The count has been corrected here.
+
+**AppTest total:** 37 tests (20 from Session 2 + 17 new in Session 3).  
+**Unit test total:** 34 tests (unchanged from Session 2).  
+**Grand total:** 71 tests.
 
 ---
 
-## 6. AppTest regression coverage
+## 6. AppTest regression coverage (Session 3 additions)
 
-The 20 new AppTest tests in `ui/tests/test_app_regression.py` verify:
+**Regression A (TestRegressionA_FirstSelectionDisplaysAnswer):**
+- All 23 fixtures display their answer immediately after one selection (subtests by index).
+  Checks actual rendered markdown text, not just `display_messages` count.
 
-**Defect 2 regressions (TestTypedQuestionPersistence):**
-- Typed matched question → answer visible immediately after submit
-- Answer count unchanged on plain rerun (no disappearance)
-- Repeated reruns do not duplicate messages
-- Fixture selection stores user + assistant messages in `display_messages`
-- Navigation preserves conversation state
-- New conversation clears messages, results, proposals, and selections
+**Regression B (TestRegressionB_SelectorDoesNotOverrideTypedQuestion):**
+- Selecting $500 then submitting typed $800 question leaves $800 as the current result
+  through ordinary reruns.
+- Consecutive different fixture selections show the newest answer.
+- Explicit A → B → A selector sequence correctly adds 3 conversation entries.
+- Ordinary rerun does not add messages after selection.
 
-**Defect 1 regressions (TestLiveModeBlocking):**
-- Live mode shows unavailable warning on find_plan page
-- Live mode hides fixture selector
-- Live mode hides text input form
-- Switching to Live clears `active_result`
-- Switching to Live clears `active_proposal` (proposal fixture test)
-- Switching to Live clears `display_messages`
-- Switching to Live deletes selector widget key
-- Live guard fires on compare and impact pages (all non-overview pages)
-- Overview page also shows unavailable in Live mode
-- Switching back to Fixtures starts cleanly with empty conversation
+**Regression C (TestRegressionC_RepeatedErrorFixturesNoCrash):**
+- Error → success → error accumulates 6 messages without exception.
+- Error fixture shows a warning banner, not an unhandled exception.
+- Accumulated error messages each have a unique retry button key; no duplicate-ID crash.
 
-**Other regressions:**
-- Error and success fixtures with identical question text are independently
-  selectable and have different fixture IDs (TestDuplicateQuestionFixtures)
-- Unmatched input shows limitation message, not substituted result
-  (TestUnmatchedInput × 3)
+**Case G (TestRegressionG_UnmatchedInputAfterResult):**
+- After a fixture selection, an unmatched typed question shows the limitation message
+  and records an "unmatched" message, not a reuse of the previous result.
+
+**Case H (TestRegressionH_NewConversationClearsTracking):**
+- New conversation deletes `last_handled_selector_*` keys.
+- After New conversation, re-selecting the same fixture works correctly.
+
+**Case I (TestRegressionI_LiveModeBlockedAllPages):**
+- Live mode blocks fixture controls on find_plan, compare, and impact pages.
+
+**Case J (TestRegressionJ_ReturnFromLiveToFixtures):**
+- Fixtures → Live → Fixtures gives an empty conversation and clears `last_handled_selector_*`.
+
+**Case K (TestRegressionK_SeparateSessionsDoNotShareState):**
+- Two AppTest instances start with independent empty conversation state.
+- Mutating one session's `display_messages` does not affect the other.
 
 ---
 
@@ -170,32 +216,36 @@ The 20 new AppTest tests in `ui/tests/test_app_regression.py` verify:
 | App starts with `python -m streamlit run app.py` | ✅ |
 | Overview and saved responses work without `WX_API_KEY` | ✅ |
 | All 23 fixture entries are selectable | ✅ |
+| First fixture selection displays answer immediately (no extra rerun) | ✅ Fixed (Regression A) |
 | Successful and error responses with the same question are independently selectable | ✅ |
-| Typed question answers persist across reruns | ✅ Fixed |
-| Repeated reruns do not duplicate messages | ✅ Fixed |
-| Live mode blocks all fixture controls and question forms | ✅ Fixed |
-| Switching to Live clears conversation, results, proposals, selections | ✅ Fixed |
-| Live mode shows clear unavailable explanation (no misleading AI credit warning) | ✅ Fixed |
-| Overview in Live mode shows unavailable, not watsonx.ai credit warning | ✅ Fixed |
-| Unmatched input is not silently replaced by the first fixture | ✅ |
-| New conversation clears all conversation state and widget selections | ✅ Fixed |
+| Typed question answers persist across reruns | ✅ |
+| Repeated reruns do not duplicate messages | ✅ |
+| Selector value does not override a new typed question on rerun | ✅ Fixed (Regression B) |
+| Explicit A → B → A selector sequence is preserved | ✅ |
+| Repeated error fixtures do not crash with duplicate button IDs | ✅ Fixed (Regression C) |
+| Retry button is unique per error message | ✅ |
+| Live mode blocks all fixture controls and question forms | ✅ |
+| Switching to Live clears conversation, results, proposals, selections | ✅ |
+| Overview in Live mode shows unavailable, not watsonx.ai credit warning | ✅ |
+| Unmatched input is not silently replaced by the previous fixture result | ✅ |
+| New conversation clears all conversation state and selection-tracking keys | ✅ |
 | Navigation and New conversation do not trigger AI calls | ✅ |
 | Backend test suite: no new failures | ✅ 291/291 pass |
+| Reference verification | ✅ PASS |
 | Browser verification | ⚠ Not performed — only AppTest verification used |
 
 ---
 
-## 8. Files created or modified in this repair session
+## 8. Files created or modified in this repair session (Session 3)
 
 | File | Change |
 |---|---|
-| `app.py` | Rewrote fixture selection/rendering to use `display_messages`; added `_live_mode_guard()`, `_render_display_messages()`, `_add_fixture_to_conversation()`, `_add_typed_question_to_conversation()`; removed `_handle_fixture_selection()`; fixed Live mode guard on all pages and Overview; selector key deletion on mode switch and New conversation |
-| `ui/state.py` | Fixed shared mutable default: `display_messages` now created as fresh list per session |
-| `ui/tests/test_state.py` | Scoped fake Streamlit injection: restores both `sys.modules["streamlit"]` and `sys.modules["ui.state"]` after import |
-| `ui/tests/test_app_regression.py` | New: 20 AppTest regression tests covering both defects |
-| `docs/ui-runbook.md` | Updated: Python 3.11, `.venv311/`, `python -m pip`, Live mode unavailability, removed Python 3.9 claims |
+| `app.py` | Fixed `_fixture_selector()`: process selection before rendering, call `st.rerun()` on new selection; added `last_handled_selector_{page_hint}` tracking for Regression B; fixed `_render_display_messages()` to pass `msg_key=str(idx)` to retry banner |
+| `ui/renderers.py` | Added `msg_key` keyword argument to `render_error_retry_banner()` and passes it as `key=f"retry_{msg_key}"` to `st.button()` |
+| `ui/state.py` | `reset_conversation()` now clears `last_handled_selector_*` keys |
+| `ui/tests/test_app_regression.py` | Added 17 new AppTest tests (Cases A–K) covering all three regressions and broader behaviour |
 | `docs/ui-validation.md` | This document (replaced) |
-| `bob_sessions/hyunsoo/README.md` | Added Session 2 repair record |
+| `bob_sessions/hyunsoo/README.md` | Added Session 3 repair record |
 
 **Protected files unchanged:**
 - `engine/`, `agent/`, `data/`, `tests/expected/`, `reference/`
@@ -205,9 +255,8 @@ The 20 new AppTest tests in `ui/tests/test_app_regression.py` verify:
 
 ## 9. Known limitations and next steps
 
-- **Browser verification** was not performed. All verification used
-  Streamlit AppTest. Manual browser testing is recommended before
-  merging to main.
+- **Browser verification** was not performed. All verification used Streamlit AppTest.
+  Manual browser testing is recommended before merging to main.
 - **Live AI integration** was not tested. No real `run_agent` calls were made.
 - **Stage B:** Budget form, structured renderers (tables, KPI cards).
 - **Stage C:** Proposal review, approval/rejection controls, decision log.

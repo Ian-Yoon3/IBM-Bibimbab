@@ -95,3 +95,57 @@ structured renderers (tables, KPI cards).
 
 **Reviewed commit:** 9b2be7893602514a38000b67ff14a4c159d944d9
 **Changes are local only.** No commit, push, or PR was made.
+
+---
+
+### Session 3 — Stage A UI Repair (2026-11-22)
+
+**Task:** Fix three verified Stage A regressions on the `ui` branch (commit 495b7f5).
+
+**Python:** 3.11.18  
+**Streamlit:** 1.67.0  
+**Virtual environment:** `.venv311/`
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `app.py` | Fixed `_fixture_selector()`: process selection before rendering, `st.rerun()` on new selection; added `last_handled_selector_*` tracking to prevent selector replay (Regression B); `_render_display_messages()` passes unique `msg_key` per message to retry banner |
+| `ui/renderers.py` | Added `msg_key` keyword arg to `render_error_retry_banner()`; passes it as `key=f"retry_{msg_key}"` to `st.button()` to prevent duplicate element IDs (Regression C) |
+| `ui/state.py` | `reset_conversation()` now clears `last_handled_selector_*` keys |
+| `ui/tests/test_app_regression.py` | Added 17 new AppTest tests (Cases A–K) covering all three regressions |
+| `docs/ui-validation.md` | Replaced: documents all three regressions, fixes, corrected test counts |
+| `bob_sessions/hyunsoo/README.md` | This file |
+
+**Regressions fixed:**
+
+1. **Regression A — First fixture selection did not display its answer**  
+   Root cause: `_render_display_messages()` was called before `_add_fixture_to_conversation()`;
+   the `pass` where `st.rerun()` should have been.  
+   Fix: process selection first, then `st.rerun()` only when a new selection is handled.
+
+2. **Regression B — Previous selector value overrode a new typed question**  
+   Root cause: selector was processed on every render; idempotency check used only the last
+   message's fixture_id — which changed after a typed submission, causing the old selector
+   value to replay.  
+   Fix: `last_handled_selector_{page_hint}` session key tracks the last *processed* fixture_id
+   independently of the conversation. Selection is only processed when the chosen_id differs
+   from that key. `reset_conversation()` and mode switches clear it.
+
+3. **Regression C — Repeated error examples crashed with duplicate button IDs**  
+   Root cause: `render_error_retry_banner()` called `st.button("Try again")` without a `key=`
+   argument; multiple historical error messages each rendered the same unkeyed button.  
+   Fix: `render_error_retry_banner()` now accepts `msg_key: str`; `_render_display_messages()`
+   passes the message index as `msg_key`.
+
+**Test results:**
+- Backend tests: **291 / 291 pass**
+- UI tests: **71 / 71 pass** (34 unit + 37 AppTest regression)
+  - Previous AppTest count: 20 (Session 2)
+  - New AppTest count: 37 (Session 3, +17 new tests)
+  - `TestLiveModeBlocking` count corrected: **10** tests (not 11 as stated in Session 2 report)
+- Reference verification: **PASS**
+- Browser verification: **not performed** — AppTest only
+
+**Reviewed commit:** 495b7f5f06eade6d6cb1bea076f0715fe4c793a5  
+**Changes are local only.** No commit, push, or PR was made. The user will review and commit personally.

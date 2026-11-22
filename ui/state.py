@@ -58,7 +58,8 @@ def reset_conversation() -> None:
     """Clear conversation state without deleting the decision log.
 
     Resets: display_messages, agent_history, active_result, active_proposal,
-    submitted_request, request_pending, last_failed_request.
+    submitted_request, request_pending, last_failed_request, and any
+    last_handled_selector_* tracking keys (Regression B).
     Does NOT reset: mode, current_page, or anything outside the conversation.
     """
     st.session_state.display_messages = []
@@ -68,6 +69,12 @@ def reset_conversation() -> None:
     st.session_state.submitted_request = None
     st.session_state.request_pending = False
     st.session_state.last_failed_request = None
+    # Clear selection-tracking keys (Regression B fix) so that returning to
+    # Fixtures after a "New conversation" does not replay the old selection.
+    _prefix = "last_handled_selector_"
+    stale = [k for k in st.session_state if k.startswith(_prefix)]
+    for k in stale:
+        del st.session_state[k]
 
 
 def switch_mode(new_mode: str) -> None:

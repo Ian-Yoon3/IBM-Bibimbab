@@ -46,11 +46,15 @@ def render_result(result: dict, label: str = "assistant") -> None:
             st.markdown(answer)
 
 
-def render_error_retry_banner(on_retry) -> None:
+def render_error_retry_banner(on_retry, *, msg_key: str = "0") -> None:
     """Show an inline banner with a Try again button for a failed request.
 
     *on_retry* is a zero-argument callable that will be invoked when the
     user clicks the button (e.g. ``st.session_state.request_pending = True``).
+
+    *msg_key* must be unique per rendered banner.  Pass the message index (or
+    any other stable identifier) so that multiple error banners in the same
+    conversation do not collide on the same Streamlit element ID.
     """
     col1, col2 = st.columns([4, 1])
     with col1:
@@ -61,7 +65,7 @@ def render_error_retry_banner(on_retry) -> None:
             icon="🚫",
         )
     with col2:
-        st.button("Try again", on_click=on_retry, type="secondary")
+        st.button("Try again", key=f"retry_{msg_key}", on_click=on_retry, type="secondary")
 
 
 def render_unmatched_message() -> None:
