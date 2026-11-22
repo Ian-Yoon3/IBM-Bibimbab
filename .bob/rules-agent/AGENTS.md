@@ -6,7 +6,7 @@
 - **Tool-call argument normalisation:** `ibm_watsonx_ai` may return `tool_calls[].function.arguments` as a JSON-encoded string or as a parsed dict — use `normalize_tool_calls()` from `agent/llm.py`; handles both Granite (string) and Llama (dict) shapes
 - **Model config:** read `WX_MODEL_ID` from env (default `meta-llama/llama-3-3-70b-instruct`, see ADR 0001); always pass an explicit `max_tokens` to `ModelInference` — the SDK default (1024) emits a warning and may truncate responses
 - **Agent tests are network-free:** use `ScriptedLLM` from `agent/fake_llm.py` — never make real watsonx.ai calls in `tests/`
-- **D01 only:** validate disruption IDs against `db["disruptions"]`, not a hardcoded string; the agent must not invent delay dates or outcomes for unknown IDs
+- **D01 only:** validate disruption IDs against `db["disruptions"]`, not a hardcoded string; the agent must not invent delay dates or outcomes for unknown IDs; receipt dates of PO01 inside the window come only from `get_world_risk` through the `world_risk` view (ADR 0003)
 - **8 LLM tools:** `get_disruption`, `get_offers`, `get_impact`, `compare_scenarios`, `get_priority_view`, `get_order_detail`, `explore_purchase_qty`, `propose_action`; `run_scenario` is NOT in `TOOL_SPECS`
 - **unknown tool names** from the LLM return `{"error": "unknown tool: <name>"}` from `call_tool()` — the loop continues; it does not raise
 - **propose_action (LLM-facing):** accepts `scenario_id` OR `(offer_id, qty, include_transfers)`; `call_tool` resolves the offer+qty path via `explore_purchase_qty` before calling the engine
@@ -18,4 +18,4 @@
 - **(reference/verify.py only)** `events` dict keys are `date` objects, not strings — comparisons must use `date` arithmetic
 - **(reference/verify.py only)** `in_transit` counter tracks `(lane_id, component_id)` and must reach zero by horizon end; assertion at line 180 will fail otherwise
 - **(reference/verify.py only)** `write()` uses `header.split()` (space-separated string) to produce column names — add columns by extending that string, not a list
-- **UI work:** follow `docs/ui-contract.md` and the "UI work" section of the root `AGENTS.md`; never edit `engine/`, `agent/`, `data/` or `tests/expected/` from the UI; import only `run_agent`, `record_decision`, `list_decisions`; build with `ui_fixtures/agent_results.json` before using real watsonx.ai calls
+- **UI work:** follow `docs/ui-contract.md` and the "UI work" section of the root `AGENTS.md`; never edit `engine/`, `agent/`, `data/` or `tests/expected/` from the UI; import only `run_agent`, `record_decision`, `list_decisions`, `get_overview`; build with `ui_fixtures/agent_results.json` before using real watsonx.ai calls

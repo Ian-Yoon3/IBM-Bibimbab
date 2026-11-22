@@ -1,0 +1,579 @@
+"""Bayesian estimator for the stage 2 Monte Carlo engine.
+
+estimate(data_dir) -> dict
+
+Reads:
+  - Standard engine CSVs via engine.loader.load_all(data_dir) for DAY0,
+    the business calendar, offers, lanes, purchase orders, disruptions and
+    causes.
+  - data/history/shipments.csv, episodes.csv, period.csv.
+
+Returns a dict with keys:
+  "causes"    : {cause_id: cause_posterior}
+  "variables" : {"<target_type>.<target_id>": variable_posterior}
+               e.g. "purchase_order.PO01", "offer.OF02", "lane.LN01"
+
+cause_posterior keys:
+  n, S, open_on_day0, T_days, rate_shape,
+  severity_a, severity_b,
+  T_free_days, duration_a, duration_b,
+  duration_prior_share, severity_prior_share, open_episode
+
+  n               : number of episodes of the cause with start_date >= period_start
+  S               : sum of (delay_days - 1) over episodes with a recorded delay
+  severity_a      : 1 + number of episodes with a recorded delay
+  severity_b      : 1 + S
+  T_free_days     : T_days minus days covered by the cause's episodes inside the period
+                    each episode contributes max(start,period_start)..min(end,period_end)
+                    inclusive; empty end_date taken as period_end
+  duration_a      : Beta prior (1,1) updated: +1 for each closed/announced episode
+  duration_b      : Beta prior (1,1) updated: for closed +obs days, for open (censored)
+                    +(DAY0 - obs_start) days; obs_start = max(start_date, period_start)
+  duration_prior_share  : 2 / (duration_a + duration_b)
+  severity_prior_share  : 2 / (severity_a + severity_b)
+  open_episode    : None, or dict {episode_id, start_date (date), end_date (date|None),
+                    delay_days (int|None)} for the cause's open episode on DAY0
+
+variable_posterior keys:
+  cause_id, day_unit, source_id, records,
+  n_early, n_ontime, n_late,
+  dir_early, dir_ontime, dir_late,   (Dirichlet alpha parameters)
+  early_a, early_b,                  (Beta for size-1 of early delays)
+  late_a, late_b,                    (Beta for size-1 of late delays)
+  prior_share
+
+predictive_size_pmf is a module-level function (not in the returned dict).
+
+Section 7.1 posteriors (uniform/Bayes-Laplace priors), T = period length in days:
+  rate lambda:   Gamma(n+1, T)   [rate parameter T means scale = 1/T]
+  severity theta: Beta(severity_a, severity_b)
+                  severity_a = 1 + (episodes with recorded delay)
+                  severity_b = 1 + S,  S = sum of (delay_days - 1)
+  duration:      Beta(duration_a, duration_b)  prior (1,1)
+  category:      Dirichlet(counts + 1)
+  size theta:    Beta(count+1, sum_of_(size-1)+1)
+  prior_share:   3 / (records + 3)   (3 pseudo-records from Dirichlet prior)
+  duration_prior_share:  2 / (duration_a + duration_b)
+  severity_prior_share:  2 / (severity_a + severity_b)
+"""
+
+import csv
+import math
+import pathlib
+from datetime import date
+from fractions import Fraction
+
+from engine.loader import load_all
+
+# ---------------------------------------------------------------------------
+# History file headers (exact)
+# ---------------------------------------------------------------------------
+
+_SHIPMENTS_HEADER = ["shipment_id", "source_id", "ship_date",
+                     "promised_date", "receipt_date", "episode_id"]
+_EPISODES_HEADER  = ["episode_id", "cause_id", "start_date",
+                     "end_date", "delay_days"]
+_PERIOD_HEADER    = ["start_date", "end_date"]
+
+
+# ---------------------------------------------------------------------------
+# CSV reader with header validation
+# ---------------------------------------------------------------------------
+
+def _read_history_csv(path: pathlib.Path, expected_header: list) -> list:
+    fname = str(path)
+    with path.open(encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        actual = list(reader.fieldnames or [])
+        if actual != expected_header:
+            raise ValueError(
+                f"{fname}: header must be exactly "
+                f"{','.join(expected_header)}, got {','.join(actual)}"
+            )
+        return list(reader)
+
+
+# ---------------------------------------------------------------------------
+# Period reader
+# ---------------------------------------------------------------------------
+
+def _read_period(hist_dir: pathlib.Path) -> tuple:
+    """Read period.csv and return (period_start, period_end, T_days).
+
+    Raises ValueError if file is missing or malformed.
+    """
+    fname = "data/history/period.csv"
+    path  = hist_dir / "period.csv"
+    if not path.exists():
+        raise ValueError(
+            f"{fname}: file is missing; every history must have a period.csv"
+        )
+    rows = _read_history_csv(path, _PERIOD_HEADER)
+    if len(rows) != 1:
+        raise ValueError(
+            f"{fname}: must contain exactly one data row, got {len(rows)}"
+        )
+    row = rows[0]
+    try:
+        period_start = date.fromisoformat(row["start_date"])
+        period_end   = date.fromisoformat(row["end_date"])
+    except (ValueError, KeyError) as exc:
+        raise ValueError(f"{fname}: invalid date in row {dict(row)}: {exc}") from exc
+    if period_end < period_start:
+        raise ValueError(
+            f"{fname}: end_date {period_end} is before start_date {period_start}"
+        )
+    T_days = (period_end - period_start).days + 1
+    return period_start, period_end, T_days
+
+
+def _build_causes_meta(causes_rows: list) -> tuple:
+    """Build causes_meta and source_to_causes from db["causes"] rows.
+
+    Returns
+    -------
+    causes_meta : dict  {cause_id: {day_unit, entries, targets}}
+    source_to_causes : dict  {source_id: set of cause_ids}
+    """
+    causes_meta: dict = {}
+    source_to_causes: dict = {}
+
+    for row in causes_rows:
+        cid       = row["cause_id"]
+        dunit     = row["day_unit"]
+        ttype     = row["target_type"]
+        tid       = row["target_id"]
+        source_id = row["source_id"]
+        vkey      = f"{ttype}.{tid}"
+
+        if cid not in causes_meta:
+            causes_meta[cid] = {"day_unit": dunit, "entries": [], "targets": []}
+        causes_meta[cid]["entries"].append({"ttype": ttype, "tid": tid,
+                                            "source_id": source_id, "vkey": vkey})
+        causes_meta[cid]["targets"].append({"ttype": ttype, "tid": tid})
+
+        if source_id not in source_to_causes:
+            source_to_causes[source_id] = set()
+        source_to_causes[source_id].add(cid)
+
+    return causes_meta, source_to_causes
+
+
+# ---------------------------------------------------------------------------
+# Predictive PMF helper (section 7.1)
+# P(size - 1 = k | Beta(a, b) prior) = B(a+1, b+k) / B(a, b)
+# B(a, b) = Gamma(a)*Gamma(b)/Gamma(a+b)  (a, b positive integers)
+# ---------------------------------------------------------------------------
+
+def _beta_fraction(a: int, b: int) -> Fraction:
+    """B(a, b) = (a-1)! * (b-1)! / (a+b-1)! as a Fraction (a, b >= 1 integers)."""
+    num = Fraction(1)
+    for k in range(1, b):       # (b-1)!
+        num *= k
+    den = Fraction(1)
+    for k in range(a, a + b):   # a * (a+1) * ... * (a+b-1)
+        den *= k
+    return num / den
+
+
+def predictive_size_pmf(a: int, b: int, k: int) -> Fraction:
+    """P(size - 1 = k) under Geometric(theta), theta ~ Beta(a, b).
+
+    = B(a+1, b+k) / B(a, b)   for non-negative integer k.
+    """
+    return _beta_fraction(a + 1, b + k) / _beta_fraction(a, b)
+
+
+# ---------------------------------------------------------------------------
+# Main estimator
+# ---------------------------------------------------------------------------
+
+def estimate(data_dir) -> dict:
+    """Estimate all model parameters from history.
+
+    Parameters
+    ----------
+    data_dir : str or Path
+        Base data directory.  Must contain the standard engine CSVs and
+        data/history/{causes,shipments,episodes,period}.csv.
+
+    Returns
+    -------
+    dict with keys "causes" and "variables".
+    """
+    data_dir = pathlib.Path(data_dir)
+    db       = load_all(data_dir)
+    cal      = db["calendar"]
+    day0     = db["DAY0"]
+    hist_dir = data_dir / "history"
+
+    # 0. Read period
+    period_start, period_end, T_days = _read_period(hist_dir)
+    if period_end >= day0:
+        raise ValueError(
+            f"data/history/period.csv: period end_date {period_end} must be "
+            f"before DAY0 {day0}"
+        )
+
+    # 1a. Load and validate episodes
+    ep_rows = _read_history_csv(hist_dir / "episodes.csv", _EPISODES_HEADER)
+    episodes: dict = {}
+    for row in ep_rows:
+        eid = row["episode_id"]
+        if not eid:
+            raise ValueError(
+                f"data/history/episodes.csv: episode_id is empty in row {dict(row)}"
+            )
+        if eid in episodes:
+            raise ValueError(
+                f"data/history/episodes.csv: duplicate episode_id {eid!r}"
+            )
+        start_d = date.fromisoformat(row["start_date"])
+        if start_d > day0:
+            raise ValueError(
+                f"data/history/episodes.csv: episode {eid!r} starts after DAY0 "
+                f"({start_d} > {day0})"
+            )
+
+        end_str = row["end_date"]
+        if end_str:
+            end_d = date.fromisoformat(end_str)
+            # NEW check b: end_date given and end_date < period_start
+            if end_d < period_start:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} end_date "
+                    f"{end_d} is before period_start {period_start} "
+                    f"(episode lies entirely before the period)"
+                )
+            # NEW check c: end_date given and end_date < start_date
+            if end_d < start_d:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} end_date "
+                    f"{end_d} is before start_date {start_d}"
+                )
+            open_on_day0 = (end_d >= day0)
+        else:
+            end_d        = None
+            open_on_day0 = True
+
+        # NEW check d: delay_days validation
+        delay_str = row["delay_days"]
+        if not delay_str:
+            if not open_on_day0:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} is closed "
+                    f"but delay_days is empty"
+                )
+            delay_days = None
+        else:
+            try:
+                delay_days = int(delay_str)
+            except ValueError:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} delay_days "
+                    f"{delay_str!r} is not an integer"
+                )
+            if delay_days < 1:
+                raise ValueError(
+                    f"data/history/episodes.csv: episode {eid!r} delay_days "
+                    f"{delay_days} must be >= 1"
+                )
+
+        episodes[eid] = {
+            "episode_id":    eid,
+            "cause_id":      row["cause_id"],
+            "start_date":    start_d,
+            "end_date":      end_d,
+            "delay_days":    delay_days,
+            "open_on_day0":  open_on_day0,
+        }
+
+    # NEW check e: two episodes of the same cause must not overlap
+    # Group episodes by cause_id
+    cause_eps: dict = {}
+    for ep in episodes.values():
+        cid = ep["cause_id"]
+        if cid not in cause_eps:
+            cause_eps[cid] = []
+        cause_eps[cid].append(ep)
+
+    for cid, eps_list in cause_eps.items():
+        # Sort by start_date so we only need to check adjacent pairs after sorting
+        sorted_eps = sorted(eps_list, key=lambda e: e["start_date"])
+        for i in range(len(sorted_eps) - 1):
+            a = sorted_eps[i]
+            b = sorted_eps[i + 1]
+            # Interval end: empty end_date taken as DAY0
+            a_end = a["end_date"] if a["end_date"] is not None else day0
+            b_start = b["start_date"]
+            # Overlap when the later start is on or before the earlier end
+            if b_start <= a_end:
+                raise ValueError(
+                    f"data/history/episodes.csv: episodes "
+                    f"{b['episode_id']!r} and {a['episode_id']!r} "
+                    f"of cause {cid!r} overlap"
+                )
+
+    # 1b. Build causes meta from db["causes"]
+    if db["causes"] is None:
+        raise ValueError(
+            "data/causes.csv: file not found; the Monte Carlo run needs it"
+        )
+    causes_meta, source_to_causes = _build_causes_meta(db["causes"])
+
+    # Build source_to_cause (single cause per source is validated above)
+    source_to_cause: dict = {
+        src: next(iter(cids)) for src, cids in source_to_causes.items()
+    }
+
+    # 1c. Load and validate shipments
+    ship_rows = _read_history_csv(hist_dir / "shipments.csv", _SHIPMENTS_HEADER)
+    for row in ship_rows:
+        sid      = row["shipment_id"]
+        src      = row["source_id"]
+        eid      = row["episode_id"]
+        ship_d   = date.fromisoformat(row["ship_date"])
+        receipt_d = date.fromisoformat(row["receipt_date"])
+
+        if ship_d < period_start or ship_d > period_end:
+            raise ValueError(
+                f"data/history/shipments.csv: shipment {sid!r} ship_date "
+                f"{ship_d} is outside the period [{period_start}, {period_end}]"
+            )
+        if receipt_d > day0:
+            raise ValueError(
+                f"data/history/shipments.csv: shipment {sid!r} receipt_date "
+                f"{receipt_d} is after DAY0 {day0}"
+            )
+
+        if eid:
+            if eid not in episodes:
+                raise ValueError(
+                    f"data/history/shipments.csv: shipment {sid!r} "
+                    f"references unknown episode_id {eid!r}"
+                )
+            ep       = episodes[eid]
+            ep_cause = ep["cause_id"]
+            # NEW check: episode with empty delay_days cannot be referenced
+            if ep["delay_days"] is None:
+                raise ValueError(
+                    f"data/history/shipments.csv: shipment {sid!r} references "
+                    f"episode {eid!r} which has no recorded delay_days"
+                )
+            src_cause = source_to_cause.get(src)
+            if src_cause is None:
+                raise ValueError(
+                    f"data/history/shipments.csv: shipment {sid!r} "
+                    f"source {src!r} not found in causes.csv"
+                )
+            if ep_cause != src_cause:
+                raise ValueError(
+                    f"data/history/shipments.csv: shipment {sid!r} "
+                    f"source {src!r} (cause {src_cause!r}) references "
+                    f"episode {eid!r} of cause {ep_cause!r}"
+                )
+
+    # 2. Compute own delays and accumulate per-variable stats
+    # Per-variable accumulators keyed by "ttype.tid"
+    var_stats: dict = {}
+    for cid, meta in causes_meta.items():
+        for entry in meta["entries"]:
+            vkey = entry["vkey"]
+            var_stats[vkey] = {
+                "cause_id":    cid,
+                "day_unit":    meta["day_unit"],
+                "source_id":   entry["source_id"],
+                "ttype":       entry["ttype"],
+                "tid":         entry["tid"],
+                "records":     0,
+                "n_early":     0, "n_ontime": 0, "n_late": 0,
+                "early_count": 0, "early_sum": 0,
+                "late_count":  0, "late_sum":  0,
+            }
+
+    # Build source_id -> [vkeys] map (a source may appear in multiple vkeys)
+    source_to_vkeys: dict = {}
+    for vkey, st in var_stats.items():
+        src = st["source_id"]
+        if src not in source_to_vkeys:
+            source_to_vkeys[src] = []
+        source_to_vkeys[src].append(vkey)
+
+    for row in ship_rows:
+        src  = row["source_id"]
+        prom = date.fromisoformat(row["promised_date"])
+        rcpt = date.fromisoformat(row["receipt_date"])
+        eid  = row["episode_id"]
+        sev  = episodes[eid]["delay_days"] if eid else 0
+
+        # Each shipment contributes to ALL vkeys sharing this source
+        vkeys_for_src = source_to_vkeys.get(src, [])
+        for vkey in vkeys_for_src:
+            day_unit = var_stats[vkey]["day_unit"]
+
+            if day_unit == "business":
+                if rcpt > prom:
+                    raw = cal.business_days_between(prom, rcpt)
+                elif rcpt < prom:
+                    raw = -cal.business_days_between(rcpt, prom)
+                else:
+                    raw = 0
+            else:
+                raw = (rcpt - prom).days
+
+            own = raw - sev
+            st  = var_stats[vkey]
+            st["records"] += 1
+
+            if own < 0:
+                st["n_early"]     += 1
+                st["early_count"] += 1
+                st["early_sum"]   += (-own) - 1
+            elif own == 0:
+                st["n_ontime"] += 1
+            else:
+                st["n_late"]    += 1
+                st["late_count"] += 1
+                st["late_sum"]   += own - 1
+
+    # 3. Per-cause stats
+    cause_stats: dict = {}
+    for cid in causes_meta:
+        cause_stats[cid] = {
+            "n":            0,
+            "S":            0,
+            "severity_obs": 0,   # number of episodes with recorded delay
+            "open_on_day0": False,
+            "open_episode": None,
+            "T_free_days":  T_days,
+            "duration_a":   1,
+            "duration_b":   1,
+        }
+
+    for ep in episodes.values():
+        cid = ep["cause_id"]
+        if cid not in cause_stats:
+            raise ValueError(
+                f"data/history/episodes.csv: episode {ep['episode_id']!r} "
+                f"references unknown cause {cid!r}"
+            )
+        cs         = cause_stats[cid]
+        start_d    = ep["start_date"]
+        end_d      = ep["end_date"]
+        delay_days = ep["delay_days"]
+
+        # n: only episodes with start_date >= period_start
+        if start_d >= period_start:
+            cs["n"] += 1
+
+        # severity: only episodes with a recorded delay
+        if delay_days is not None:
+            cs["S"]            += delay_days - 1
+            cs["severity_obs"] += 1
+
+        if ep["open_on_day0"]:
+            cs["open_on_day0"] = True
+            cs["open_episode"] = {
+                "episode_id": ep["episode_id"],
+                "start_date": start_d,
+                "end_date":   end_d,
+                "delay_days": delay_days,
+            }
+
+        # T_free_days: subtract days covered inside the period
+        obs_start = max(start_d, period_start)
+        # end for coverage: empty end_date taken as period_end
+        obs_end_cov = end_d if end_d is not None else period_end
+        obs_end_cov = min(obs_end_cov, period_end)
+        if obs_end_cov >= obs_start:
+            covered = (obs_end_cov - obs_start).days + 1
+            cs["T_free_days"] -= covered
+
+        # duration posterior update
+        obs_start_dur = max(start_d, period_start)
+        if end_d is None:
+            # open/censored: duration_b += (DAY0 - obs_start) days
+            cs["duration_b"] += (day0 - obs_start_dur).days
+        else:
+            # closed or announced: duration_a += 1, duration_b += (end - obs_start) days
+            cs["duration_a"] += 1
+            cs["duration_b"] += (end_d - obs_start_dur).days
+
+    # 4. Build posteriors
+
+    # --- cause posteriors ---
+    cause_posteriors: dict = {}
+    for cid, cs in cause_stats.items():
+        n            = cs["n"]
+        S            = cs["S"]
+        severity_obs = cs["severity_obs"]
+        open_on_day0 = cs["open_on_day0"]
+
+        rate_shape = n + 1    # Gamma(n+1, T)
+
+        severity_a = severity_obs + 1
+        severity_b = S + 1
+
+        duration_a = cs["duration_a"]
+        duration_b = cs["duration_b"]
+
+        duration_prior_share = 2.0 / (duration_a + duration_b)
+        severity_prior_share = 2.0 / (severity_a + severity_b)
+
+        cause_posteriors[cid] = {
+            "n":                   n,
+            "S":                   S,
+            "open_on_day0":        open_on_day0,
+            "T_days":              T_days,
+            "rate_shape":          rate_shape,
+            "severity_a":          severity_a,
+            "severity_b":          severity_b,
+            "T_free_days":         cs["T_free_days"],
+            "duration_a":          duration_a,
+            "duration_b":          duration_b,
+            "duration_prior_share": duration_prior_share,
+            "severity_prior_share": severity_prior_share,
+            "open_episode":        cs["open_episode"],
+        }
+
+    # --- variable posteriors ---
+    var_posteriors: dict = {}
+    for vkey, st in var_stats.items():
+        records  = st["records"]
+        n_early  = st["n_early"]
+        n_ontime = st["n_ontime"]
+        n_late   = st["n_late"]
+
+        dir_early  = n_early  + 1
+        dir_ontime = n_ontime + 1
+        dir_late   = n_late   + 1
+
+        early_a = st["early_count"] + 1
+        early_b = st["early_sum"]   + 1
+        late_a  = st["late_count"]  + 1
+        late_b  = st["late_sum"]    + 1
+
+        prior_share = 3.0 / (records + 3.0)
+
+        var_posteriors[vkey] = {
+            "cause_id":   st["cause_id"],
+            "day_unit":   st["day_unit"],
+            "source_id":  st["source_id"],
+            "records":    records,
+            "n_early":    n_early,
+            "n_ontime":   n_ontime,
+            "n_late":     n_late,
+            "dir_early":  dir_early,
+            "dir_ontime": dir_ontime,
+            "dir_late":   dir_late,
+            "early_a":    early_a,
+            "early_b":    early_b,
+            "late_a":     late_a,
+            "late_b":     late_b,
+            "prior_share": prior_share,
+        }
+
+    return {
+        "causes":    cause_posteriors,
+        "variables": var_posteriors,
+    }

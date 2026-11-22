@@ -44,38 +44,51 @@ def build_fixture_catalog(fixtures: list[dict]) -> dict[str, dict]:
 def label_for(entry: dict, index: int) -> str:
     """Human-readable label shown in the selector drop-down.
 
-    Includes a short description of the view type and, for error entries,
-    an explicit "(error)" marker so they are distinguishable.
+    Format: question text (shortened), plus " (turn N)" for multi-turn entries,
+    plus " · connection error example" for error entries.
+
+    If this label would duplicate another label in the same list, the caller
+    is responsible for making it distinct via get_fixture_options().
     """
     result = entry["result"]
-    conv = entry["conversation"]
     turn = entry["turn"]
     question = entry["question"]
     short_q = question[:55] + "…" if len(question) > 55 else question
 
-    # Tag error entries
-    if "error" in result:
-        tag = " ⚠ error"
-    else:
-        view = result.get("view")
-        vtype = view.get("type") if view else "no_view"
-        tag = f" [{vtype}]"
-
     # Tag multi-turn entries
     turn_label = f" (turn {turn})" if turn > 1 else ""
 
-    return f"Conv {conv}{turn_label}{tag} — {short_q}"
+    # Tag error entries
+    if "error" in result:
+        error_label = " · connection error example"
+    else:
+        error_label = ""
+
+    return f"{short_q}{turn_label}{error_label}"
 
 
 def get_fixture_options(fixtures: list[dict]) -> list[tuple[str, str]]:
     """Return a list of (fixture_id, label) pairs for all fixtures.
 
-    Preserves the order of the loaded file.
+    Preserves the order of the loaded file.  When two entries would produce
+    the same label, appends " (example K)" with K counting from 2 in list
+    order to make all labels distinct.
     """
-    return [
+    pairs = [
         (make_fixture_id(e, i), label_for(e, i))
         for i, e in enumerate(fixtures)
     ]
+    # Deduplicate labels: track how many times each label has appeared
+    seen: dict[str, int] = {}
+    result = []
+    for fid, lbl in pairs:
+        if lbl not in seen:
+            seen[lbl] = 1
+            result.append((fid, lbl))
+        else:
+            seen[lbl] += 1
+            result.append((fid, f"{lbl} (example {seen[lbl]})"))
+    return result
 
 
 def get_result_copy(catalog: dict[str, dict], fixture_id: str) -> Optional[dict]:

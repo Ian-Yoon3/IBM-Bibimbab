@@ -16,12 +16,20 @@ active_proposal     dict | None — proposal from active_result (None if none)
 submitted_request   dict | None — snapshot: {budget, objective, fixture_id, question, mode}
 request_pending     bool — True while a live call is in flight
 last_failed_request dict | None — snapshot of the last failed request (for retry)
+decided_proposal_ids set — proposal_ids whose decision controls have been hidden
 
 Find-a-plan page (budget form) keys
 -------------------------------------
 fp_budget           int | None — budget value most recently submitted (USD)
 fp_result           dict | None — result dict from the last run_agent call on find_plan
 fp_status           str | None — one of "ok"|"no_match"|"unverifiable"|"api_error"|None
+fp_history          list | None — agent history from the fp result call
+fp_propose_result   dict | None — result of the "Propose <CODE>" run_agent call
+fp_propose_status   str | None — "ok" | "no_proposal" | "api_error" | None
+
+Risk page (live mode) keys
+--------------------------
+risk_live_result    dict | None — result of the last live risk question
 """
 from __future__ import annotations
 
@@ -46,6 +54,11 @@ _SCALAR_DEFAULTS: dict = {
     "fp_budget": None,
     "fp_result": None,
     "fp_status": None,
+    "fp_history": None,
+    "fp_propose_result": None,
+    "fp_propose_status": None,
+    # Risk page (live mode)
+    "risk_live_result": None,
 }
 
 
@@ -53,7 +66,7 @@ def init_state() -> None:
     """Initialise every session-state key that does not yet exist.
 
     Safe to call on every Streamlit rerun — existing keys are untouched.
-    Mutable defaults (lists) are created fresh for each session so that
+    Mutable defaults (lists/sets) are created fresh for each session so that
     multiple concurrent sessions never share the same object.
     """
     for key, default in _SCALAR_DEFAULTS.items():
@@ -62,6 +75,9 @@ def init_state() -> None:
     # display_messages must be a fresh list for each session.
     if "display_messages" not in st.session_state:
         st.session_state["display_messages"] = []
+    # decided_proposal_ids must be a fresh set for each session.
+    if "decided_proposal_ids" not in st.session_state:
+        st.session_state["decided_proposal_ids"] = set()
 
 
 def reset_conversation() -> None:
@@ -69,7 +85,8 @@ def reset_conversation() -> None:
 
     Resets: display_messages, agent_history, active_result, active_proposal,
     submitted_request, request_pending, last_failed_request,
-    fp_budget, fp_result, fp_status,
+    fp_budget, fp_result, fp_status, fp_history, fp_propose_result,
+    fp_propose_status, risk_live_result, decided_proposal_ids,
     and any last_handled_selector_* tracking keys (Regression B).
     Does NOT reset: mode, current_page, or anything outside the conversation.
     """
@@ -84,6 +101,13 @@ def reset_conversation() -> None:
     st.session_state.fp_budget = None
     st.session_state.fp_result = None
     st.session_state.fp_status = None
+    st.session_state.fp_history = None
+    st.session_state.fp_propose_result = None
+    st.session_state.fp_propose_status = None
+    # Risk page live state
+    st.session_state.risk_live_result = None
+    # Decision controls state
+    st.session_state.decided_proposal_ids = set()
     # Clear selection-tracking keys (Regression B fix) so that returning to
     # Fixtures after a "New conversation" does not replay the old selection.
     _prefix = "last_handled_selector_"

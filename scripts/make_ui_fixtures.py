@@ -13,10 +13,14 @@ Each replayed turn is checked against the saved run (same view type, same
 table, same deterministic markdown).  The script stops with an error if a
 check fails, so the fixtures never drift silently from the code.
 
+Sweeps made after step 6b record the selected Monte Carlo run; the replay
+uses the same run and stops if it has changed (rebuild the run or make a new
+sweep).  Older sweeps replay against the stage 1 worlds.
+
 Run from the repository root (no .env needed):
 
     python -m scripts.make_ui_fixtures
-    python -m scripts.make_ui_fixtures eval_results/sweep_20261107_235511.json
+    python -m scripts.make_ui_fixtures eval_results/sweep_20261122_111825.json
 
 Output: ``ui_fixtures/agent_results.json``.  See ``docs/ui-contract.md``.
 """
@@ -26,14 +30,17 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tempfile
+from contextlib import contextmanager
 from itertools import groupby
 from pathlib import Path
 
 from agent.fake_llm import ScriptedLLM
 from agent.loop import run_agent
+from scripts.stage1_data import use_stage1_default_data
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261107_235511.json"
+DEFAULT_SWEEP = ROOT / "eval_results" / "sweep_20261122_111825.json"
 OUT = ROOT / "ui_fixtures" / "agent_results.json"
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -54,7 +61,8 @@ def _script_for(entry: dict) -> list[dict]:
             for i, t in enumerate(entry["tools"], 1)
         ]})
     script.append({"content": ""})              # ends the gather phase
-    script.append({"content": "(replayed)"})    # narrative / compose call
+    # For world_risk entries the LLM narrative call uses the saved real text.
+    script.append({"content": entry.get("llm_text", "(replayed)")})
     return script
 
 
@@ -64,16 +72,20 @@ def _check(entry: dict, result: dict) -> None:
     view = result.get("view")
     got_type = view["type"] if view else None
     if got_type != entry["view_type"]:
-        raise SystemExit(f"{q!r}: view type {got_type} != saved {entry['view_type']}")
+        # Print so the message is visible in test output, then raise so
+        # unittest records an error without calling SystemExit (which would
+        # kill the entire test process).
+        print(f"{q!r}: view type {got_type} != saved {entry['view_type']}")
+        raise AssertionError(f"{q!r}: view type {got_type} != saved {entry['view_type']}")
     saved = entry["answer"]
     if got_type in ("recommendation", "comparison"):
         if view["table_markdown"] not in saved:
-            raise SystemExit(f"{q!r}: options table differs from the saved run")
+            raise AssertionError(f"{q!r}: options table differs from the saved run")
     elif got_type is not None:
         if _UUID.sub("<id>", view["markdown"]) != _UUID.sub("<id>", saved):
-            raise SystemExit(f"{q!r}: {got_type} markdown differs from the saved run")
+            raise AssertionError(f"{q!r}: {got_type} markdown differs from the saved run")
     if (result["proposal"] is not None) != entry["proposal_created"]:
-        raise SystemExit(f"{q!r}: proposal created does not match the saved run")
+        raise AssertionError(f"{q!r}: proposal created does not match the saved run")
 
 
 def _public(result: dict) -> dict:
@@ -81,45 +93,89 @@ def _public(result: dict) -> dict:
     return {k: v for k, v in result.items() if k != "history"}
 
 
+class StaleRun(Exception):
+    """The run a sweep was made with no longer matches the repository."""
+
+
+@contextmanager
+def _data_for(entries: list):
+    """Replay against the data the sweep was made with.
+
+    Sweeps from 2026-11-12 and earlier carry no "run" key: they were made with
+    the stage 1 worlds (scripts.stage1_data).  Newer sweeps record the selected
+    Monte Carlo run and its output hashes; the replay selects the same run and
+    stops (StaleRun) when the run no longer matches its fingerprint or its
+    outputs differ from the sweep's.
+    """
+    import engine.loader
+    import engine.runs
+    if "run" not in entries[0] or entries[0]["run"] is None:
+        with use_stage1_default_data():
+            yield
+        return
+    run_rel = entries[0]["run"]
+    run_dir = engine.runs.REPO_ROOT / run_rel
+    try:
+        fp = engine.runs.check_run(run_dir, engine.loader._DEFAULT_DATA_DIR)
+    except ValueError as exc:
+        raise StaleRun(f"{run_rel} does not match its fingerprint: {exc}") from exc
+    if fp["outputs"] != entries[0]["run_outputs"]:
+        raise StaleRun(f"{run_rel} was rebuilt with different results after the "
+                       f"sweep; run a new sweep (python -m scripts.question_sweep)")
+    prev = engine.runs.SELECTION_PATH
+    with tempfile.TemporaryDirectory() as td:
+        sel = Path(td) / "run_selection.json"
+        sel.write_text(json.dumps({"run": run_rel}), encoding="utf-8")
+        engine.runs.SELECTION_PATH = sel
+        try:
+            yield
+        finally:
+            engine.runs.SELECTION_PATH = prev
+
+
 def build(sweep_path: Path) -> list[dict]:
     entries = json.loads(sweep_path.read_text(encoding="utf-8"))
-    fixtures = []
-    for conv, turns in groupby(entries, key=lambda e: e["conversation"]):
-        history = None
-        for n, entry in enumerate(turns, 1):
-            result = run_agent(entry["question"], history,
-                               llm=ScriptedLLM(_script_for(entry)))
-            _check(entry, result)
-            view = result.get("view")
-            if view is None or view["type"] in ("recommendation", "comparison"):
-                # The prose comes from the real model run.
-                result["answer"] = entry["answer"]
-                if view is not None:
-                    view["markdown"] = entry["answer"]
-                result["history"][-1]["content"] = entry["answer"]
-            history = result["history"]
-            fixtures.append({
-                "conversation": conv,
-                "turn": n,
-                "question": entry["question"],
-                "model": entry["model"],
-                "result": _public(result),
-            })
+    with _data_for(entries):
+        fixtures = []
+        for conv, turns in groupby(entries, key=lambda e: e["conversation"]):
+            history = None
+            for n, entry in enumerate(turns, 1):
+                result = run_agent(entry["question"], history,
+                                   llm=ScriptedLLM(_script_for(entry)))
+                _check(entry, result)
+                view = result.get("view")
+                if view is None or view["type"] in ("recommendation", "comparison"):
+                    # The prose comes from the real model run.
+                    result["answer"] = entry["answer"]
+                    if view is not None:
+                        view["markdown"] = entry["answer"]
+                    result["history"][-1]["content"] = entry["answer"]
+                history = result["history"]
+                fixtures.append({
+                    "conversation": conv,
+                    "turn": n,
+                    "question": entry["question"],
+                    "model": entry["model"],
+                    "result": _public(result),
+                })
 
-    q = "Our budget is 500 dollars. What should we do?"
-    fixtures.append({
-        "conversation": "error",
-        "turn": 1,
-        "question": q,
-        "model": "none (watsonx.ai unreachable)",
-        "result": _public(run_agent(q, None, llm=_FailingLLM())),
-    })
+        q = "Our budget is 500 dollars. What should we do?"
+        fixtures.append({
+            "conversation": "error",
+            "turn": 1,
+            "question": q,
+            "model": "none (watsonx.ai unreachable)",
+            "result": _public(run_agent(q, None, llm=_FailingLLM())),
+        })
     return fixtures
 
 
 def main() -> None:
     sweep = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SWEEP
-    fixtures = build(sweep)
+    try:
+        fixtures = build(sweep)
+    except (AssertionError, StaleRun) as exc:
+        raise SystemExit(str(exc)) from exc
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(fixtures, indent=1, ensure_ascii=False, default=str) + "\n",
                    encoding="utf-8")

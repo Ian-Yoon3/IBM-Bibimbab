@@ -530,10 +530,22 @@ class TestPrompts(unittest.TestCase):
         """Unsupported-question playbook must include compare_scenarios."""
         from agent.prompts import SYSTEM_PROMPT
         # Find the unsupported section and check compare_scenarios appears in it
-        idx = SYSTEM_PROMPT.find("different delay length")
+        idx = SYSTEM_PROMPT.find("dates outside the window")
         self.assertGreater(idx, 0)
         unsupported_section = SYSTEM_PROMPT[idx:]
         self.assertIn("compare_scenarios", unsupported_section)
+
+    def test_world_risk_playbook_entry_uses_get_disruption_only(self):
+        """'what if N days' playbook entry must list get_disruption and not explore_purchase_qty."""
+        from agent.prompts import SYSTEM_PROMPT
+        idx = SYSTEM_PROMPT.find("what if N days")
+        self.assertGreater(idx, 0, "'what if N days' not found in SYSTEM_PROMPT")
+        # Extract the entry: from the heading up to the next blank-line-separated entry
+        entry_start = SYSTEM_PROMPT.rfind('"', 0, idx)  # opening quote of the entry heading
+        next_entry = SYSTEM_PROMPT.find('\n\n  "', idx)
+        entry = SYSTEM_PROMPT[entry_start:next_entry] if next_entry != -1 else SYSTEM_PROMPT[entry_start:]
+        self.assertIn("get_disruption", entry)
+        self.assertNotIn("explore_purchase_qty", entry)
 
     def test_build_compose_message_contains_na_rule(self):
         """build_compose_message output must carry the n/a rule."""
@@ -1507,7 +1519,7 @@ class TestRun7Fixes(unittest.TestCase):
     def test_get_disruption_has_scope_note(self):
         import engine.tools as t
         note = t.get_disruption("D01")["scope_note"]
-        self.assertIn("recorded delay of 6 days", note)
+        self.assertIn("can be computed", note)
         self.assertIn("not supported yet", note)
 
     def test_only_filter(self):
@@ -1578,14 +1590,17 @@ class TestDeterministicViews(unittest.TestCase):
         self.assertEqual(r["view"]["recommended"], "HYBRID")
         self.assertNotIn("found by search", r["answer"])
 
-    def test_q5_unsupported_view_needs_no_compose(self):
+    def test_q5_world_risk_view(self):
         ok, why, r = self._run("Q5", [[
             _tc(1, "get_disruption", disruption_id="D01"),
             {"content": "gathered"},
+            {"content": "Answer: If PO01 arrives on Nov 19, HYBRID has 4 late orders."},
         ]])
         self.assertTrue(ok, why)
-        self.assertEqual(r["view"]["type"], "unsupported")
-        self.assertIn("cannot be simulated", r["answer"])
+        self.assertEqual(r["view"]["type"], "world_risk")
+        self.assertEqual(r["view"]["mode"], "date")
+        self.assertEqual(r["view"]["explanation_status"], "ok")
+        self.assertIn("Read as: PO01 arrives on Nov 19.", r["answer"])
 
     def test_q9_order_view_needs_no_compose(self):
         ok, why, r = self._run("Q9", [[
@@ -1656,8 +1671,13 @@ class TestDeterministicViews(unittest.TestCase):
 
     def test_unsupported_detection(self):
         from agent.render import is_unsupported
-        self.assertTrue(is_unsupported("What if the delay becomes 8 days?"))
-        self.assertTrue(is_unsupported("What about disruption D02?"))
+        self.assertTrue(is_unsupported("Suppose the shipment slips by two weeks."))
+        self.assertTrue(is_unsupported("What if the transfer takes 2 days longer?"))
+        self.assertTrue(is_unsupported("What happens with disruption D02?"))
+        self.assertTrue(is_unsupported("What if it arrives 10 days earlier?"))
+        self.assertFalse(is_unsupported("What if the delay becomes 10 days?"))
+        self.assertFalse(is_unsupported("What if the supplier is 3 days late instead?"))
+        self.assertFalse(is_unsupported("The supplier says it will arrive 2 days earlier. What changes?"))
         self.assertFalse(is_unsupported("Why is SO08 late under HYBRID?"))
         self.assertFalse(is_unsupported("The delay is 6 days, what should we do?"))
 
@@ -1708,17 +1728,18 @@ class TestQuestionSweepHeuristics(unittest.TestCase):
 
     def test_unsupported_detection(self):
         from agent.render import is_unsupported
-        yes = ["What if the delay becomes 10 days?",
-               "What if the supplier is 3 days late instead?",
-               "Suppose the shipment slips by two weeks.",
-               "The supplier says it will arrive 2 days earlier. What changes?",
+        yes = ["Suppose the shipment slips by two weeks.",
                "What if the transfer takes 2 days longer?",
-               "What happens with disruption D02?"]
+               "What happens with disruption D02?",
+               "What if it arrives 10 days earlier?"]
         no = ["Why is SO08 2 days late?",
               "Which orders are more than 3 days late if we wait?",
               "If the delay is 6 days, what should we do?",
               "Under TRANSFER, SO05 is 5 days late. Why?",
-              "Our budget is 500 dollars. What should we do?"]
+              "Our budget is 500 dollars. What should we do?",
+              "What if the delay becomes 10 days?",
+              "What if the supplier is 3 days late instead?",
+              "The supplier says it will arrive 2 days earlier. What changes?"]
         for q in yes:
             self.assertTrue(is_unsupported(q), q)
         for q in no:

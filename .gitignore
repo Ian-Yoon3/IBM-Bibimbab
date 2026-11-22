@@ -1,5 +1,8 @@
 .env
 __pycache__/
 *.pyc
-decisions/
+/decisions/
 reference/validation/
+/runs/*
+!/runs/demo/
+/runs/demo/worlds.csv

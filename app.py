@@ -2,15 +2,10 @@
 app.py — Supply Chain Recovery Decision Agent
 Entry point for the Streamlit application.
 
-Stage A: Overview screen, fixture-based chat, example selector,
-         New conversation reset, error/retry behaviour.
-         Live agent is intentionally disabled until Stage D.
-
 Permitted agent imports (UI contract):
     from agent.loop import run_agent
     from agent.decisions import record_decision, list_decisions
-Live calls are gated behind a WX_API_KEY check; they are never made in
-Stage A.
+    from agent.overview import get_overview, get_data_overview
 
 On Streamlit Community Cloud, copy Streamlit secrets into os.environ so
 that agent/llm.py can find them. Done inside try/except so a local run
@@ -21,7 +16,7 @@ from __future__ import annotations
 import os
 
 # ---------------------------------------------------------------------------
-# Secrets → environment (Community Cloud compatibility, Stage D prep)
+# Secrets → environment (Community Cloud compatibility)
 # ---------------------------------------------------------------------------
 try:
     import streamlit as st
@@ -30,6 +25,15 @@ try:
             os.environ[_key] = st.secrets[_key]
 except Exception:
     pass  # No secrets file or not on Community Cloud — that is fine.
+
+# ---------------------------------------------------------------------------
+# Load .env (python-dotenv) — does not override variables already in env.
+# ---------------------------------------------------------------------------
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(override=False)
+except Exception:
+    pass
 
 import streamlit as st
 
@@ -50,12 +54,15 @@ from ui.renderers import (
     render_live_unavailable,
     render_result,
     render_unmatched_message,
+    render_add_file,
+    render_world_risk,
 )
 from ui.state import init_state, navigate_to, reset_conversation, switch_mode
 
-# UI contract: the only agent import allowed from app.py.
-# Imported at module level so it is available whenever WX_API_KEY is set.
+# UI contract: permitted agent imports.
 from agent.loop import run_agent
+from agent.decisions import record_decision, list_decisions
+from agent.overview import get_overview, get_data_overview
 
 # ---------------------------------------------------------------------------
 # Streamlit page config
@@ -121,7 +128,7 @@ def _sidebar() -> None:
             ("overview",   "🏠 Overview"),
             ("find_plan",  "🔍 Find a recovery plan"),
             ("compare",    "⚖️ Compare options"),
-            ("impact",     "📊 Understand the impact"),
+            ("impact",     "📊 Risk under uncertainty"),
         ]
         for page_id, label in pages:
             active = st.session_state.current_page == page_id
@@ -131,13 +138,17 @@ def _sidebar() -> None:
                 navigate_to(page_id)
                 st.rerun()
 
-        # Decision log — marked as upcoming
-        st.button(
-            "📋 Saved examples",
+        # Decision log page
+        active_log = st.session_state.current_page == "log"
+        log_btn_type = "primary" if active_log else "secondary"
+        if st.button(
+            "📋 Decision log",
             key="nav_log",
             use_container_width=True,
-            disabled=True,
-        )
+            type=log_btn_type,
+        ):
+            navigate_to("log")
+            st.rerun()
 
         st.divider()
 
@@ -176,12 +187,38 @@ def _sidebar() -> None:
         if st.session_state.mode == "fixtures":
             st.caption("🗂 Demo mode — saved examples")
         else:
-            st.caption("🔒 Live agent — not available in Stage A")
+            st.caption("⚡ Live agent mode")
 
 
 # ===========================================================================
 # Overview screen
 # ===========================================================================
+@st.dialog("Add a file", width="large")
+def _add_file_dialog() -> None:
+    """Dialog opened by "Add a file here" on the overview page.
+
+    It shows where a data set is added and which data is in use now.  The
+    upload is not connected in this demo: a new data set needs a new Monte
+    Carlo run before any number can change, so the upload control and the Add
+    button are disabled and the dialog says why.  No file is read or stored,
+    and no watsonx.ai call is made.
+    """
+    try:
+        info = get_data_overview()
+    except Exception as exc:
+        st.error(str(exc))
+        return
+    render_add_file(info)
+
+    enabled = bool((info.get("upload") or {}).get("enabled", False))
+    add_col, cancel_col, _spacer = st.columns([1, 1, 4])
+    with add_col:
+        st.button("Add", key="add_file_confirm", type="primary", disabled=not enabled)
+    with cancel_col:
+        if st.button("Cancel", key="add_file_cancel"):
+            st.rerun()
+
+
 def _page_overview() -> None:
     # Breadcrumb
     st.markdown(
@@ -215,6 +252,10 @@ def _page_overview() -> None:
 """,
             unsafe_allow_html=True,
         )
+
+        # Data entry point.  It opens the "Add a file" dialog in both modes.
+        if st.button("Add a file here", key="cta_add_file", icon=":material/upload_file:"):
+            _add_file_dialog()
 
         if st.session_state.mode == "fixtures":
             if st.button(
@@ -275,15 +316,15 @@ def _page_overview() -> None:
 <div class="action-card">
   <div class="action-card-icon">📊</div>
   <div class="action-card-body">
-    <div class="action-card-title">Understand the impact</div>
-    <div class="action-card-desc">See how each option could affect orders and delivery.</div>
+    <div class="action-card-title">Risk under uncertainty</div>
+    <div class="action-card-desc">See how each option holds up when the arrival date is uncertain.</div>
   </div>
   <div class="action-card-arrow">›</div>
 </div>
 """,
             unsafe_allow_html=True,
         )
-        if st.button("Go to Understand the impact", key="cta_impact",
+        if st.button("Go to Risk under uncertainty", key="cta_impact",
                      use_container_width=True, type="secondary"):
             navigate_to("impact")
             st.rerun()
@@ -340,7 +381,18 @@ def _handle_pending_retry() -> None:
 
 def _render_display_messages() -> None:
     """Re-render every stored conversation message from display_messages."""
-    for idx, msg in enumerate(st.session_state.display_messages):
+    msgs = st.session_state.display_messages
+
+    # Find the index of the newest assistant message that has a proposal,
+    # so we can show decision controls only for that one.
+    newest_proposal_idx = None
+    for idx, msg in enumerate(msgs):
+        if msg.get("type") == "assistant":
+            result = msg.get("result") or {}
+            if result.get("proposal"):
+                newest_proposal_idx = idx
+
+    for idx, msg in enumerate(msgs):
         msg_type = msg.get("type")
         if msg_type == "user":
             with st.chat_message("user"):
@@ -361,6 +413,14 @@ def _render_display_messages() -> None:
                     else lambda: None
                 )
                 render_error_retry_banner(on_retry=on_retry, msg_key=str(idx))
+            # Show decision controls only for the newest message with a proposal.
+            if idx == newest_proposal_idx:
+                result = msg.get("result") or {}
+                proposal = result.get("proposal")
+                if proposal:
+                    _render_decision_controls(
+                        proposal, f"conv_{idx}_decision",
+                    )
         elif msg_type == "unmatched":
             render_unmatched_message()
 
@@ -473,8 +533,17 @@ def _add_typed_question_to_conversation(
         })
 
 
-def _fixture_selector(page_hint: str) -> None:
+def _fixture_selector(page_hint: str, *, show_heading: bool = True) -> None:
     """Render the example selector for a given page context.
+
+    Parameters
+    ----------
+    page_hint:
+        Short name of the page ("find_plan", "compare", "impact").
+    show_heading:
+        When True (default) render the "#### Saved examples" heading above
+        the selector.  Pass False on pages that already provide their own
+        heading.
 
     Regression A fix: selection is processed BEFORE rendering so that the
     resulting messages are visible on the same interaction (via st.rerun()).
@@ -485,12 +554,9 @@ def _fixture_selector(page_hint: str) -> None:
     that tracking key, so a form submission or ordinary rerun cannot replay
     a stale widget value and overwrite the current conversation.
     """
-    st.markdown("#### Saved examples")
-    st.caption(
-        "Select an entry from the list below. "
-        "The successful response and the connection-error response share the same "
-        "question text; they are listed separately and are independently selectable."
-    )
+    if show_heading:
+        st.markdown("#### Saved examples")
+    st.caption("Pick a saved question to see the recorded answer.")
 
     # Build display list: (fixture_id, label)
     selector_options = ["— select an example —"] + [fid for fid, _ in _fixture_options]
@@ -547,7 +613,7 @@ def _free_text_input(page_hint: str) -> None:
     """Accept free-text input but show limitation message if no match."""
     with st.form(key=f"free_text_form_{page_hint}", clear_on_submit=True):
         user_input = st.text_input(
-            "Or type a question (Fixtures mode only matches saved examples)",
+            "Or type a question (demo mode answers only the saved questions)",
             placeholder="e.g. Our budget is 500 dollars. What should we do?",
             key=f"free_text_{page_hint}",
         )
@@ -657,6 +723,75 @@ def _validate_find_plan_result(result: dict, budget: int) -> str:
     return "ok"
 
 
+# ===========================================================================
+# Decision controls — shown under a result with a pending proposal
+# ===========================================================================
+
+def _render_decision_controls(proposal: dict, key_prefix: str, *,
+                               _record_fn=None, _log_path=None) -> None:
+    """Render approve / reject controls for *proposal*.
+
+    Parameters
+    ----------
+    proposal:
+        The proposal dict exactly as received from run_agent.
+    key_prefix:
+        Prefix for widget keys: ``<key_prefix>_approve`` and
+        ``<key_prefix>_reject``.
+    _record_fn:
+        Injectable override for record_decision (tests only).
+    _log_path:
+        Override for the log file path (tests only; uses DECISION_LOG_PATH
+        env var when not passed directly).
+    """
+    proposal_id = proposal.get("proposal_id", "")
+
+    # Do not show controls if this proposal has already been decided.
+    decided = st.session_state.get("decided_proposal_ids", set())
+    if proposal_id in decided:
+        return
+
+    st.markdown("---")
+    name_col, approve_col, reject_col = st.columns([3, 1, 1])
+    with name_col:
+        name = st.text_input("Your name", key=f"{key_prefix}_name",
+                             label_visibility="visible")
+    with approve_col:
+        approve_clicked = st.button("Approve", key=f"{key_prefix}_approve",
+                                    type="primary")
+    with reject_col:
+        reject_clicked = st.button("Reject", key=f"{key_prefix}_reject",
+                                   type="secondary")
+
+    if approve_clicked or reject_clicked:
+        if not name or not name.strip():
+            st.warning("Enter your name to record the decision.")
+            return
+
+        approved = approve_clicked
+        # Resolve log path: injected param > env var > default
+        effective_log = _log_path
+        if effective_log is None:
+            effective_log = os.environ.get("DECISION_LOG_PATH") or None
+
+        record_fn = _record_fn if _record_fn is not None else record_decision
+        try:
+            record_fn(proposal, approved, decided_by=name.strip(),
+                      log_path=effective_log)
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+
+        decided.add(proposal_id)
+        st.session_state.decided_proposal_ids = decided
+        verb = "Approved" if approved else "Rejected"
+        st.success(f"{verb} by {name.strip()}. Recorded in the decision log.")
+
+
+# ===========================================================================
+# Page: Find a recovery plan  (budget form)
+# ===========================================================================
+
 def _page_find_plan(*, _run_agent_fn=None) -> None:
     """Budget input form for finding a recovery plan.
 
@@ -706,41 +841,56 @@ def _page_find_plan(*, _run_agent_fn=None) -> None:
         api_fn = _run_agent_fn
         if api_fn is None:
             # Check whether the real API key is configured.
-            import os
             if not os.environ.get("WX_API_KEY"):
                 # Clear any stale result so the previous answer is not shown.
                 st.session_state.fp_budget = budget
                 st.session_state.fp_result = None
                 st.session_state.fp_status = "key_missing"
+                # Also clear any stale propose state.
+                st.session_state.fp_propose_result = None
+                st.session_state.fp_propose_status = None
                 st.rerun()
                 return
             api_fn = run_agent
 
-        # Clear previous result before calling so stale data never bleeds through.
+        # Clear previous result and propose state before calling.
         st.session_state.fp_budget = budget
         st.session_state.fp_result = None
         st.session_state.fp_status = None
+        st.session_state.fp_history = None
+        st.session_state.fp_propose_result = None
+        st.session_state.fp_propose_status = None
 
         user_message = _build_find_plan_message(budget)
-        try:
-            result = api_fn(user_message)
-        except Exception:
-            st.session_state.fp_status = "api_error"
-            st.rerun()
-            return
+        with st.status("Working on it...", expanded=True) as _status:
+            st.write("Sending the question to the agent")
+            try:
+                result = api_fn(user_message)
+            except Exception:
+                _status.update(label="Error", state="error")
+                st.session_state.fp_status = "api_error"
+                st.rerun()
+                return
+            tool_n = len(result.get("tool_trace") or [])
+            st.write(f"The engine answered {tool_n} tool calls")
+            if "error" in result:
+                _status.update(label="Done", state="error")
+            else:
+                _status.update(label="Done", state="complete")
 
         status = _validate_find_plan_result(result, budget)
         # Store the full result for "ok" and "unsupported" so the renderer
         # can display the recommendation card or the scope note respectively.
         st.session_state.fp_result = result if status in ("ok", "unsupported") else None
         st.session_state.fp_status = status
+        # Store the history so the propose step can continue the conversation.
+        st.session_state.fp_history = result.get("history")
         st.rerun()
 
     # --- Render result / guidance ---
     status = st.session_state.get("fp_status")
     if status is None:
         # Nothing submitted yet — show API key guidance if key is absent.
-        import os
         if _run_agent_fn is None and not os.environ.get("WX_API_KEY"):
             render_api_key_missing()
         return
@@ -750,6 +900,69 @@ def _page_find_plan(*, _run_agent_fn=None) -> None:
         budget=st.session_state.get("fp_budget"),
         result=st.session_state.get("fp_result"),
     )
+
+    # --- Propose button (only when status == "ok") ---
+    if status == "ok":
+        fp_result = st.session_state.get("fp_result")
+        if fp_result:
+            view = fp_result.get("view") or {}
+            recommended_code = view.get("recommended")
+            if recommended_code:
+                propose_key = "fp_propose"
+                if st.button(
+                    f"Create a proposal for {recommended_code}",
+                    key=propose_key,
+                ):
+                    api_fn = _run_agent_fn if _run_agent_fn is not None else (
+                        run_agent if os.environ.get("WX_API_KEY") else None
+                    )
+                    if api_fn is None:
+                        render_api_key_missing()
+                    else:
+                        history = st.session_state.get("fp_history")
+                        with st.status("Working on it...", expanded=True) as _pstatus:
+                            st.write("Sending the question to the agent")
+                            try:
+                                propose_result = api_fn(
+                                    f"Propose {recommended_code}",
+                                    history=history,
+                                )
+                            except Exception:
+                                _pstatus.update(label="Error", state="error")
+                                st.session_state.fp_propose_status = "api_error"
+                                st.session_state.fp_propose_result = None
+                                st.rerun()
+                                return
+                            tool_n = len(propose_result.get("tool_trace") or [])
+                            st.write(f"The engine answered {tool_n} tool calls")
+                            if "error" in propose_result or not propose_result.get("proposal"):
+                                _pstatus.update(label="Done", state="error")
+                                st.session_state.fp_propose_status = "no_proposal"
+                            else:
+                                _pstatus.update(label="Done", state="complete")
+                                st.session_state.fp_propose_status = "ok"
+                        st.session_state.fp_propose_result = propose_result
+                        st.rerun()
+
+    # --- Render propose result ---
+    propose_status = st.session_state.get("fp_propose_status")
+    propose_result = st.session_state.get("fp_propose_result")
+    if propose_status == "ok" and propose_result:
+        render_result(propose_result)
+        proposal = propose_result.get("proposal")
+        if proposal:
+            _render_decision_controls(
+                proposal, "fp_decision",
+                _record_fn=None,
+                _log_path=None,
+            )
+    elif propose_status == "no_proposal" and propose_result:
+        render_result(propose_result)
+        st.warning("No proposal was created.")
+    elif propose_status == "api_error":
+        st.error(
+            "Connection error — the AI service did not respond.",
+        )
 
 
 # ===========================================================================
@@ -764,15 +977,89 @@ def _page_compare() -> None:
 
 
 # ===========================================================================
-# Page: Understand the impact
+# Page: Risk under uncertainty
 # ===========================================================================
-def _page_impact() -> None:
-    _render_fixtures_page(
-        "impact",
-        "📊 Understand the impact",
-        "Select a saved example to understand which orders and customers are "
-        "affected by the disruption.",
+def _page_impact(*, _get_overview_fn=None, _run_agent_fn=None) -> None:
+    """Risk under uncertainty page.
+
+    Parameters
+    ----------
+    _get_overview_fn:
+        Injectable override for get_overview — used exclusively by unit tests.
+        When None (default), the real get_overview is used.
+    _run_agent_fn:
+        Injectable override for run_agent (live risk question) — tests only.
+        When None (default), the real run_agent is used (requires WX_API_KEY).
+    """
+    # Breadcrumb
+    st.markdown(
+        '<div class="breadcrumb">'
+        '<a href="#">Overview</a>'
+        '<span>›</span>'
+        'Risk under uncertainty'
+        '</div>',
+        unsafe_allow_html=True,
     )
+    st.header("📊 Risk under uncertainty")
+
+    # Top-of-page overview: always rendered in both Fixtures and Live mode.
+    overview_fn = _get_overview_fn if _get_overview_fn is not None else get_overview
+    try:
+        overview = overview_fn()
+        overview_view = overview.get("view") or overview
+        render_world_risk(overview_view)
+    except Exception as exc:
+        st.error(str(exc))
+
+    st.divider()
+    st.markdown("### Ask about risk")
+
+    # In Live mode: live risk question form (no fixture selector).
+    if st.session_state.mode == "live":
+        api_fn = _run_agent_fn
+        if api_fn is None:
+            if not os.environ.get("WX_API_KEY"):
+                render_api_key_missing()
+                return
+            api_fn = run_agent
+
+        with st.form(key="risk_live_form"):
+            risk_q = st.text_input(
+                "Ask a risk question",
+                key="risk_question",
+                label_visibility="visible",
+            )
+            ask_clicked = st.form_submit_button("Ask")
+
+        if ask_clicked and risk_q.strip():
+            with st.status("Working on it...", expanded=True) as _rstatus:
+                st.write("Sending the question to the agent")
+                try:
+                    risk_result = api_fn(risk_q.strip())
+                except Exception:
+                    _rstatus.update(label="Error", state="error")
+                    st.session_state.risk_live_result = None
+                    st.rerun()
+                    return
+                tool_n = len(risk_result.get("tool_trace") or [])
+                st.write(f"The engine answered {tool_n} tool calls")
+                if "error" in risk_result:
+                    _rstatus.update(label="Done", state="error")
+                else:
+                    _rstatus.update(label="Done", state="complete")
+            st.session_state.risk_live_result = risk_result
+            st.rerun()
+
+        # Show the last live result.
+        risk_result = st.session_state.get("risk_live_result")
+        if risk_result:
+            render_result(risk_result)
+        return
+
+    # Fixtures mode: example selector (without its own heading) and free-text form.
+    _fixture_selector("impact", show_heading=False)
+    st.divider()
+    _free_text_input("impact")
 
 
 # ===========================================================================
@@ -786,6 +1073,65 @@ def _live_mode_guard() -> bool:
     immediately without rendering any fixture controls or results.
     """
     return st.session_state.mode == "live"
+
+
+# ===========================================================================
+# Page: Decision log
+# ===========================================================================
+
+def _page_log(*, _list_fn=None, _log_path=None) -> None:
+    """Decision log page — shows all recorded decisions, newest first.
+
+    Parameters
+    ----------
+    _list_fn:
+        Injectable override for list_decisions (tests only).
+    _log_path:
+        Override for the log file path (tests only; uses DECISION_LOG_PATH
+        env var when not passed directly).
+    """
+    st.markdown(
+        '<div class="breadcrumb">Decision log</div>',
+        unsafe_allow_html=True,
+    )
+    st.header("📋 Decision log")
+
+    # Resolve list function and path.
+    effective_log = _log_path
+    if effective_log is None:
+        effective_log = os.environ.get("DECISION_LOG_PATH") or None
+
+    list_fn = _list_fn if _list_fn is not None else list_decisions
+
+    decisions = list_fn(effective_log)
+
+    if not decisions:
+        st.info("No decisions recorded yet.")
+        return
+
+    # Show newest first.
+    import pandas as pd
+    rows = list(reversed(decisions))
+    df = pd.DataFrame(rows)
+    # Select and rename columns for display.
+    display_cols = []
+    rename_map = {}
+    for col, label in [
+        ("decided_at", "Date / time"),
+        ("decision", "Decision"),
+        ("decided_by", "Decided by"),
+        ("proposal_id", "Proposal ID"),
+        ("total_extra_cost", "Extra cost (USD)"),
+        ("on_time_orders", "On-time orders"),
+        ("note", "Note"),
+    ]:
+        if col in df.columns:
+            display_cols.append(col)
+            rename_map[col] = label
+    if display_cols:
+        st.dataframe(df[display_cols].rename(columns=rename_map), use_container_width=True)
+    else:
+        st.dataframe(df, use_container_width=True)
 
 
 # ===========================================================================
@@ -805,6 +1151,17 @@ def main() -> None:
         _page_find_plan()
         return
 
+    if page == "impact":
+        # impact handles its own Live mode behaviour internally.
+        # Injectable params not passed from the router.
+        _page_impact()
+        return
+
+    if page == "log":
+        # Decision log works in both modes and needs no API key.
+        _page_log()
+        return
+
     # For all other non-overview pages: block entirely in Live mode.
     if _live_mode_guard():
         render_live_unavailable()
@@ -812,8 +1169,6 @@ def main() -> None:
 
     if page == "compare":
         _page_compare()
-    elif page == "impact":
-        _page_impact()
     else:
         # Fallback for future pages
         st.info(f"Page '{page}' is not yet implemented.")

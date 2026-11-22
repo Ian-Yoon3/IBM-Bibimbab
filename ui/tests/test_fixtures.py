@@ -33,9 +33,31 @@ class TestLoadFixtures(unittest.TestCase):
     def test_loads_nonzero_entries(self):
         self.assertGreater(len(self.fixtures), 0)
 
-    def test_expected_count(self):
-        # The fixture file contains 23 entries as described in the UI contract.
-        self.assertEqual(len(self.fixtures), 23)
+    def test_fixture_list_coverage(self):
+        # The fixture file is not empty, has exactly one error entry, and covers
+        # every expected view type at least once.
+        self.assertGreater(len(self.fixtures), 0, "Fixture list must not be empty")
+
+        error_entries = [e for e in self.fixtures if is_error_fixture(e["result"])]
+        self.assertEqual(
+            len(error_entries), 1,
+            f"Expected exactly 1 error entry, found {len(error_entries)}",
+        )
+
+        expected_view_types = {
+            "recommendation", "comparison", "option", "order",
+            "proposal", "unsupported", "world_risk",
+        }
+        present_view_types = set()
+        for e in self.fixtures:
+            view = e["result"].get("view")
+            if view and view.get("type"):
+                present_view_types.add(view["type"])
+        missing = expected_view_types - present_view_types
+        self.assertFalse(
+            missing,
+            f"These view types are missing from fixtures: {missing}",
+        )
 
     def test_all_entries_have_required_keys(self):
         for entry in self.fixtures:
