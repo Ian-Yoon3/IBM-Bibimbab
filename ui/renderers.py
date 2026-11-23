@@ -25,41 +25,112 @@ DEMO_CSS = """
 <style>
 /* ---- Sidebar ---- */
 [data-testid="stSidebar"] {
-    background-color: #0f1b2d !important;
+    background-color: #f7f7f5 !important;
 }
-[data-testid="stSidebar"] * {
-    color: #e8edf3 !important;
-}
-[data-testid="stSidebar"] .stButton > button {
-    background: transparent !important;
-    color: #c9d4e0 !important;
-    border: none !important;
-    text-align: left !important;
-    padding: 0.45rem 0.75rem !important;
-    border-radius: 6px !important;
-    font-size: 0.95rem !important;
-    width: 100% !important;
-}
-[data-testid="stSidebar"] .stButton > button:hover {
-    background-color: rgba(255,255,255,0.08) !important;
-}
-[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-    background-color: #3b82d4 !important;
-    color: #ffffff !important;
-}
-[data-testid="stSidebar"] [data-testid="stRadio"] label {
-    color: #c9d4e0 !important;
-}
+/* 사이드바 기본 텍스트 색상
+   stMarkdownContainer 는 버튼 내부에 존재하지 않으므로 버튼 글자를 덮지 않음.
+   명시적으로 .stButton 하위를 제외해 안전하게 처리. */
+[data-testid="stSidebar"] [data-testid="stRadio"] label,
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
-    color: #c9d4e0 !important;
+    color: #111827 !important;
+}
+/* 혹시 버튼 안에 stMarkdownContainer 가 삽입되더라도 흰 글씨 보호 */
+[data-testid="stSidebar"] .stButton > button[kind="primary"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] .stButton > button[kind="primary"] [data-testid="stMarkdownContainer"] {
+    color: #ffffff !important;
 }
 [data-testid="stSidebar"] .stCaption,
 [data-testid="stSidebar"] .stCaption p {
-    color: #8ca0b8 !important;
+    color: #57606a !important;
 }
 [data-testid="stSidebar"] hr {
-    border-color: rgba(255,255,255,0.12) !important;
+    border-color: #e6e6e6 !important;
+}
+
+/* ---- Sidebar nav buttons — 비선택 상태 ---- */
+[data-testid="stSidebar"] .stButton > button {
+    background: transparent !important;
+    color: #111827 !important;
+    border: none !important;
+    text-align: left !important;
+    padding: 0.4rem 0.9rem !important;
+    border-radius: 50px !important;
+    font-size: 0.93rem !important;
+    font-weight: 400 !important;
+    width: 100% !important;
+    margin: 1px 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+/* 버튼 안 p/span 도 색상 초기화 (Streamlit이 p 태그를 삽입하는 경우 대비) */
+[data-testid="stSidebar"] .stButton > button p,
+[data-testid="stSidebar"] .stButton > button span {
+    color: inherit !important;
+}
+
+/* 비선택 hover */
+[data-testid="stSidebar"] .stButton > button:hover,
+[data-testid="stSidebar"] .stButton > button:hover p,
+[data-testid="stSidebar"] .stButton > button:hover span {
+    background-color: #EAF2FF !important;
+    color: #111827 !important;
+}
+/* 비선택 active(누르는 동안) */
+[data-testid="stSidebar"] .stButton > button:active,
+[data-testid="stSidebar"] .stButton > button:active p,
+[data-testid="stSidebar"] .stButton > button:active span {
+    background-color: #DBEAFE !important;
+    color: #111827 !important;
+}
+
+/* ---- Sidebar nav buttons — 선택(active page) 상태 ---- */
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background-color: #1D4ED8 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    border-radius: 50px !important;
+    border: none !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] p,
+[data-testid="stSidebar"] .stButton > button[kind="primary"] span {
+    color: #ffffff !important;
+}
+
+/* 선택 hover & active(누르는 동안) */
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover,
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:active,
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover p,
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover span,
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:active p,
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:active span {
+    background-color: #1E40AF !important;
+    color: #ffffff !important;
+}
+
+/* ---- Sidebar — 키보드 포커스 테두리 ---- */
+/* 선택된 버튼 포커스 */
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:focus-visible {
+    outline: 2px solid #93C5FD !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.25) !important;
+}
+/* 비선택 버튼 포커스 */
+[data-testid="stSidebar"] .stButton > button:not([kind="primary"]):focus-visible {
+    outline: 2px solid #1D4ED8 !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.15) !important;
+}
+
+/* ---- New conversation 버튼 — 보조 스타일 ---- */
+[data-testid="stSidebar"] .stButton > button[data-testid="new_conv"],
+[data-testid="stSidebar"] .stButton > button[kind="secondary"][data-key="new_conv"] {
+    color: #57606a !important;
+    font-size: 0.88rem !important;
+    padding: 0.35rem 0.9rem !important;
 }
 
 /* ---- Sidebar brand label ---- */
@@ -68,7 +139,7 @@ DEMO_CSS = """
     align-items: center;
     gap: 10px;
     padding: 1rem 0 1.25rem 0;
-    border-bottom: 1px solid rgba(255,255,255,0.12);
+    border-bottom: 1px solid #e6e6e6;
     margin-bottom: 0.75rem;
 }
 .sidebar-brand-icon {
@@ -78,7 +149,7 @@ DEMO_CSS = """
 .sidebar-brand-text {
     font-size: 0.85rem;
     font-weight: 600;
-    color: #ffffff !important;
+    color: #000000 !important;
     line-height: 1.3;
 }
 
@@ -89,10 +160,10 @@ DEMO_CSS = """
 }
 .demo-badge {
     display: inline-block;
-    background-color: #eef3fb;
-    color: #3b82d4;
-    border: 1px solid #c3d6f4;
-    border-radius: 20px;
+    background-color: #f7f7f5;
+    color: #000000;
+    border: 1px solid #e6e6e6;
+    border-radius: 50px;
     padding: 3px 12px;
     font-size: 0.8rem;
     font-weight: 600;
@@ -102,37 +173,39 @@ DEMO_CSS = """
 .hero-title {
     font-size: 2.4rem;
     font-weight: 700;
-    color: #0f1b2d;
+    color: #000000;
     line-height: 1.15;
     margin: 0.25rem 0 0.75rem 0;
 }
 .hero-subtitle {
     font-size: 1.0rem;
-    color: #4a5568;
+    color: #57606a;
     line-height: 1.6;
     max-width: 480px;
     margin-bottom: 1.75rem;
 }
 
-/* ---- Main CTA button ---- */
-.stButton > button[kind="primary"] {
-    background-color: #3b82d4 !important;
+/* ---- Main CTA button (pill, black) — 본문 컨테이너 안에서만 적용 ---- */
+/* stMainBlockContainer 는 Streamlit 본문 영역의 최상위 testid 이며
+   stSidebar 와 구조적으로 완전히 분리되어 있어 사이드바에 절대 매칭되지 않음. */
+[data-testid="stMainBlockContainer"] .stButton > button[kind="primary"] {
+    background-color: #000000 !important;
     color: #ffffff !important;
     border: none !important;
-    border-radius: 8px !important;
+    border-radius: 50px !important;
     font-size: 1.0rem !important;
     font-weight: 600 !important;
     padding: 0.65rem 1.5rem !important;
     letter-spacing: 0.01em !important;
 }
-.stButton > button[kind="primary"]:hover {
-    background-color: #2563b0 !important;
+[data-testid="stMainBlockContainer"] .stButton > button[kind="primary"]:hover {
+    background-color: #1f1f1f !important;
 }
 
 /* ---- Secondary action cards ---- */
 .action-card {
     background: #ffffff;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #e6e6e6;
     border-radius: 10px;
     padding: 1.25rem 1.4rem;
     display: flex;
@@ -143,7 +216,7 @@ DEMO_CSS = """
     min-height: 90px;
 }
 .action-card:hover {
-    border-color: #3b82d4;
+    border-color: #000000;
 }
 .action-card-icon {
     font-size: 1.6rem;
@@ -155,7 +228,7 @@ DEMO_CSS = """
 .action-card-title {
     font-size: 0.95rem;
     font-weight: 700;
-    color: #0f1b2d;
+    color: #000000;
     margin-bottom: 0.3rem;
 }
 .action-card-desc {
@@ -171,11 +244,11 @@ DEMO_CSS = """
     flex-shrink: 0;
 }
 
-/* ---- Result cards ---- */
+/* ---- Result summary card (pastel lime accent block — max one per screen) ---- */
 .result-summary-card {
-    background: #eef5ff;
-    border: 1.5px solid #3b82d4;
-    border-radius: 10px;
+    background: #dceeb1;
+    border: none;
+    border-radius: 24px;
     padding: 1.25rem 1.5rem;
     display: flex;
     align-items: flex-start;
@@ -183,7 +256,7 @@ DEMO_CSS = """
     margin-bottom: 1.25rem;
 }
 .result-summary-icon {
-    background: #3b82d4;
+    background: #000000;
     color: #fff;
     border-radius: 50%;
     width: 32px;
@@ -197,7 +270,7 @@ DEMO_CSS = """
 .result-summary-title {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #0f1b2d;
+    color: #000000;
     margin-bottom: 0.3rem;
 }
 .result-summary-desc {
@@ -206,9 +279,10 @@ DEMO_CSS = """
     line-height: 1.55;
 }
 
+/* ---- KPI cards ---- */
 .kpi-card {
     background: #ffffff;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #e6e6e6;
     border-radius: 10px;
     padding: 1.1rem 1.3rem;
 }
@@ -232,24 +306,24 @@ DEMO_CSS = """
     letter-spacing: 0.01em;
 }
 .kpi-badge-green {
-    background: #d1fae5;
-    color: #065f46;
+    background: #c8e6cd;
+    color: #0a3b18;
 }
 .kpi-badge-yellow {
-    background: #fef3c7;
-    color: #92400e;
+    background: #f4ecd6;
+    color: #7a4a00;
 }
 .kpi-badge-red {
-    background: #fee2e2;
-    color: #991b1b;
+    background: #efd4d4;
+    color: #7a1515;
 }
 .kpi-badge-blue {
-    background: #dbeafe;
-    color: #1e3a8a;
+    background: #f7f7f5;
+    color: #000000;
 }
 .kpi-badge-purple {
-    background: #ede9fe;
-    color: #4c1d95;
+    background: #c5b0f4;
+    color: #2d1a6e;
 }
 
 /* ---- Comparison table ---- */
@@ -260,28 +334,28 @@ DEMO_CSS = """
     margin-top: 0.5rem;
 }
 .cmp-table th {
-    background: #f7f8fa;
-    color: #374151;
+    background: #f7f7f5;
+    color: #000000;
     font-weight: 600;
     padding: 8px 12px;
     text-align: left;
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 2px solid #e6e6e6;
 }
 .cmp-table td {
     padding: 8px 12px;
-    border-bottom: 1px solid #f0f1f3;
-    color: #1f2328;
+    border-bottom: 1px solid #f1f1f1;
+    color: #000000;
     vertical-align: middle;
 }
 .cmp-table tr:last-child td {
     border-bottom: none;
 }
 .cmp-table tr.cmp-row-recommended {
-    background: #f0f7ff;
+    background: #f7f7f5;
     font-weight: 600;
 }
 .star-badge {
-    color: #3b82d4;
+    color: #000000;
     font-size: 0.95rem;
 }
 
@@ -292,8 +366,8 @@ DEMO_CSS = """
     margin-bottom: 1rem;
 }
 .breadcrumb a {
-    color: #3b82d4;
-    text-decoration: none;
+    color: #000000;
+    text-decoration: underline;
 }
 .breadcrumb span {
     margin: 0 6px;
