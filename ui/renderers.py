@@ -146,6 +146,48 @@ DEMO_CSS = """
     font-size: 1.5rem;
     line-height: 1;
 }
+.sidebar-brand-mark {
+    height: 30px;
+    width: auto;
+    flex: none;
+    display: block;
+}
+/* ---- Team mark easter egg (Decision log page only) ----
+   The button is laid over the mark and kept invisible.  The cursor stays the
+   default arrow so that hovering does not give it away. */
+.st-key-brand_block {
+    position: relative;
+}
+[data-testid="stSidebar"] .st-key-brand_egg {
+    position: absolute !important;
+    top: 1rem;
+    left: 0;
+    width: 94px !important;
+    height: 30px !important;
+    opacity: 0;
+    z-index: 5;
+}
+[data-testid="stSidebar"] .st-key-brand_egg .stButton,
+[data-testid="stSidebar"] .st-key-brand_egg .stButton > button {
+    width: 94px !important;
+    height: 30px !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    cursor: default !important;
+}
+.team-video {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+}
+.team-video iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
 .sidebar-brand-text {
     font-size: 0.85rem;
     font-weight: 600;

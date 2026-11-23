@@ -35,6 +35,9 @@ try:
 except Exception:
     pass
 
+import base64 as _base64
+import pathlib as _pathlib
+
 import streamlit as st
 
 from ui.fixtures import (
@@ -110,18 +113,62 @@ def _overview_situation() -> str:
 
 
 # ===========================================================================
+# Team mark and its easter egg
+# ===========================================================================
+_TEAM_MARK_PATH = _pathlib.Path(__file__).parent / "ui" / "assets" / "team-mark.svg"
+
+# Google Drive serves an embeddable player at /preview (the /view address is a
+# web page and cannot be embedded).  The file must be shared with "anyone
+# with the link", or viewers see a sign-in request instead of the video.
+_TEAM_VIDEO_URL = (
+    "https://drive.google.com/file/d/1IWOqzD5Am2vq_7zy6zFLV0TfIMgAe-sx/preview"
+)
+
+
+@st.cache_resource
+def _team_mark_html() -> str:
+    """Return the team mark as an <img> tag, or the old emoji if the file is missing."""
+    try:
+        encoded = _base64.b64encode(_TEAM_MARK_PATH.read_bytes()).decode("ascii")
+    except OSError:
+        return '<span class="sidebar-brand-icon">🔗</span>'
+    return (
+        '<img class="sidebar-brand-mark" alt="Instant Bibimbab Masters" '
+        f'src="data:image/svg+xml;base64,{encoded}">'
+    )
+
+
+@st.dialog("Instant Bibimbab Masters", width="large")
+def _team_video_dialog() -> None:
+    """Easter egg: the team video, opened from the team mark on the Decision log page."""
+    st.markdown(
+        '<div class="team-video">'
+        f'<iframe src="{_TEAM_VIDEO_URL}" allow="autoplay; fullscreen" allowfullscreen></iframe>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ===========================================================================
 # Sidebar — navigation and controls
 # ===========================================================================
 def _sidebar() -> None:
     with st.sidebar:
-        # Brand block
-        st.markdown(
-            '<div class="sidebar-brand">'
-            '<span class="sidebar-brand-icon">🔗</span>'
-            '<span class="sidebar-brand-text">Supply Chain<br>Recovery Agent</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        # Brand block: the team mark and the app name.
+        with st.container(key="brand_block"):
+            st.markdown(
+                '<div class="sidebar-brand">'
+                f'{_team_mark_html()}'
+                '<span class="sidebar-brand-text">Supply Chain<br>Recovery Agent</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            # Easter egg: on the Decision log page only, an invisible button
+            # sits over the team mark.  On every other page the button is not
+            # rendered at all, so the mark does nothing there.
+            if st.session_state.current_page == "log":
+                if st.button(" ", key="brand_egg"):
+                    st.session_state["_show_team_video"] = True
 
         # --- Page links ---
         pages = [
@@ -1139,6 +1186,11 @@ def _page_log(*, _list_fn=None, _log_path=None) -> None:
 # ===========================================================================
 def main() -> None:
     _sidebar()
+
+    # Opened once per click: the flag is removed as it is read, so a later
+    # rerun does not open the dialog again.
+    if st.session_state.pop("_show_team_video", False):
+        _team_video_dialog()
 
     page = st.session_state.current_page
 
