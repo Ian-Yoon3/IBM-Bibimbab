@@ -140,7 +140,7 @@ def _team_mark_html() -> str:
 
 @st.dialog("Instant Bibimbab Masters", width="large")
 def _team_video_dialog() -> None:
-    """Easter egg: the team video, opened from the team mark on the Decision log page."""
+    """Easter egg: the team video, opened from the team mark in the sidebar."""
     st.markdown(
         '<div class="team-video">'
         f'<iframe src="{_TEAM_VIDEO_URL}" allow="autoplay; fullscreen" allowfullscreen></iframe>'
@@ -163,12 +163,10 @@ def _sidebar() -> None:
                 '</div>',
                 unsafe_allow_html=True,
             )
-            # Easter egg: on the Decision log page only, an invisible button
-            # sits over the team mark.  On every other page the button is not
-            # rendered at all, so the mark does nothing there.
-            if st.session_state.current_page == "log":
-                if st.button(" ", key="brand_egg"):
-                    st.session_state["_show_team_video"] = True
+            # Easter egg: an invisible button sits over the team mark on
+            # every page.  Clicking the mark opens the team video.
+            if st.button(" ", key="brand_egg"):
+                st.session_state["_show_team_video"] = True
 
         # --- Page links ---
         pages = [

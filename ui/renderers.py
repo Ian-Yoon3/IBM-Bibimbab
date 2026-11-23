@@ -152,7 +152,7 @@ DEMO_CSS = """
     flex: none;
     display: block;
 }
-/* ---- Team mark easter egg (Decision log page only) ----
+/* ---- Team mark easter egg ----
    The button is laid over the mark and kept invisible.  The cursor stays the
    default arrow so that hovering does not give it away. */
 .st-key-brand_block {
